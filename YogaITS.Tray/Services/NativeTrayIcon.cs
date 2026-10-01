@@ -41,7 +41,9 @@ public sealed class NativeTrayIcon : IDisposable
 
     private readonly nint _hwnd;
     private readonly SUBCLASSPROC _subclassProc;
+    private readonly uint _taskbarCreatedMessage;
     private nint _hIcon;
+    private string _tooltip;
     private bool _added;
     private bool _version4;
     private bool _disposed;
@@ -57,6 +59,15 @@ public sealed class NativeTrayIcon : IDisposable
 
         _hwnd = hwnd;
         _subclassProc = WindowSubclassProc;
+        _tooltip = TruncateTooltip(tooltip);
+
+        // Explorer destroys the notification area when it restarts. Windows
+        // broadcasts this registered message after the taskbar is recreated;
+        // tray applications must add their icon again in response.
+        _taskbarCreatedMessage = RegisterWindowMessageW("TaskbarCreated");
+        if (_taskbarCreatedMessage == 0)
+            throw new InvalidOperationException(
+                $"无法注册 TaskbarCreated 消息。Win32 error={Marshal.GetLastWin32Error()}");
 
         _hIcon = LoadImage(
             0,
@@ -74,12 +85,7 @@ public sealed class NativeTrayIcon : IDisposable
             throw new InvalidOperationException(
                 $"无法挂接托盘消息处理器。Win32 error={Marshal.GetLastWin32Error()}");
 
-        NOTIFYICONDATA data = CreateData(tooltip);
-        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
-        data.uCallbackMessage = CallbackMessage;
-        data.hIcon = _hIcon;
-
-        if (!Shell_NotifyIcon(NIM_ADD, ref data))
+        if (!AddIconToShell())
         {
             RemoveWindowSubclass(_hwnd, _subclassProc, SubclassId);
             DestroyIcon(_hIcon);
@@ -87,28 +93,19 @@ public sealed class NativeTrayIcon : IDisposable
             throw new InvalidOperationException(
                 $"Shell_NotifyIcon(NIM_ADD) 失败。Win32 error={Marshal.GetLastWin32Error()}");
         }
-
-        _added = true;
-
-        // Explicitly opt into the modern callback contract recommended by Microsoft.
-        // With VERSION_4:
-        //   LOWORD(lParam)  = event code
-        //   HIWORD(lParam)  = icon id
-        //   wParam          = anchor coordinates for mouse/select/context events
-        NOTIFYICONDATA versionData = CreateData(tooltip);
-        versionData.uVersion = NOTIFYICON_VERSION_4;
-
-        _version4 = Shell_NotifyIcon(
-            NIM_SETVERSION,
-            ref versionData);
     }
 
     public void SetTooltip(string text)
     {
-        if (_disposed || !_added)
+        if (_disposed)
             return;
 
-        NOTIFYICONDATA data = CreateData(text);
+        _tooltip = TruncateTooltip(text);
+
+        if (!_added)
+            return;
+
+        NOTIFYICONDATA data = CreateData(_tooltip);
         data.uFlags = NIF_TIP;
         Shell_NotifyIcon(NIM_MODIFY, ref data);
     }
@@ -121,6 +118,16 @@ public sealed class NativeTrayIcon : IDisposable
         nuint uIdSubclass,
         nuint dwRefData)
     {
+        if (uMsg == _taskbarCreatedMessage)
+        {
+            // The Explorer instance that owned the old notification area is gone,
+            // so our previous registration no longer exists even though this
+            // process and HWND are still alive. Recreate the icon and opt back
+            // into NOTIFYICON_VERSION_4. No polling is required.
+            _ = AddIconToShell();
+            return 0;
+        }
+
         if (uMsg == CallbackMessage)
         {
             uint eventCode;
@@ -176,6 +183,34 @@ public sealed class NativeTrayIcon : IDisposable
             uMsg,
             wParam,
             lParam);
+    }
+
+    private bool AddIconToShell()
+    {
+        if (_disposed || _hIcon == 0)
+            return false;
+
+        NOTIFYICONDATA data = CreateData(_tooltip);
+        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
+        data.uCallbackMessage = CallbackMessage;
+        data.hIcon = _hIcon;
+
+        if (!Shell_NotifyIcon(NIM_ADD, ref data))
+        {
+            _added = false;
+            _version4 = false;
+            return false;
+        }
+
+        _added = true;
+
+        // NIM_SETVERSION must be sent after every successful NIM_ADD, including
+        // after Explorer restarts, because the version setting is not persisted.
+        NOTIFYICONDATA versionData = CreateData(_tooltip);
+        versionData.uVersion = NOTIFYICON_VERSION_4;
+        _version4 = Shell_NotifyIcon(NIM_SETVERSION, ref versionData);
+
+        return true;
     }
 
     private NOTIFYICONDATA CreateData(string tooltip)
@@ -269,6 +304,9 @@ public sealed class NativeTrayIcon : IDisposable
     private static extern bool Shell_NotifyIcon(
         uint dwMessage,
         ref NOTIFYICONDATA lpData);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint RegisterWindowMessageW(string lpString);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint LoadImage(

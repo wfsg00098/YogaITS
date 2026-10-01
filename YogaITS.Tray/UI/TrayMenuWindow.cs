@@ -291,14 +291,12 @@ public sealed class TrayMenuWindow : Window
                     "结束独显\n占用进程",
                     () =>
                     {
-                        Close();
                         _killGpuApps();
                     }),
                 CreateActionTile(
                     "重启独显设备",
                     () =>
                     {
-                        Close();
                         _restartGpu();
                     })
             };
