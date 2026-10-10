@@ -1,0 +1,308 @@
+﻿using System.Diagnostics;
+using System.Management;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace YogaITS.Tray.Services;
+
+public sealed record GpuProcessInfo(int Pid, string Name, string? ExecutablePath = null);
+
+public sealed record GpuActionResult(bool Success, string Message);
+
+public static class NvidiaGpuHelper
+{
+    private const uint NvapiInitializeId = 0x0150E828;
+    private const uint NvapiUnloadId = 0xD22BDD7E;
+    private const uint NvapiEnumPhysicalGpusId = 0xE5AC921F;
+    private const uint NvapiGpuQueryActiveAppsId = 0x65B1C5F5;
+
+    private const int NvapiOk = 0;
+    private const int NvapiMaxPhysicalGpus = 64;
+    private const int NvapiMaxApplications = 128;
+    private const int NvapiLongStringMax = 256;
+
+    // NV_GPU_PRIVATE_ACTIVE_APPLICATION_V2:
+    // uint version + uint pid + char name[256]
+    private const int ActiveAppV2Size = 264;
+    private const uint ActiveAppV2Version = ActiveAppV2Size | (2u << 16);
+
+    private static readonly HashSet<string> ProtectedProcessNames =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "system", "idle", "dwm", "csrss", "winlogon", "services", "lsass",
+            "smss", "wininit", "svchost", "fontdrvhost", "explorer", "taskhostw",
+            "sihost", "runtimebroker", "shellexperiencehost", "searchhost",
+            "startmenuexperiencehost", "textinputhost", "applicationframehost",
+            "systemsettings", "dllhost", "conhost", "audiodg", "ctfmon", "spoolsv",
+            "wlanext", "msdtc", "nvcontainer", "nvdisplay.container", "nvsettings",
+            "nvspcaps64", "nvsphelper64", "nvwmi64", "nvcplui"
+        };
+
+    public static bool HasNvidiaDisplayDevice()
+    {
+        // Presence detection is intentionally PnP/WMI-only so merely opening the
+        // tray menu does not initialize NVAPI just to decide whether to show the
+        // NVIDIA actions. The actions themselves still use NVAPI exactly where
+        // needed.
+        return !string.IsNullOrWhiteSpace(FindNvidiaDisplayDeviceInstanceId());
+    }
+
+    public static IReadOnlyList<GpuProcessInfo> QueryActiveApplications()
+    {
+        nint library = 0;
+        NvNoArg? unload = null;
+
+        try
+        {
+            if (!NativeLibrary.TryLoad("nvapi64.dll", out library))
+                throw new InvalidOperationException("未找到 nvapi64.dll。请确认 NVIDIA 驱动已正常安装。");
+
+            nint queryInterfacePtr = NativeLibrary.GetExport(library, "nvapi_QueryInterface");
+            var queryInterface = Marshal.GetDelegateForFunctionPointer<NvQueryInterface>(queryInterfacePtr);
+
+            var initialize = GetDelegate<NvNoArg>(queryInterface, NvapiInitializeId);
+            unload = GetDelegate<NvNoArg>(queryInterface, NvapiUnloadId);
+            var enumPhysicalGpus = GetDelegate<NvEnumPhysicalGpus>(queryInterface, NvapiEnumPhysicalGpusId);
+            var queryActiveApps = GetDelegate<NvQueryActiveApps>(queryInterface, NvapiGpuQueryActiveAppsId);
+
+            Check(initialize(), "NvAPI_Initialize");
+
+            var handles = new nint[NvapiMaxPhysicalGpus];
+            Check(enumPhysicalGpus(handles, out int gpuCount), "NvAPI_EnumPhysicalGPUs");
+
+            var result = new Dictionary<int, GpuProcessInfo>();
+
+            for (int gpuIndex = 0; gpuIndex < gpuCount; gpuIndex++)
+            {
+                nint buffer = Marshal.AllocHGlobal(ActiveAppV2Size * NvapiMaxApplications);
+
+                try
+                {
+                    // NVAPI expects the version field initialized in every slot.
+                    for (int i = 0; i < NvapiMaxApplications; i++)
+                    {
+                        nint item = buffer + i * ActiveAppV2Size;
+                        Marshal.WriteInt32(item, 0, unchecked((int)ActiveAppV2Version));
+                        Marshal.WriteInt32(item, 4, 0);
+                        for (int j = 8; j < ActiveAppV2Size; j++)
+                            Marshal.WriteByte(item, j, 0);
+                    }
+
+                    uint count = NvapiMaxApplications;
+                    int status = queryActiveApps(handles[gpuIndex], buffer, ref count);
+
+                    // A sleeping/inaccessible GPU can return a non-zero status.
+                    // Continue other NVIDIA GPUs rather than turning this into monitoring/retry logic.
+                    if (status != NvapiOk)
+                        continue;
+
+                    int safeCount = Math.Min((int)count, NvapiMaxApplications);
+
+                    for (int i = 0; i < safeCount; i++)
+                    {
+                        nint item = buffer + i * ActiveAppV2Size;
+                        int pid = Marshal.ReadInt32(item, 4);
+                        if (pid <= 0 || pid == Environment.ProcessId)
+                            continue;
+
+                        byte[] nameBytes = new byte[NvapiLongStringMax];
+                        Marshal.Copy(item + 8, nameBytes, 0, nameBytes.Length);
+                        int zero = Array.IndexOf(nameBytes, (byte)0);
+                        string name = Encoding.UTF8.GetString(
+                            nameBytes,
+                            0,
+                            zero >= 0 ? zero : nameBytes.Length).Trim();
+
+                        string? path = null;
+                        try
+                        {
+                            using Process p = Process.GetProcessById(pid);
+                            name = string.IsNullOrWhiteSpace(name) ? p.ProcessName : name;
+                            path = p.MainModule?.FileName;
+                        }
+                        catch
+                        {
+                            // Process may be protected or may have exited.
+                        }
+
+                        result[pid] = new(pid, string.IsNullOrWhiteSpace(name) ? $"PID {pid}" : name, path);
+                    }
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(buffer);
+                }
+            }
+
+            return result.Values.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+        finally
+        {
+            try { unload?.Invoke(); } catch { }
+            if (library != 0)
+                NativeLibrary.Free(library);
+        }
+    }
+
+    public static IReadOnlyList<GpuProcessInfo> GetKillCandidates(IEnumerable<GpuProcessInfo> apps)
+    {
+        var result = new List<GpuProcessInfo>();
+
+        foreach (var app in apps)
+        {
+            string baseName = Path.GetFileNameWithoutExtension(app.Name);
+
+            if (ProtectedProcessNames.Contains(baseName))
+                continue;
+
+            try
+            {
+                using Process p = Process.GetProcessById(app.Pid);
+                if (p.SessionId == 0)
+                    continue;
+            }
+            catch
+            {
+                continue;
+            }
+
+            result.Add(app);
+        }
+
+        return result;
+    }
+
+    public static async Task<GpuActionResult> KillProcessesAsync(IEnumerable<int> pids)
+    {
+        var failed = new List<string>();
+        int killed = 0;
+
+        foreach (int pid in pids.Distinct())
+        {
+            if (pid <= 0 || pid == Environment.ProcessId)
+                continue;
+
+            try
+            {
+                using Process p = Process.GetProcessById(pid);
+
+                string baseName = p.ProcessName;
+                if (ProtectedProcessNames.Contains(baseName) || p.SessionId == 0)
+                {
+                    failed.Add($"{baseName} ({pid})：已保护");
+                    continue;
+                }
+
+                p.Kill(entireProcessTree: true);
+                await p.WaitForExitAsync();
+                killed++;
+            }
+            catch (ArgumentException)
+            {
+                // Already exited; that's effectively fine for the goal.
+            }
+            catch (Exception ex)
+            {
+                failed.Add($"PID {pid}：{ex.Message}");
+            }
+        }
+
+        string message = $"已结束 {killed} 个独显占用进程。";
+        if (failed.Count > 0)
+            message += "\n\n未处理：\n" + string.Join("\n", failed);
+
+        return new(failed.Count == 0, message);
+    }
+
+    public static async Task<GpuActionResult> RestartNvidiaDisplayDeviceAsync()
+    {
+        string? instanceId = FindNvidiaDisplayDeviceInstanceId();
+
+        if (string.IsNullOrWhiteSpace(instanceId))
+            return new(false, "没有找到 PCI\\VEN_10DE 的 NVIDIA 显示设备。");
+
+        string pnputil = Path.Combine(Environment.SystemDirectory, "pnputil.exe");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = pnputil,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        psi.ArgumentList.Add("/restart-device");
+        psi.ArgumentList.Add(instanceId);
+
+        using Process? process = Process.Start(psi);
+        if (process is null)
+            return new(false, "无法启动 pnputil.exe。");
+
+        Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+
+        await process.WaitForExitAsync();
+
+        string stdout = (await stdoutTask).Trim();
+        string stderr = (await stderrTask).Trim();
+
+        if (process.ExitCode == 0)
+        {
+            return new(true,
+                "NVIDIA 显示设备已重启。\n\n" +
+                (string.IsNullOrWhiteSpace(stdout) ? instanceId : stdout));
+        }
+
+        return new(false,
+            $"pnputil 返回 {process.ExitCode}。\n\n" +
+            (string.IsNullOrWhiteSpace(stderr) ? stdout : stderr));
+    }
+
+    private static string? FindNvidiaDisplayDeviceInstanceId()
+    {
+        using var searcher = new ManagementObjectSearcher(
+            "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='Display'");
+
+        foreach (ManagementObject device in searcher.Get())
+        {
+            using (device)
+            {
+                string? id = device["PNPDeviceID"] as string;
+                if (id?.StartsWith(@"PCI\VEN_10DE", StringComparison.OrdinalIgnoreCase) == true)
+                    return id;
+            }
+        }
+
+        return null;
+    }
+
+    private static T GetDelegate<T>(NvQueryInterface queryInterface, uint id) where T : Delegate
+    {
+        nint ptr = queryInterface(id);
+        if (ptr == 0)
+            throw new InvalidOperationException($"NVAPI function 0x{id:X8} 不可用。");
+
+        return Marshal.GetDelegateForFunctionPointer<T>(ptr);
+    }
+
+    private static void Check(int status, string operation)
+    {
+        if (status != NvapiOk)
+            throw new InvalidOperationException($"{operation} 失败，NVAPI status = {status}。");
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate nint NvQueryInterface(uint id);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int NvNoArg();
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int NvEnumPhysicalGpus(
+        [Out, MarshalAs(UnmanagedType.LPArray, SizeConst = NvapiMaxPhysicalGpus)] nint[] handles,
+        out int gpuCount);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int NvQueryActiveApps(nint gpu, nint applications, ref uint numberOfApplications);
+}
