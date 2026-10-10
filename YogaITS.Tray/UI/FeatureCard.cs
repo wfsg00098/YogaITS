@@ -6,8 +6,9 @@ using Windows.UI;
 namespace YogaITS.Tray.UI;
 
 // Feature panels use the same option tiles and accent treatment as the tray menu.
-internal sealed class FeatureCard : Border
+internal sealed class FeatureCard
 {
+    public Border View { get; } = new();
     private readonly StackPanel _body = new() { Spacing = 8 };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75 };
     private Action<StackPanel>? _render;
@@ -16,10 +17,10 @@ internal sealed class FeatureCard : Border
 
     public FeatureCard(string title)
     {
-        Padding = new Thickness(12);
-        CornerRadius = new CornerRadius(8);
-        BorderThickness = new Thickness(1);
-        BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128));
+        View.Padding = new Thickness(12);
+        View.CornerRadius = new CornerRadius(8);
+        View.BorderThickness = new Thickness(1);
+        View.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128));
         var content = new StackPanel { Spacing = 8 };
         content.Children.Add(new TextBlock
         {
@@ -28,7 +29,7 @@ internal sealed class FeatureCard : Border
         });
         content.Children.Add(_body);
         content.Children.Add(_status);
-        Child = content;
+        View.Child = content;
     }
 
     public void Update(bool visible, Action<StackPanel> render)
@@ -36,7 +37,7 @@ internal sealed class FeatureCard : Border
         _render = render;
         if (_busy)
             return;
-        Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        View.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         _body.Children.Clear();
         render(_body);
         if (_lastError is not null)
