@@ -1,6 +1,7 @@
 ﻿using Microsoft.UI.Xaml;
 using YogaITS.Tray.Services;
 using YogaITS.Tray.UI;
+using YogaITS.Tray.Services.Hpd;
 
 namespace YogaITS.Tray;
 
@@ -13,6 +14,7 @@ public sealed partial class MainWindow : Window
     private TrayMenuWindow? _trayMenuWindow;
     private TrayMenuWindow? _controlCenterWindow;
     private readonly LenovoGpuWorkingModeService _gpu = new();
+    private readonly HpdService _hpd = new();
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
 
@@ -40,6 +42,8 @@ public sealed partial class MainWindow : Window
             _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow ?? _trayMenuWindow!);
         });
         _ = _gpu.InitializeAsync();
+        _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
+        _ = _hpd.RefreshAsync();
     }
 
     private void InitializeHiddenTrayHost()
@@ -103,6 +107,7 @@ public sealed partial class MainWindow : Window
         {
             _controlCenterWindow.Activate();
             _ = _gpu.RefreshAsync();
+            _ = _hpd.RefreshAsync();
             _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow);
             return;
         }
@@ -152,8 +157,9 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu);
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd);
                 _ = _gpu.RefreshAsync();
+                _ = _hpd.RefreshAsync();
             }
             else
                 _trayMenuWindow = menu;
@@ -407,6 +413,7 @@ public sealed partial class MainWindow : Window
         _systemEvents?.Dispose();
         _systemEvents = null;
         await _gpu.DisposeAsync();
+        await _hpd.DisposeAsync();
         DisposeTray();
         Close();
         Environment.Exit(0);
