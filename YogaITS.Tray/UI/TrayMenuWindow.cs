@@ -14,6 +14,7 @@ public sealed class TrayMenuWindow : Window
 {
     private const int BaseWidthDip = 244;
     private readonly bool _fullWindow;
+    private readonly Windows.UI.ViewManagement.UISettings _appearanceSettings = new();
     internal StackPanel AdditionalSections { get; } = new() { Spacing = 12 };
 
     private readonly nint _ownerHwnd;
@@ -117,6 +118,7 @@ public sealed class TrayMenuWindow : Window
             flipToStartSnapshot,
             nvidiaGpuSupported);
         ConfigureWindow();
+        _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
         if (_fullWindow && _contentRoot is not null)
             _contentRoot.ActualThemeChanged += (_, _) => ApplyTitleBarAppearance();
         Closed += TrayMenuWindow_Closed;
@@ -892,19 +894,32 @@ public sealed class TrayMenuWindow : Window
     private void ApplyTitleBarAppearance()
     {
         if (!_fullWindow || !AppWindowTitleBar.IsCustomizationSupported()) return;
-        bool dark = _contentRoot?.ActualTheme == ElementTheme.Dark;
-        Color background = dark ? Color.FromArgb(255, 32, 32, 32) : Color.FromArgb(255, 243, 243, 243);
-        Color foreground = dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0);
-        Color inactive = dark ? Color.FromArgb(255, 153, 153, 153) : Color.FromArgb(255, 102, 102, 102);
+        Color background = GetSystemAccentColor();
+        Color foreground = GetContrastColor(background);
         var titleBar = AppWindow.TitleBar;
         titleBar.BackgroundColor = titleBar.InactiveBackgroundColor = background;
         titleBar.ForegroundColor = foreground;
-        titleBar.InactiveForegroundColor = inactive;
+        titleBar.InactiveForegroundColor = foreground;
         titleBar.ButtonBackgroundColor = titleBar.ButtonInactiveBackgroundColor = background;
         titleBar.ButtonForegroundColor = titleBar.ButtonHoverForegroundColor = titleBar.ButtonPressedForegroundColor = foreground;
-        titleBar.ButtonInactiveForegroundColor = inactive;
-        titleBar.ButtonHoverBackgroundColor = dark ? Color.FromArgb(255, 55, 55, 55) : Color.FromArgb(255, 228, 228, 228);
-        titleBar.ButtonPressedBackgroundColor = dark ? Color.FromArgb(255, 48, 48, 48) : Color.FromArgb(255, 215, 215, 215);
+        titleBar.ButtonInactiveForegroundColor = foreground;
+        titleBar.ButtonHoverBackgroundColor = BlendColor(background, foreground, 0.12);
+        titleBar.ButtonPressedBackgroundColor = BlendColor(background, foreground, 0.20);
+    }
+
+    private static Color BlendColor(Color background, Color foreground, double amount) => Color.FromArgb(255,
+        (byte)Math.Round(background.R + (foreground.R - background.R) * amount),
+        (byte)Math.Round(background.G + (foreground.G - background.G) * amount),
+        (byte)Math.Round(background.B + (foreground.B - background.B) * amount));
+
+    private void AppearanceSettings_ColorValuesChanged(Windows.UI.ViewManagement.UISettings sender, object args)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_closed) return;
+            ApplyTitleBarAppearance();
+            ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        });
     }
 
     private nint _mouseHook;
@@ -1006,6 +1021,7 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+        _appearanceSettings.ColorValuesChanged -= AppearanceSettings_ColorValuesChanged;
         UninstallOutsideClickHook();
     }
 
