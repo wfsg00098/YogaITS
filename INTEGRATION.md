@@ -12,6 +12,8 @@
 
 大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。分组无背景或外围框，仅底部灰色分割线；按钮复用 WinUI 默认模板，无填充，灰色/强调色边线分别表示未选中/选中，悬停及按下不增加背景填充。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
 
+大窗口所有分组标题共用 SettingsSectionTitleStyle（14 DIP、SemiBold、主题主文本色、22 DIP 最小高度），标题与选项间隔 8 DIP。大窗口所有选项及退出按钮统一使用 48 DIP 最小高度；退出按钮复用无填充边线卡片，并与组内选项对齐。小窗口保留紧凑标题与退出布局。
+
 ## 能力与状态源
 
 | 功能 | 显示/启用规则 |

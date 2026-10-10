@@ -20,11 +20,7 @@ internal sealed class FeatureCard : IDisposable
     {
         View.Style = TrayMenuWindow.GetSettingsStyle("SettingsCardStyle");
         var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(new TextBlock
-        {
-            Text = title, FontSize = 14,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
-        });
+        content.Children.Add(TrayMenuWindow.CreateGroupTitle(title));
         content.Children.Add(_body);
         content.Children.Add(_status);
         content.Children.Add(Footer);
@@ -58,14 +54,14 @@ internal sealed class FeatureCard : IDisposable
 
     public Button Option(string label, bool selected, Func<Task> action, bool enabled = true)
     {
-        Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, 48);
+        Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, TrayMenuWindow.OptionTileHeightDip);
         button.IsEnabled = enabled;
         button.Click += async (_, _) => await RunAsync(action);
         return button;
     }
 
     public void Options(StackPanel body, params Button[] buttons) =>
-        body.Children.Add(TrayMenuWindow.CreateTileGrid(buttons, Math.Min(3, buttons.Length), 48));
+        body.Children.Add(TrayMenuWindow.CreateTileGrid(buttons, Math.Min(3, buttons.Length), TrayMenuWindow.OptionTileHeightDip));
 
     public void Note(StackPanel body, string text) => body.Children.Add(new TextBlock
     {
