@@ -2,6 +2,7 @@
 using YogaITS.Tray.Services;
 using YogaITS.Tray.UI;
 using YogaITS.Tray.Services.Hpd;
+using YogaITS.Tray.Services.Color;
 
 namespace YogaITS.Tray;
 
@@ -15,6 +16,7 @@ public sealed partial class MainWindow : Window
     private TrayMenuWindow? _controlCenterWindow;
     private readonly LenovoGpuWorkingModeService _gpu = new();
     private readonly HpdService _hpd = new();
+    private readonly ColorGamutService _color = new();
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
 
@@ -35,6 +37,7 @@ public sealed partial class MainWindow : Window
         _systemEvents = new SystemEventMonitor(_mainHwnd);
         _systemEvents.PowerChanged += () => _ = _gpu.HandleSystemChangeAsync();
         _systemEvents.DisplayChanged += () => _ = _gpu.HandleSystemChangeAsync();
+        _systemEvents.DisplayChanged += () => _ = _color.RefreshAsync();
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
         {
             if (_gpu.Snapshot.Supported) _systemEvents?.EnablePowerNotifications();
@@ -44,6 +47,8 @@ public sealed partial class MainWindow : Window
         _ = _gpu.InitializeAsync();
         _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _hpd.RefreshAsync();
+        _color.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
+        _ = _color.RefreshAsync();
     }
 
     private void InitializeHiddenTrayHost()
@@ -108,6 +113,7 @@ public sealed partial class MainWindow : Window
             _controlCenterWindow.Activate();
             _ = _gpu.RefreshAsync();
             _ = _hpd.RefreshAsync();
+            _ = _color.RefreshAsync();
             _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow);
             return;
         }
@@ -157,9 +163,10 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd);
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color);
                 _ = _gpu.RefreshAsync();
                 _ = _hpd.RefreshAsync();
+                _ = _color.RefreshAsync();
             }
             else
                 _trayMenuWindow = menu;
@@ -414,6 +421,7 @@ public sealed partial class MainWindow : Window
         _systemEvents = null;
         await _gpu.DisposeAsync();
         await _hpd.DisposeAsync();
+        await _color.DisposeAsync();
         DisposeTray();
         Close();
         Environment.Exit(0);

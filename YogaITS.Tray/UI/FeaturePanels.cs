@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml.Controls;
 using YogaITS.Tray.Services;
 using YogaITS.Tray.Services.Hpd;
+using YogaITS.Tray.Services.Color;
 
 namespace YogaITS.Tray.UI;
 
@@ -11,19 +12,23 @@ internal sealed class FeaturePanels
     private readonly HpdService _hpd;
     private readonly FeatureCard _wakeCard = new("唤醒和睡眠");
     private readonly FeatureCard _videoCard = new("播放和暂停");
+    private readonly ColorGamutService _color;
+    private readonly FeatureCard _colorCard = new("屏幕色域");
 
-    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd)
+    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color)
     {
         _gpu = gpu;
         _hpd = hpd;
+        _color = color;
         host.Children.Add(_gpuCard.View);
         host.Children.Add(_wakeCard.View);
         host.Children.Add(_videoCard.View);
+        host.Children.Add(_colorCard.View);
         var refresh = new Button { Content = "刷新功能与状态" };
         refresh.Click += async (_, _) =>
         {
             refresh.IsEnabled = false;
-            try { await Task.WhenAll(_gpu.RefreshAsync(), _hpd.RefreshAsync()); }
+            try { await Task.WhenAll(_gpu.RefreshAsync(), _hpd.RefreshAsync(), _color.RefreshAsync()); }
             finally { refresh.IsEnabled = true; }
         };
         host.Children.Add(refresh);
@@ -48,6 +53,26 @@ internal sealed class FeaturePanels
             _gpuCard.SetStatus($"当前实际状态：{effective}。{current.Message}");
         });
         RenderHpd();
+        RenderColor();
+    }
+
+    private void RenderColor()
+    {
+        _colorCard.Update(_color.Snapshot.Supported, body =>
+        {
+            var current = _color.Snapshot;
+            if (current.Modes.Count > 0)
+                _colorCard.Options(body, current.Modes.Select(mode =>
+                    _colorCard.Option(mode.Brightness is int brightness ? $"{mode.Name} [{brightness}]" : mode.Name,
+                        current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
+                        !current.Blocked && current.CurrentMode != mode.Name)).ToArray());
+            _colorCard.Options(body,
+                _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
+                    () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
+                _colorCard.Option("在线恢复校色文件", false, _color.RecoverAsync));
+            _colorCard.Note(body, "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。");
+            _colorCard.SetStatus($"当前色域：{current.CurrentMode}。{current.Message}");
+        });
     }
 
     private void RenderHpd()
