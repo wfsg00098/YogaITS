@@ -13,6 +13,8 @@ namespace YogaITS.Tray.UI;
 public sealed class TrayMenuWindow : Window
 {
     private const int BaseWidthDip = 244;
+    private readonly bool _fullWindow;
+    internal StackPanel AdditionalSections { get; } = new() { Spacing = 12 };
 
     private readonly nint _ownerHwnd;
     private readonly Func<ItsMode, Task<ItsSetResult>> _setMode;
@@ -79,8 +81,10 @@ public sealed class TrayMenuWindow : Window
         Action restartGpu,
         Func<bool, Task<StartupTaskResult>> setStartup,
         Action<string, string> showInfo,
-        Action exitApp)
+        Action exitApp,
+        bool fullWindow = false)
     {
+        _fullWindow = fullWindow;
         _ownerHwnd = ownerHwnd;
         _setMode = setMode;
         _setChargeMode = setChargeMode;
@@ -153,6 +157,19 @@ public sealed class TrayMenuWindow : Window
 
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
         ShowWithoutActivation();
+    }
+
+    public void ShowControlCenter()
+    {
+        uint dpi = GetWindowDpi();
+        RectInt32 area = GetWorkArea(GetCursorPos(out POINT cursor) ? cursor : default);
+        int width = Math.Min(ScaleDip(880, dpi), area.Width - ScaleDip(24, dpi));
+        int height = Math.Min(ScaleDip(820, dpi), area.Height - ScaleDip(24, dpi));
+        AppWindow.MoveAndResize(new RectInt32(
+            area.X + (area.Width - width) / 2,
+            area.Y + (area.Height - height) / 2, width, height));
+        Activate();
+        ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
 
     private int GetDesiredHeightDip()
@@ -305,7 +322,7 @@ public sealed class TrayMenuWindow : Window
             hasContent = true;
         }
 
-        if (_flipToStartSupported || _startupVisual is null)
+        if (_fullWindow)
         {
             if (hasContent)
                 stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
@@ -340,7 +357,26 @@ public sealed class TrayMenuWindow : Window
 
         stack.Children.Add(CreateExitButton());
 
-        outer.Children.Add(stack);
+        if (_fullWindow)
+        {
+            // Both surfaces share the original controls, callbacks and visual recipe.
+            // The full window keeps the core settings beside the feature cards.
+            var columns = new Grid { ColumnSpacing = 16 };
+            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            columns.Children.Add(stack);
+            Grid.SetColumn(AdditionalSections, 1);
+            columns.Children.Add(AdditionalSections);
+            outer.Padding = new Thickness(20, 36, 20, 20);
+            outer.Children.Add(new ScrollViewer
+            {
+                Content = columns,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            });
+        }
+        else
+            outer.Children.Add(stack);
         _contentRoot = outer;
         return outer;
     }
@@ -544,7 +580,7 @@ public sealed class TrayMenuWindow : Window
         return button;
     }
 
-    private static Button CreateOptionTile(
+    internal static Button CreateOptionTile(
         string text,
         bool selected,
         bool isAction,
@@ -594,7 +630,7 @@ public sealed class TrayMenuWindow : Window
         return button;
     }
 
-    private static Grid CreateTileGrid(
+    internal static Grid CreateTileGrid(
         IReadOnlyList<UIElement> items,
         int columns,
         double minHeight)
@@ -800,7 +836,7 @@ public sealed class TrayMenuWindow : Window
     private static void RefreshToggleVisual(TileVisual visual, bool enabled) =>
         RefreshOptionTile(visual.Button, enabled);
 
-    private static void RefreshOptionTile(
+    internal static void RefreshOptionTile(
         Button button,
         bool selected,
         bool pending = false)
@@ -837,6 +873,17 @@ public sealed class TrayMenuWindow : Window
     }
     private void ConfigureWindow()
     {
+        if (_fullWindow)
+        {
+            ExtendsContentIntoTitleBar = false;
+            var fullPresenter = OverlappedPresenter.Create();
+            fullPresenter.IsResizable = true;
+            AppWindow.SetPresenter(fullPresenter);
+            string fullIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
+            if (File.Exists(fullIcon))
+                AppWindow.SetIcon(fullIcon);
+            return;
+        }
         var presenter = OverlappedPresenter.CreateForToolWindow();
         presenter.SetBorderAndTitleBar(true, false);
         presenter.IsAlwaysOnTop = true;
