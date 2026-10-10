@@ -334,7 +334,6 @@ public sealed class TrayMenuWindow : Window
             items.Add(_startupVisual.Button);
             Section("杂项", items, items.Count, 56);
         }
-        stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
         stack.Children.Add(CreateExitButton());
     }
 
@@ -394,8 +393,7 @@ public sealed class TrayMenuWindow : Window
         {
             Padding = new Thickness(8, 2, 8, 2),
             CornerRadius = new CornerRadius(8),
-            MaxWidth = 132,
-            Style = GetSettingsStyle("SettingsCardStyle")
+            MaxWidth = 132
         };
 
         pill.Child = new TextBlock
@@ -586,6 +584,7 @@ public sealed class TrayMenuWindow : Window
             }
         };
 
+        SetTileStateResources(button, selected);
         return button;
     }
 
@@ -664,16 +663,6 @@ public sealed class TrayMenuWindow : Window
         };
 
         return button;
-    }
-
-    private static Border CreateSeparator(Thickness margin)
-    {
-        return new Border
-        {
-            Height = 1,
-            Margin = margin,
-            Background = new SolidColorBrush(Color.FromArgb(26, 128, 128, 128))
-        };
     }
 
     private async void NightChargeButton_Click(object sender, RoutedEventArgs e)
@@ -805,10 +794,22 @@ public sealed class TrayMenuWindow : Window
 
         bool accentBorder = selected || pending;
         button.Style = GetSettingsStyle(accentBorder ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle");
+        SetTileStateResources(button, accentBorder);
 
         state.Label.FontWeight = selected
             ? Microsoft.UI.Text.FontWeights.SemiBold
             : Microsoft.UI.Text.FontWeights.Normal;
+    }
+
+    private static void SetTileStateResources(Button button, bool selected)
+    {
+        // Keep the native button template and focus/disabled feedback, but never
+        // let its pointer states replace the outline-only appearance with a fill.
+        foreach (string state in new[] { "", "PointerOver", "Pressed", "Disabled" })
+            button.Resources["ButtonBackground" + state] = TransparentBrush();
+        var outline = new SolidColorBrush(selected ? GetSystemAccentColor() : Color.FromArgb(110, 170, 170, 170));
+        button.Resources["ButtonBorderBrushPointerOver"] = outline;
+        button.Resources["ButtonBorderBrushPressed"] = outline;
     }
 
     internal static Style GetSettingsStyle(string key) => (Style)Application.Current.Resources[key];

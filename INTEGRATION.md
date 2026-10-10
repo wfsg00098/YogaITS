@@ -10,7 +10,7 @@
 
 控制中心每次从非激活变为激活时并行刷新各组能力和状态，刷新期间不叠加批次；没有手动刷新按钮。HDR/ACM 复用选项卡片，点击切换、选中表示开启。标题栏不延伸内容，不设置标题栏或按钮颜色，保持系统默认行为；只有边框强制显示系统强调色，无视系统对应显示开关。系统颜色变化时更新边框，关闭窗口时取消订阅，不修改 Windows 全局设置。
 
-大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。卡片共用 LayerFillColorDefaultBrush / CardStrokeColorDefaultBrush，普通与选中按钮复用 WinUI 默认/AccentButtonStyle，自带悬停、按下和禁用状态。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
+大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。分组无背景或外围框，仅底部灰色分割线；按钮复用 WinUI 默认模板，无填充，灰色/强调色边线分别表示未选中/选中，悬停及按下不增加背景填充。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
 
 ## 能力与状态源
 

@@ -11,21 +11,19 @@
                 <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
             </Style>
             <Style x:Key="SettingsCardStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource LayerFillColorDefaultBrush}" />
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
                 <Setter Property="Padding" Value="12" />
             </Style>
             <Style x:Key="SettingsOptionTileStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-                <Setter Property="Background" Value="{ThemeResource ControlFillColorDefaultBrush}" />
+                <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="4" />
             </Style>
-            <Style x:Key="SettingsSelectedTileStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
-                <Setter Property="CornerRadius" Value="4" />
-                <Setter Property="BorderThickness" Value="1" />
+            <Style x:Key="SettingsSelectedTileStyle" TargetType="Button" BasedOn="{StaticResource SettingsOptionTileStyle}">
+                <Setter Property="BorderBrush" Value="{ThemeResource AccentFillColorDefaultBrush}" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
