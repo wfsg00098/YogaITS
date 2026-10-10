@@ -1,7 +1,5 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
-using Windows.UI;
 
 namespace YogaITS.Tray.UI;
 
@@ -20,10 +18,7 @@ internal sealed class FeatureCard : IDisposable
 
     public FeatureCard(string title)
     {
-        View.Padding = new Thickness(12);
-        View.CornerRadius = new CornerRadius(8);
-        View.BorderThickness = new Thickness(1);
-        View.BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128));
+        View.Style = TrayMenuWindow.GetSettingsStyle("SettingsCardStyle");
         var content = new StackPanel { Spacing = 8 };
         content.Children.Add(new TextBlock
         {

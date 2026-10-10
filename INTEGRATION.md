@@ -10,6 +10,8 @@
 
 控制中心每次从非激活变为激活时并行刷新各组能力和状态，刷新期间不叠加批次；没有手动刷新按钮。HDR/ACM 复用选项卡片，点击切换、选中表示开启。标题栏不延伸内容，不设置标题栏或按钮颜色，保持系统默认行为；只有边框强制显示系统强调色，无视系统对应显示开关。系统颜色变化时更新边框，关闭窗口时取消订阅，不修改 Windows 全局设置。
 
+大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。卡片共用 LayerFillColorDefaultBrush / CardStrokeColorDefaultBrush，普通与选中按钮复用 WinUI 默认/AccentButtonStyle，自带悬停、按下和禁用状态。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
+
 ## 能力与状态源
 
 | 功能 | 显示/启用规则 |
@@ -49,10 +51,12 @@
 - 色域禁用原因已确认：Advanced Color raw=0x73、mode=2，HDR=true、ACM=false；工厂文件和七个模式验证正常。
 - 经明确授权，只读请求 Lenovo 校色元数据接口：Accept 为 application/json、*/*、缺省时均 HTTP 200，未复现元数据阶段 406。下载共用客户端改为 Accept: */*，避免 ZIP 被 JSON-only 请求头限制；ZIP 下载与完整在线恢复未复测，不能认定 406 已解决。
 - 纵向单列、焦点刷新、HDR/ACM 选项卡片和标题栏主题配色调整后，Debug 编译为 0 警告 / 0 错误，92 项逻辑检查再次通过，Release 发布及 PRI 文件检查通过；桌面交互和配色仍需实机确认。
+- 大小窗口 Mica 与共享主题卡片调整后，Debug 编译为 0 警告 / 0 错误，92 项逻辑检查再次通过；尚未进行桌面焦点、透明效果及高对比度验收。原 dist 首次被运行进程占用，用户退出后重新发布至 dist。
 
 ## 待实机验收
 
 - [ ] 退出原版后启动 dist/YogaITS.Tray.exe，确认左右键行为、大窗口布局、主题、不同 DPI、窄窗口及关闭后驻留。
+- [ ] 大小窗口获得焦点时显示 Mica，Alt+Tab 失焦后显示纯色；浅深主题及关闭透明效果/高对比度下回退正常；小窗口打开后外部点击仍关闭，能力刷新不抢焦点。
 - [ ] 大窗口与右键菜单同时打开，确认原有设置状态同步；Explorer 重启后托盘恢复。
 - [ ] 管理员运行验证 GPU 双显/集显互切、AC/DC 智能切换、外接独显屏保护、拔屏重评估和重启后 Auto 恢复。
 - [ ] 验证 HPD 各开关和快/中/慢回读；缺少 SmartSense 服务时隐藏。
