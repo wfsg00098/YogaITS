@@ -38,7 +38,9 @@ internal static class FactoryRecoveryService
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             http.DefaultRequestHeaders.TryAddWithoutValidation("ClientID", ClientId);
             http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "PC_WIN11");
-            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            // The metadata can be JSON or a URL string; the same client also
+            // downloads ZIP data. A JSON-only Accept can cause HTTP 406.
+            http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
 
             using var meta = await http.GetAsync(Endpoint + Uri.EscapeDataString(requestId));
             string body = await meta.Content.ReadAsStringAsync();

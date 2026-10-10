@@ -4,6 +4,30 @@ using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Hpd;
 
+if (args.Contains("--check-calibration-http"))
+{
+    var machine = MachineIdentityService.Read();
+    string requestId = "1S" + machine.MachineType + machine.SerialNumber;
+    foreach (string accept in new[] { "application/json", "*/*", "" })
+    {
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        http.DefaultRequestHeaders.TryAddWithoutValidation("ClientID", "Hr0Z3kZYsCync4KzAjLqqg==");
+        http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "PC_WIN11");
+        if (accept.Length > 0) http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", accept);
+        using var response = await http.GetAsync("https://supportapi.lenovo.com/v3/ColorCalibration/GetFileBySn?sn=" + Uri.EscapeDataString(requestId));
+        string body = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"Calibration metadata: Accept={accept}, HTTP={(int)response.StatusCode}, type={response.Content.Headers.ContentType}, bytes={body.Length}");
+        if (!response.IsSuccessStatusCode)
+        {
+            string masked = body.Replace(requestId, "<masked>", StringComparison.OrdinalIgnoreCase)
+                .Replace(machine.SerialNumber, "<masked>", StringComparison.OrdinalIgnoreCase);
+            masked = System.Text.RegularExpressions.Regex.Replace(masked, @"https?://[^\s""<>]+", "<url>");
+            Console.WriteLine(masked[..Math.Min(masked.Length, 240)]);
+        }
+    }
+    return;
+}
+
 // Only RefreshAsync is invoked. In particular, GPU InitializeAsync is deliberately
 // excluded because a stored Auto preference would apply hardware policy on startup.
 await using var gpu = new LenovoGpuWorkingModeService();
@@ -19,5 +43,8 @@ if (!gpu.Snapshot.Supported && gpu.Snapshot.Message.Length > 0)
     Console.WriteLine("GPU read diagnostic: " + gpu.Snapshot.Message);
 Console.WriteLine($"HPD: wakeSleep={hpd.Snapshot.Features.WakeSleepSection}, cameraAssist={hpd.Snapshot.Features.CameraAssist}, videoPause={hpd.Snapshot.Features.AutoVideoPause}");
 Console.WriteLine($"Color: supported={color.Snapshot.Supported}, blocked={color.Snapshot.Blocked}, factoryValid={color.Snapshot.FactoryValid}, modeCount={color.Snapshot.Modes.Count}");
+var internalDisplay = DisplayService.FindInternal(DisplayService.EnumerateActive());
+if (internalDisplay is not null)
+    Console.WriteLine($"Color flags: error={internalDisplay.AdvancedColorError}, raw=0x{internalDisplay.AdvancedColor?.value:X8}, mode={internalDisplay.AdvancedColor?.activeColorMode}, HDR={internalDisplay.HdrEnabled}, ACM={internalDisplay.AcmEnabled}");
 Console.WriteLine($"Audio: uplink={audio.Snapshot.Uplink}, downlink={audio.Snapshot.Downlink}, special={audio.Snapshot.Special}, voiceId={audio.Snapshot.VoiceId}, registered={audio.Snapshot.VoiceIdRegistered}");
 Console.WriteLine("No setters, recording, downloads, or system configuration writes were invoked.");
