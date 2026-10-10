@@ -40,6 +40,7 @@ public sealed class TrayMenuWindow : Window
 
     private FrameworkElement? _contentRoot;
     private bool _closed;
+    private bool _shown;
 
     private ItsMode? _currentItsMode;
     private BatteryChargeMode? _currentChargeMode;
@@ -118,6 +119,8 @@ public sealed class TrayMenuWindow : Window
             flipToStartSnapshot,
             nvidiaGpuSupported);
         ConfigureWindow();
+        SystemBackdrop = new MicaBackdrop();
+        Activated += TrayMenuWindow_Activated;
         _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
         Closed += TrayMenuWindow_Closed;
     }
@@ -131,7 +134,7 @@ public sealed class TrayMenuWindow : Window
         if (!GetCursorPos(out POINT cursor))
         {
             AppWindow.Resize(new SizeInt32(width, height));
-            ShowWithoutActivation();
+            ShowMenu();
             return;
         }
 
@@ -158,7 +161,7 @@ public sealed class TrayMenuWindow : Window
             y = workArea.Y;
 
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
-        ShowWithoutActivation();
+        ShowMenu();
     }
 
     public void ShowControlCenter()
@@ -187,12 +190,25 @@ public sealed class TrayMenuWindow : Window
         return 548;
     }
 
-    private void ShowWithoutActivation()
+    private void ShowMenu()
     {
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        AppWindow.Show(false);
+        if (!_shown)
+        {
+            _shown = true;
+            Activate();
+        }
         ApplyDwmAppearance(hwnd);
         InstallOutsideClickHook();
+    }
+
+    private void TrayMenuWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        if (_contentRoot is not Grid root || _closed) return;
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
+            root.ClearValue(Grid.BackgroundProperty); // Theme-aware opaque fallback from the root style.
+        else
+            root.Background = TransparentBrush(); // Expose native Mica; system policy still controls fallback.
     }
 
     private StackPanel? _coreStack;
@@ -207,8 +223,12 @@ public sealed class TrayMenuWindow : Window
         FlipToStartSnapshot flipToStartSnapshot,
         bool nvidiaGpuSupported)
     {
-        var outer = new Grid { Padding = new Thickness(_fullWindow ? 20 : 9, _fullWindow ? 16 : 8, _fullWindow ? 20 : 9, 8) };
-        _coreStack = new StackPanel { Spacing = _fullWindow ? 12 : 2 };
+        var outer = new Grid
+        {
+            Style = GetSettingsStyle("SettingsWindowRootStyle"),
+            Padding = new Thickness(_fullWindow ? 20 : 9, _fullWindow ? 16 : 8, _fullWindow ? 20 : 9, 8)
+        };
+        _coreStack = new StackPanel { Spacing = _fullWindow ? 12 : 8 };
         PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
             batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
@@ -257,18 +277,12 @@ public sealed class TrayMenuWindow : Window
             var section = new StackPanel { Spacing = 2 };
             section.Children.Add(CreateSectionHeader(title));
             section.Children.Add(CreateTileGrid(items, columns, height));
-            if (_fullWindow)
-                stack.Children.Add(new Border
-                {
-                    Child = section, Padding = new Thickness(10),
-                    CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
-                    BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128))
-                });
-            else
+            stack.Children.Add(new Border
             {
-                stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
-                stack.Children.Add(section);
-            }
+                Style = GetSettingsStyle("SettingsCardStyle"),
+                Child = section,
+                Padding = new Thickness(_fullWindow ? 12 : 4)
+            });
         }
 
         if (its.Supported)
@@ -381,7 +395,7 @@ public sealed class TrayMenuWindow : Window
             Padding = new Thickness(8, 2, 8, 2),
             CornerRadius = new CornerRadius(8),
             MaxWidth = 132,
-            Background = new SolidColorBrush(Color.FromArgb(26, 255, 255, 255))
+            Style = GetSettingsStyle("SettingsCardStyle")
         };
 
         pill.Child = new TextBlock
@@ -539,9 +553,6 @@ public sealed class TrayMenuWindow : Window
         bool isAction,
         double minHeight)
     {
-        Color accent = GetSystemAccentColor();
-        Color unselectedBorder = Color.FromArgb(110, 170, 170, 170);
-
         var label = new TextBlock
         {
             Text = text,
@@ -567,12 +578,7 @@ public sealed class TrayMenuWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(6, 8, 6, 8),
             MinHeight = minHeight,
-            CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(selected ? 1.5 : 1),
-            BorderBrush = new SolidColorBrush(selected ? accent : unselectedBorder),
-            Background = new SolidColorBrush(selected
-                ? Color.FromArgb(18, accent.R, accent.G, accent.B)
-                : Color.FromArgb(0, 0, 0, 0)),
+            Style = GetSettingsStyle(selected ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle"),
             Margin = new Thickness(0),
             Tag = new OptionTileState
             {
@@ -797,21 +803,15 @@ public sealed class TrayMenuWindow : Window
         if (button.Tag is not OptionTileState state)
             return;
 
-        Color accent = GetSystemAccentColor();
-        Color unselectedBorder = Color.FromArgb(110, 170, 170, 170);
         bool accentBorder = selected || pending;
-
-        button.BorderBrush = new SolidColorBrush(
-            accentBorder ? accent : unselectedBorder);
-        button.BorderThickness = new Thickness(accentBorder ? 1.5 : 1);
-        button.Background = new SolidColorBrush(selected
-            ? Color.FromArgb(18, accent.R, accent.G, accent.B)
-            : Color.FromArgb(0, 0, 0, 0));
+        button.Style = GetSettingsStyle(accentBorder ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle");
 
         state.Label.FontWeight = selected
             ? Microsoft.UI.Text.FontWeights.SemiBold
             : Microsoft.UI.Text.FontWeights.Normal;
     }
+
+    internal static Style GetSettingsStyle(string key) => (Style)Application.Current.Resources[key];
 
     private void ConfigureWindow()
     {
@@ -843,20 +843,18 @@ public sealed class TrayMenuWindow : Window
 
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        // Owned + TOOLWINDOW + NOACTIVATE means:
+        // Owned + TOOLWINDOW means:
         // - no taskbar button
         // - no Alt+Tab entry
-        // - opening/clicking it does not steal foreground activation from
-        //   Explorer's hidden-icons tray panel.
+        // The menu now accepts focus so native Mica follows its real activation.
         if (_ownerHwnd != 0)
             _ = SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, _ownerHwnd);
 
         nint exStyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
         long newExStyle =
             (exStyle.ToInt64() |
-             WS_EX_TOOLWINDOW |
-             WS_EX_NOACTIVATE) &
-            ~WS_EX_APPWINDOW;
+             WS_EX_TOOLWINDOW) &
+            ~(WS_EX_APPWINDOW | WS_EX_NOACTIVATE);
 
         _ = SetWindowLongPtr(
             hwnd,
@@ -985,6 +983,8 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+        Activated -= TrayMenuWindow_Activated;
+        SystemBackdrop = null;
         _appearanceSettings.ColorValuesChanged -= AppearanceSettings_ColorValuesChanged;
         UninstallOutsideClickHook();
     }
@@ -1018,16 +1018,7 @@ public sealed class TrayMenuWindow : Window
 
     private static void ApplyDwmAppearance(nint hwnd)
     {
-        // Ask Windows itself for the native transient-window backdrop recipe.
-        // On Windows 11 this maps to the system Desktop Acrylic used for
-        // transient/light-dismiss surfaces.
-        int backdropType = DWMSBT_TRANSIENTWINDOW;
-        _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_SYSTEMBACKDROP_TYPE,
-            ref backdropType,
-            sizeof(int));
-
+        // Mica is owned by Window.SystemBackdrop, not a competing DWM recipe.
         int preference = 2; // DWMWCP_ROUND
         _ = DwmSetWindowAttribute(
             hwnd,
@@ -1114,10 +1105,6 @@ public sealed class TrayMenuWindow : Window
     private const uint MONITOR_DEFAULTTONEAREST = 2;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWA_BORDER_COLOR = 34;
-    private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
-
-    // DWM_SYSTEMBACKDROP_TYPE::DWMSBT_TRANSIENTWINDOW
-    private const int DWMSBT_TRANSIENTWINDOW = 3;
 
     // DWM_COLOR_NONE = suppress the system-drawn border completely.
     private const uint DWMWA_COLOR_NONE = 0xFFFFFFFE;
