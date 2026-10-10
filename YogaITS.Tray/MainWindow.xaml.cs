@@ -11,6 +11,7 @@ public sealed partial class MainWindow : Window
 
     private NativeTrayIcon? _trayIcon;
     private TrayMenuWindow? _trayMenuWindow;
+    private TrayMenuWindow? _controlCenterWindow;
 
     private nint _mainHwnd;
     private DateTime _lastTrayHoverRefresh = DateTime.MinValue;
@@ -43,7 +44,7 @@ public sealed partial class MainWindow : Window
             BuildTooltip(state));
 
         _trayIcon.MouseMove += TrayIcon_MouseMove;
-        _trayIcon.LeftClick += TrayIcon_Click;
+        _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ShowControlCenter);
         _trayIcon.RightClick += TrayIcon_Click;
 
         // Keep the HWND/message pump alive, but never present this host
@@ -81,6 +82,20 @@ public sealed partial class MainWindow : Window
     }
 
     private void ShowTrayMenu()
+        => ShowSettingsWindow(false);
+
+    private void ShowControlCenter()
+    {
+        if (_controlCenterWindow is not null)
+        {
+            _controlCenterWindow.Activate();
+            _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow);
+            return;
+        }
+        ShowSettingsWindow(true);
+    }
+
+    private void ShowSettingsWindow(bool fullWindow)
     {
         // Critical path: cache only. No WMI, EnergyDrv, registry/service state
         // probing, or schtasks query is performed before the window is shown.
@@ -91,7 +106,8 @@ public sealed partial class MainWindow : Window
         {
             try
             {
-                _trayMenuWindow?.Close();
+                if (!fullWindow)
+                    _trayMenuWindow?.Close();
             }
             catch
             {
@@ -116,17 +132,26 @@ public sealed partial class MainWindow : Window
                 setStartup: SetStartupAsync,
                 showInfo: (title, message) =>
                     ShowChild(new InfoWindow(title, message)),
-                exitApp: ExitApplication);
+                exitApp: ExitApplication,
+                fullWindow: fullWindow);
 
-            _trayMenuWindow = menu;
+            if (fullWindow)
+                _controlCenterWindow = menu;
+            else
+                _trayMenuWindow = menu;
 
             menu.Closed += (_, _) =>
             {
                 if (ReferenceEquals(_trayMenuWindow, menu))
                     _trayMenuWindow = null;
+                if (ReferenceEquals(_controlCenterWindow, menu))
+                    _controlCenterWindow = null;
             };
 
-            menu.ShowAtCursor();
+            if (fullWindow)
+                menu.ShowControlCenter();
+            else
+                menu.ShowAtCursor();
 
             // Once the cached UI is already visible, read the dynamic states as
             // one background refresh batch. When complete, apply them to the
@@ -152,8 +177,8 @@ public sealed partial class MainWindow : Window
             {
                 _trayIcon?.SetTooltip(BuildTooltip(refreshed));
 
-                if (ReferenceEquals(_trayMenuWindow, menu))
-                    menu.ApplyRefreshedState(refreshed);
+                _trayMenuWindow?.ApplyRefreshedState(refreshed);
+                _controlCenterWindow?.ApplyRefreshedState(refreshed);
             });
         }
         catch
@@ -371,6 +396,7 @@ public sealed partial class MainWindow : Window
         try
         {
             _trayMenuWindow?.Close();
+            _controlCenterWindow?.Close();
             _trayIcon?.Dispose();
             _trayIcon = null;
         }
