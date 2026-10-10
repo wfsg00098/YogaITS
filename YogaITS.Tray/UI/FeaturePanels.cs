@@ -35,8 +35,8 @@ internal sealed class FeaturePanels : IDisposable
         host.Children.Add(_wakeCard.View);
         host.Children.Add(_videoCard.View);
         host.Children.Add(_colorCard.View);
-        host.Children.Add(_micCard.View);
         host.Children.Add(_speakerCard.View);
+        host.Children.Add(_micCard.View);
         host.Children.Add(_voiceCard.View);
         _cancelVoice.Click += (_, _) => _audio.CancelRegistration();
         _voiceCard.Footer.Children.Add(_cancelVoice);
@@ -90,7 +90,8 @@ internal sealed class FeaturePanels : IDisposable
                 buttons.Add(_micCard.Option("单人通话 + 仅听机主", current.MicrophoneMode == "voiceid",
                     () => _audio.SetMicrophoneAsync("voiceid"), current.VoiceIdRegistered && !_audio.IsRegistering));
             _micCard.Options(body, buttons.ToArray());
-            _micCard.SetStatus(current.CaptureName);
+            _micCard.Note(body, "降低麦克风采集的环境噪声，按通话人数选择单人或多人模式。人声定位与仅听机主仅在设备支持时显示；仅听机主需要先注册声纹。");
+            _micCard.SetStatus($"当前麦克风设备：{current.CaptureName}");
         });
         _speakerCard.Update(audio.Downlink, body =>
         {
@@ -98,7 +99,8 @@ internal sealed class FeaturePanels : IDisposable
             _speakerCard.Options(body,
                 _speakerCard.Option("开启", current.SpeakerMode == "enable", () => _audio.SetSpeakerAsync(true), !_audio.IsRegistering),
                 _speakerCard.Option("关闭", current.SpeakerMode == "disable", () => _audio.SetSpeakerAsync(false), !_audio.IsRegistering));
-            _speakerCard.SetStatus(current.RenderName);
+            _speakerCard.Note(body, "降低播放语音中的背景噪声，作用于当前默认输出设备。实际降噪效果由设备与音频服务支持情况决定。");
+            _speakerCard.SetStatus($"当前扬声器设备：{current.RenderName}");
         });
         _voiceCard.Update(audio.VoiceId, body =>
         {
@@ -189,6 +191,7 @@ internal sealed class FeaturePanels : IDisposable
             if (current.Features.CameraAssist)
                 _wakeCard.Options(body, _wakeCard.Option("人员辅助判定", state.CameraAssist,
                     () => _hpd.SetAsync(HpdSetting.CameraAssist, state.CameraAssist ? 0 : 1), state.LeaveEnabled));
+            _wakeCard.Note(body, "检测人员靠近时自动唤醒，离开后按所选速度自动睡眠。人员辅助判定仅在本机支持时显示；这些功能由 SmartSense 服务执行。");
             _wakeCard.SetStatus("");
         });
         _videoCard.Update(snapshot.Features.AutoVideoPause, body =>
@@ -196,7 +199,7 @@ internal sealed class FeaturePanels : IDisposable
             if (_hpd.Snapshot.State is not { } state) return;
             _videoCard.Options(body, _videoCard.Option("人走暂停 / 人回播放", state.VideoPause,
                 () => _hpd.SetAsync(HpdSetting.VideoPause, state.VideoPause ? 0 : 1)));
-            _videoCard.Note(body, "由 SmartSense 服务执行，仅支持部分播放器及版本。");
+            _videoCard.Note(body, "检测到人员离开时暂停播放，返回时恢复播放。由 SmartSense 服务执行，仅支持部分播放器及版本。");
             _videoCard.SetStatus("");
         });
     }

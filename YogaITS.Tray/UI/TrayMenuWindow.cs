@@ -273,7 +273,8 @@ public sealed class TrayMenuWindow : Window
         header.Children.Add(modelPill);
         stack.Children.Add(header);
 
-        void Section(string title, IReadOnlyList<UIElement> items, int columns, double height)
+        void Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
+            string? description = null, bool divider = true)
         {
             if (_fullWindow)
             {
@@ -283,12 +284,16 @@ public sealed class TrayMenuWindow : Window
             var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
             section.Children.Add(CreateTileGrid(items, columns, height));
-            stack.Children.Add(new Border
+            if (_fullWindow && description is not null)
+                section.Children.Add(CreateDescription(description));
+            var container = new Border
             {
                 Style = GetSettingsStyle("SettingsCardStyle"),
                 Child = section,
                 Padding = new Thickness(_fullWindow ? 12 : 4)
-            });
+            };
+            if (!divider) container.BorderThickness = new Thickness(0);
+            stack.Children.Add(container);
         }
 
         if (its.Supported)
@@ -301,7 +306,8 @@ public sealed class TrayMenuWindow : Window
             };
             if (its.GeekModeSupported)
                 items.Add(CreateModeTile(its.FourthModeDisplayName, mode.Mode == ItsMode.Creator, ItsMode.Creator));
-            Section("性能选项", items, items.Count, 54);
+            Section("性能选项", items, items.Count, 54,
+                "智能模式平衡性能与能耗，安静模式侧重降低噪声，性能模式侧重释放性能。实际功耗、风扇策略及可用模式由本机驱动决定。");
         }
 
         if (battery.Supported)
@@ -317,7 +323,8 @@ public sealed class TrayMenuWindow : Window
                 _nightChargeVisual = CreateToggleTile("夜间优化", night.Enabled, NightChargeButton_Click, "夜间充电优化");
                 items.Add(_nightChargeVisual.Button);
             }
-            Section("充电选项", items, items.Count, 56);
+            Section("充电选项", items, items.Count, 56,
+                "养护模式限制充电上限，适合长期插电使用；常规模式正常充电，快充模式优先充电速度。夜间优化由本机服务管理夜间充电策略。");
         }
 
         if (nvidia)
@@ -325,7 +332,8 @@ public sealed class TrayMenuWindow : Window
             {
                 CreateActionTile("结束独显占用进程", _killGpuApps),
                 CreateActionTile("重启独显设备", _restartGpu)
-            }, 2, 62);
+            }, 2, 62,
+                "结束占用独显的可处理进程，或重启独显设备以尝试恢复休眠。结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁；实际休眠还取决于外接显示器及其他占用。");
 
         if (_fullWindow)
         {
@@ -338,7 +346,7 @@ public sealed class TrayMenuWindow : Window
             }
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
             items.Add(_startupVisual.Button);
-            Section("杂项", items, items.Count, 56);
+            Section("杂项", items, items.Count, 56, divider: false);
         }
         stack.Children.Add(CreateExitButton());
     }
@@ -439,6 +447,11 @@ public sealed class TrayMenuWindow : Window
     {
         Text = title,
         Style = GetSettingsStyle("SettingsSectionTitleStyle")
+    };
+
+    internal static TextBlock CreateDescription(string text) => new()
+    {
+        Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7
     };
 
     private Button CreateModeTile(
