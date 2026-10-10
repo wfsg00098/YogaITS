@@ -13,6 +13,7 @@ namespace YogaITS.Tray.UI;
 public sealed class TrayMenuWindow : Window
 {
     private const int BaseWidthDip = 244;
+    internal const double OptionTileHeightDip = 48;
     private readonly bool _fullWindow;
     private readonly Windows.UI.ViewManagement.UISettings _appearanceSettings = new();
     internal StackPanel AdditionalSections { get; } = new() { Spacing = 12 };
@@ -274,8 +275,13 @@ public sealed class TrayMenuWindow : Window
 
         void Section(string title, IReadOnlyList<UIElement> items, int columns, double height)
         {
-            var section = new StackPanel { Spacing = 2 };
-            section.Children.Add(CreateSectionHeader(title));
+            if (_fullWindow)
+            {
+                height = OptionTileHeightDip;
+                foreach (var button in items.OfType<Button>()) button.MinHeight = height;
+            }
+            var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
+            section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
             section.Children.Add(CreateTileGrid(items, columns, height));
             stack.Children.Add(new Border
             {
@@ -428,6 +434,12 @@ public sealed class TrayMenuWindow : Window
 
         return header;
     }
+
+    internal static TextBlock CreateGroupTitle(string title) => new()
+    {
+        Text = title,
+        Style = GetSettingsStyle("SettingsSectionTitleStyle")
+    };
 
     private Button CreateModeTile(
         string text,
@@ -640,7 +652,7 @@ public sealed class TrayMenuWindow : Window
 
     private Button CreateExitButton()
     {
-        var button = new Button
+        var button = _fullWindow ? CreateOptionTile("退出", false, true, OptionTileHeightDip) : new Button
         {
             Content = new TextBlock
             {
@@ -655,6 +667,8 @@ public sealed class TrayMenuWindow : Window
             CornerRadius = new CornerRadius(6),
             Background = TransparentBrush()
         };
+
+        if (_fullWindow) button.Margin = new Thickness(20, 0, 20, 0);
 
         button.Click += (_, _) =>
         {
