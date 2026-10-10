@@ -17,6 +17,7 @@
 | GPU 智能模式 | 电源通知注册成功；AC 目标双显，DC 且独显显示路径未占用时目标集显；电源未知时不切换 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份及 LCD 亮度通道可读取；Factory 缺失为可恢复状态 |
 | 色域写入 | HDR/ACM 关闭、activeColorMode 为 SDR、Advanced Color 可读取；ICC 的 CxF 必须匹配本机序列号、面板及 Machine Type |
+| HDR / ACM 开关 | 对应 supported 或 userEnabled 为真时显示；策略限制时禁止开启；HDR 开启时禁止开启 ACM，仍允许关闭已开启项 |
 | 唤醒/睡眠 | GetAll rc=0 且 unAwareAbility 非零 |
 | 人员辅助判定 | 唤醒/睡眠支持、sensor_type != 4、capability & 0x40 非零 |
 | 播放/暂停 | GetAll rc=0，且 sensor_type 为 3/4 或 unAwareAbility 非零 |
@@ -30,6 +31,7 @@
 
 - GPU：直接对枚举获得的 WMI 实例 InvokeMethod；不读取 ReturnValue。设置后等待并回读。Auto 的 DC 过渡最多重试 5 次、间隔 5 秒；AC/拓扑事件及手动选择取消旧重试。
 - 色域：Factory 源不修改；保留 managed ICC 注册刷新、字节验证、association、STANDARD 回读、WCS、可选亮度和最后的 C1 DWM 刷新。模式来自当前 STANDARD，不自动恢复旧色域。
+- HDR / ACM：通过 DisplayConfigSetDeviceInfo 的 SET_HDR_STATE / SET_WCG_STATE 设置当前内屏 target；串行写入并有限回读确认。结构与标志依据 [Windows SDK 定义](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)，关闭后只刷新能力，不应用 ICC。
 - 在线恢复：只在用户点击时下载；完整序列号仅用于 Lenovo 请求及本机校验。下载和 staged copy 验证通过后替换缓存。
 - HPD：保留 ContextCreate/ContextClose 生命周期；设置后检查 rc 并回读；不暴露距离或 YogaMode。
 - 音频：设备变化只刷新能力和状态，不重写偏好模式。Voice ID 删除二次确认。注册按 private → 48 kHz/20 秒 FLOAT32 WAV → SetSpeakerID(file) → registered → voiceid → data[192] → 最终复核。
@@ -39,9 +41,11 @@
 
 - Windows .NET SDK 10.0.401 下各功能阶段编译通过。
 - Release clean publish 通过，PRI 已验证；发布目录 39 个文件，约 39.47 MB。
-- PolicyChecks：72 项通过，覆盖 GPU 电源/外接路径矩阵、HPD 能力组合、HDR/ACM 阻断、ICC 身份/亮度、声纹校验、读写串行化及关闭行为。未操作硬件。
+- PolicyChecks：92 项通过，覆盖 GPU 电源/外接路径矩阵、HPD 能力组合、HDR/ACM 阻断与支持位、24 字节设置结构及 target 寻址、ICC 身份/亮度、声纹校验、读写串行化及关闭行为。未操作硬件。
 - ReadOnlyProbe（非管理员）：HPD 三组能力为 true；音频 uplink/downlink/special/voiceId 为 true、registered 为 false；色域检测可用、7 个有效模式、当前 blocked=true。
 - 同次 GPU 只读探测为不可用，具体错误为“拒绝访问”；管理员路径尚未实机验收，不能据此判定硬件不支持。
+- 色域禁用原因已确认：Advanced Color raw=0x73、mode=2，HDR=true、ACM=false；工厂文件和七个模式验证正常。
+- 经明确授权，只读请求 Lenovo 校色元数据接口：Accept 为 application/json、*/*、缺省时均 HTTP 200，未复现元数据阶段 406。下载共用客户端改为 Accept: */*，避免 ZIP 被 JSON-only 请求头限制；ZIP 下载与完整在线恢复未复测，不能认定 406 已解决。
 
 ## 待实机验收
 
@@ -49,7 +53,7 @@
 - [ ] 大窗口与右键菜单同时打开，确认原有设置状态同步；Explorer 重启后托盘恢复。
 - [ ] 管理员运行验证 GPU 双显/集显互切、AC/DC 智能切换、外接独显屏保护、拔屏重评估和重启后 Auto 恢复。
 - [ ] 验证 HPD 各开关和快/中/慢回读；缺少 SmartSense 服务时隐藏。
-- [ ] 关闭 HDR/ACM 后刷新，反复切换色域；验证亮度开关、内屏拓扑变化、在线恢复成功与身份不匹配阻断。
+- [ ] 在色域卡片切换 HDR/ACM，确认回读状态与禁用原因；关闭后反复切换色域；验证亮度开关、内屏拓扑变化、在线恢复成功与身份不匹配阻断。
 - [ ] 验证麦克风/扬声器各模式、耳机插拔后能力变化；设备切换只刷新、不覆盖服务 preferred mode。
 - [ ] 验证 20 秒声纹注册、取消、录制途中设备变化、重新注册及删除；private 下读取不误报声纹丢失。
 - [ ] 缺少相关驱动/服务的机器隐藏相应功能，恢复服务后手动刷新重新检测。
