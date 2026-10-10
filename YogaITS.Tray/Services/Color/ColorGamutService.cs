@@ -3,7 +3,8 @@ namespace YogaITS.Tray.Services.Color;
 internal sealed record ColorMode(string Name, int? Brightness);
 internal sealed record ColorGamutSnapshot(
     bool Supported, bool Blocked, bool FactoryValid, bool ApplyBrightness,
-    string CurrentMode, IReadOnlyList<ColorMode> Modes, string Message)
+    string CurrentMode, IReadOnlyList<ColorMode> Modes, string Message,
+    NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2? AdvancedColor = null)
 {
     public static ColorGamutSnapshot Unavailable { get; } = new(false, true, false, true, "", [], "");
 }
@@ -35,10 +36,10 @@ internal sealed class ColorGamutService : SerializedFeatureService
                 return new ColorMode(profile.Mode, brightness.Ok ? brightness.Brightness : null);
             }).ToArray() : [];
             string message = _display.IsBlocked
-                ? "HDR / ACM 已开启或高级颜色状态不可读取。请关闭 HDR / ACM 后刷新；不会自动恢复之前的色域。"
+                ? _display.ColorBlockReason
                 : !_factory.Ok ? "本机校色文件缺失或未通过验证，请在线恢复校色文件。" : "";
             Snapshot = new(true, _display.IsBlocked, _factory.Ok, _applyBrightness,
-                ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display)), modes, message);
+                ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display)), modes, message, _display.AdvancedColor);
         }
         catch (Exception ex)
         {
@@ -48,6 +49,38 @@ internal sealed class ColorGamutService : SerializedFeatureService
     }
 
     public Task RefreshAsync() => RunAsync(() => { Read(); return Task.CompletedTask; });
+
+    public Task SetAdvancedColorAsync(bool hdr, bool enabled) => RunAsync(async () =>
+    {
+        Read();
+        if (_display is null || _display.AdvancedColor is not { } state)
+            throw new InvalidOperationException("当前无法读取内屏高级颜色能力，请刷新后重试。");
+        bool supported = hdr ? state.HighDynamicRangeSupported : state.WideColorSupported;
+        if (enabled && (!supported || state.LimitedByPolicy))
+            throw new InvalidOperationException("系统当前不允许开启该高级颜色功能。");
+        if (!hdr && enabled && state.HighDynamicRangeUserEnabled)
+            throw new InvalidOperationException("请先关闭 HDR，再开启 ACM。");
+        var request = DisplayService.CreateColorStateRequest(_display, hdr, enabled);
+        bool verified = false;
+        try
+        {
+            int rc = NativeMethods.DisplayConfigSetColorState(ref request);
+            if (rc != 0)
+                throw new InvalidOperationException($"{(hdr ? "HDR" : "ACM")} 设置失败：{new System.ComponentModel.Win32Exception(rc).Message}（{rc}）。");
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                await Task.Delay(250).ConfigureAwait(false);
+                var current = DisplayService.FindInternal(DisplayService.EnumerateActive());
+                if (current?.AdvancedColor is { } actual && current.HardwareId == _display.HardwareId &&
+                    (hdr ? actual.HighDynamicRangeUserEnabled : actual.WideColorUserEnabled) == enabled)
+                { verified = true; break; }
+            }
+        }
+        finally { Read(); }
+        if (!verified)
+            throw new InvalidOperationException("设置已发送，但系统尚未确认目标状态，请刷新查看。");
+        // Refresh capabilities only. Turning off HDR/ACM never reapplies an old ICC.
+    });
 
     public Task SetBrightnessPreferenceAsync(bool enabled) => RunAsync(() =>
     {

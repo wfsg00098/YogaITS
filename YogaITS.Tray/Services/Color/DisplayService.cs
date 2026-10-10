@@ -23,10 +23,24 @@ internal sealed record DisplayInfo(
     public bool AcmEnabled => AdvancedColor?.WideColorUserEnabled ?? false;
     public bool IsBlocked => AdvancedColor is null || HdrEnabled || AcmEnabled ||
         AdvancedColor.Value.activeColorMode != NativeMethods.DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR;
+
+    public string ColorBlockReason => AdvancedColor is null
+        ? $"无法读取高级颜色状态（错误码 {AdvancedColorError}），暂不能切换色域。"
+        : HdrEnabled ? "HDR 已开启。关闭 HDR 后可在 SDR 状态下切换色域。"
+        : AcmEnabled ? "ACM 已开启。关闭 ACM 后可在 SDR 状态下切换色域。"
+        : AdvancedColor.Value.activeColorMode != NativeMethods.DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR
+            ? "系统仍在使用高级颜色模式，请稍后刷新。" : "";
 }
 
 internal static class DisplayService
 {
+    internal static NativeMethods.DISPLAYCONFIG_SET_COLOR_STATE CreateColorStateRequest(DisplayInfo display, bool hdr, bool enabled) => new()
+    {
+        header = Header(hdr ? NativeMethods.DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE : NativeMethods.DISPLAYCONFIG_DEVICE_INFO_SET_WCG_STATE,
+            (uint)Marshal.SizeOf<NativeMethods.DISPLAYCONFIG_SET_COLOR_STATE>(), display.AdapterId, display.TargetId),
+        value = enabled ? 1u : 0u
+    };
+
     public static IReadOnlyList<DisplayInfo> EnumerateActive()
     {
         while (true)

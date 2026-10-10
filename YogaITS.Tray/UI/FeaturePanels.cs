@@ -150,6 +150,20 @@ internal sealed class FeaturePanels : IDisposable
         _colorCard.Update(_color.Snapshot.Supported, body =>
         {
             var current = _color.Snapshot;
+            if (current.AdvancedColor is { } advanced)
+            {
+                var switches = new List<UIElement>();
+                if (advanced.HighDynamicRangeSupported || advanced.HighDynamicRangeUserEnabled)
+                    switches.Add(_colorCard.Toggle("HDR", advanced.HighDynamicRangeUserEnabled,
+                        enabled => _color.SetAdvancedColorAsync(true, enabled),
+                        advanced.HighDynamicRangeUserEnabled || !advanced.LimitedByPolicy));
+                if (advanced.WideColorSupported || advanced.WideColorUserEnabled)
+                    switches.Add(_colorCard.Toggle("ACM 自动颜色管理", advanced.WideColorUserEnabled,
+                        enabled => _color.SetAdvancedColorAsync(false, enabled),
+                        advanced.WideColorUserEnabled || (!advanced.LimitedByPolicy && !advanced.HighDynamicRangeUserEnabled)));
+                if (switches.Count > 0)
+                    body.Children.Add(TrayMenuWindow.CreateTileGrid(switches, switches.Count, 64));
+            }
             if (current.Modes.Count > 0)
                 _colorCard.Options(body, current.Modes.Select(mode =>
                     _colorCard.Option(mode.Brightness is int brightness ? $"{mode.Name} [{brightness}]" : mode.Name,
