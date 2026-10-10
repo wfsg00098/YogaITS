@@ -23,6 +23,7 @@ public sealed partial class MainWindow : Window
     private FeaturePanels? _featurePanels;
     private readonly SemaphoreSlim _coreRefreshGate = new(1, 1);
     private bool _exiting;
+    private bool _controlCenterRefreshing;
 
     private nint _mainHwnd;
     private DateTime _lastTrayHoverRefresh = DateTime.MinValue;
@@ -55,7 +56,7 @@ public sealed partial class MainWindow : Window
         {
             if (_gpu.Snapshot.Supported) _gpu.AutoEventsAvailable = _systemEvents?.EnablePowerNotifications() ?? false;
             _featurePanels?.Render();
-            _ = RefreshCoreAsync();
+            if (!_controlCenterRefreshing) _ = RefreshCoreAsync();
         });
         _ = _gpu.InitializeAsync(() => _systemEvents?.EnablePowerNotifications() ?? false);
         _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
@@ -126,11 +127,6 @@ public sealed partial class MainWindow : Window
         if (_controlCenterWindow is not null)
         {
             _controlCenterWindow.Activate();
-            _ = _gpu.RefreshAsync();
-            _ = _hpd.RefreshAsync();
-            _ = _color.RefreshAsync();
-            _ = _audio.RefreshAsync();
-            _ = RefreshCoreAsync();
             return;
         }
         ShowSettingsWindow(true);
@@ -179,11 +175,15 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio, RefreshCoreAsync);
-                _ = _gpu.RefreshAsync();
-                _ = _hpd.RefreshAsync();
-                _ = _color.RefreshAsync();
-                _ = _audio.RefreshAsync();
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio);
+                bool active = false;
+                menu.Activated += (_, args) =>
+                {
+                    bool nowActive = args.WindowActivationState != WindowActivationState.Deactivated;
+                    if (nowActive && !active && ReferenceEquals(_controlCenterWindow, menu))
+                        _ = RefreshControlCenterAsync();
+                    active = nowActive;
+                };
             }
             else
                 _trayMenuWindow = menu;
@@ -209,7 +209,7 @@ public sealed partial class MainWindow : Window
             // Once the cached UI is already visible, read the dynamic states as
             // one background refresh batch. When complete, apply them to the
             // still-open menu in place.
-            _ = RefreshCoreAsync();
+            if (!fullWindow) _ = RefreshCoreAsync();
         }
         catch (Exception ex)
         {
@@ -217,6 +217,22 @@ public sealed partial class MainWindow : Window
             // creation failure must not terminate the resident tray process.
             ShowChild(new InfoWindow("托盘菜单显示失败", ex.ToString()));
         }
+    }
+
+    private async Task RefreshControlCenterAsync()
+    {
+        if (_exiting || _controlCenterRefreshing) return;
+        _controlCenterRefreshing = true;
+        try
+        {
+            await Task.WhenAll(RefreshCoreAsync(), _gpu.RefreshAsync(), _hpd.RefreshAsync(),
+                _color.RefreshAsync(), _audio.RefreshAsync());
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Control center refresh failed: " + ex.GetType().Name);
+        }
+        finally { _controlCenterRefreshing = false; }
     }
 
     private void ApplyCoreState()
