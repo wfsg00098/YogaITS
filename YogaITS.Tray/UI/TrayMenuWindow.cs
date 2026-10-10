@@ -106,7 +106,7 @@ public sealed class TrayMenuWindow : Window
 
         Title = "Yoga控制中心";
 
-        ExtendsContentIntoTitleBar = true;
+        ExtendsContentIntoTitleBar = !_fullWindow;
 
         Content = BuildContent(
             modelName,
@@ -117,6 +117,8 @@ public sealed class TrayMenuWindow : Window
             flipToStartSnapshot,
             nvidiaGpuSupported);
         ConfigureWindow();
+        if (_fullWindow && _contentRoot is not null)
+            _contentRoot.ActualThemeChanged += (_, _) => ApplyTitleBarAppearance();
         Closed += TrayMenuWindow_Closed;
     }
 
@@ -163,7 +165,7 @@ public sealed class TrayMenuWindow : Window
     {
         uint dpi = GetWindowDpi();
         RectInt32 area = GetWorkArea(GetCursorPos(out POINT cursor) ? cursor : default);
-        int width = Math.Min(ScaleDip(880, dpi), area.Width - ScaleDip(24, dpi));
+        int width = Math.Min(ScaleDip(460, dpi), area.Width - ScaleDip(24, dpi));
         int height = Math.Min(ScaleDip(820, dpi), area.Height - ScaleDip(24, dpi));
         AppWindow.MoveAndResize(new RectInt32(
             area.X + (area.Width - width) / 2,
@@ -211,24 +213,9 @@ public sealed class TrayMenuWindow : Window
             batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
         {
-            var columns = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            columns.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            columns.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            columns.Children.Add(_coreStack);
-            Grid.SetColumn(AdditionalSections, 1);
-            columns.Children.Add(AdditionalSections);
-            outer.SizeChanged += (_, args) =>
-            {
-                bool narrow = args.NewSize.Width < 700;
-                columns.ColumnDefinitions[1].Width = narrow ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
-                Grid.SetColumn(AdditionalSections, narrow ? 0 : 1);
-                Grid.SetRow(AdditionalSections, narrow ? 1 : 0);
-            };
             outer.Children.Add(new ScrollViewer
             {
-                Content = columns,
+                Content = _coreStack,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             });
@@ -316,12 +303,13 @@ public sealed class TrayMenuWindow : Window
         if (nvidia)
             Section("独显休眠", new UIElement[]
             {
-                CreateActionTile("结束独显\n占用进程", _killGpuApps),
+                CreateActionTile("结束独显占用进程", _killGpuApps),
                 CreateActionTile("重启独显设备", _restartGpu)
             }, 2, 62);
 
         if (_fullWindow)
         {
+            stack.Children.Add(AdditionalSections);
             var items = new List<UIElement>();
             if (flip.Supported)
             {
@@ -847,6 +835,7 @@ public sealed class TrayMenuWindow : Window
             string fullIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
             if (File.Exists(fullIcon))
                 AppWindow.SetIcon(fullIcon);
+            ApplyTitleBarAppearance();
             return;
         }
         var presenter = OverlappedPresenter.CreateForToolWindow();
@@ -898,6 +887,24 @@ public sealed class TrayMenuWindow : Window
             SWP_NOZORDER |
             SWP_NOACTIVATE |
             SWP_FRAMECHANGED);
+    }
+
+    private void ApplyTitleBarAppearance()
+    {
+        if (!_fullWindow || !AppWindowTitleBar.IsCustomizationSupported()) return;
+        bool dark = _contentRoot?.ActualTheme == ElementTheme.Dark;
+        Color background = dark ? Color.FromArgb(255, 32, 32, 32) : Color.FromArgb(255, 243, 243, 243);
+        Color foreground = dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0);
+        Color inactive = dark ? Color.FromArgb(255, 153, 153, 153) : Color.FromArgb(255, 102, 102, 102);
+        var titleBar = AppWindow.TitleBar;
+        titleBar.BackgroundColor = titleBar.InactiveBackgroundColor = background;
+        titleBar.ForegroundColor = foreground;
+        titleBar.InactiveForegroundColor = inactive;
+        titleBar.ButtonBackgroundColor = titleBar.ButtonInactiveBackgroundColor = background;
+        titleBar.ButtonForegroundColor = titleBar.ButtonHoverForegroundColor = titleBar.ButtonPressedForegroundColor = foreground;
+        titleBar.ButtonInactiveForegroundColor = inactive;
+        titleBar.ButtonHoverBackgroundColor = dark ? Color.FromArgb(255, 55, 55, 55) : Color.FromArgb(255, 228, 228, 228);
+        titleBar.ButtonPressedBackgroundColor = dark ? Color.FromArgb(255, 48, 48, 48) : Color.FromArgb(255, 215, 215, 215);
     }
 
     private nint _mouseHook;

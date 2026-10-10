@@ -24,7 +24,7 @@ internal sealed class FeaturePanels : IDisposable
     private readonly Button _cancelVoice = new() { Content = "取消录制", IsEnabled = false };
     private bool _closed;
 
-    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color, ElevocService audio, Func<Task> refreshCore)
+    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color, ElevocService audio)
     {
         _gpu = gpu;
         _hpd = hpd;
@@ -40,14 +40,6 @@ internal sealed class FeaturePanels : IDisposable
         host.Children.Add(_voiceCard.View);
         _cancelVoice.Click += (_, _) => _audio.CancelRegistration();
         _voiceCard.Footer.Children.Add(_cancelVoice);
-        var refresh = new Button { Content = "刷新功能与状态" };
-        refresh.Click += async (_, _) =>
-        {
-            refresh.IsEnabled = false;
-            try { await Task.WhenAll(refreshCore(), _gpu.RefreshAsync(), _hpd.RefreshAsync(), _color.RefreshAsync(), _audio.RefreshAsync()); }
-            finally { if (!_closed) refresh.IsEnabled = true; }
-        };
-        host.Children.Add(refresh);
         Render();
     }
 
@@ -152,17 +144,17 @@ internal sealed class FeaturePanels : IDisposable
             var current = _color.Snapshot;
             if (current.AdvancedColor is { } advanced)
             {
-                var switches = new List<UIElement>();
+                var switches = new List<Button>();
                 if (advanced.HighDynamicRangeSupported || advanced.HighDynamicRangeUserEnabled)
-                    switches.Add(_colorCard.Toggle("HDR", advanced.HighDynamicRangeUserEnabled,
-                        enabled => _color.SetAdvancedColorAsync(true, enabled),
+                    switches.Add(_colorCard.Option("HDR", advanced.HighDynamicRangeUserEnabled,
+                        () => _color.SetAdvancedColorAsync(true, !advanced.HighDynamicRangeUserEnabled),
                         advanced.HighDynamicRangeUserEnabled || !advanced.LimitedByPolicy));
                 if (advanced.WideColorSupported || advanced.WideColorUserEnabled)
-                    switches.Add(_colorCard.Toggle("ACM 自动颜色管理", advanced.WideColorUserEnabled,
-                        enabled => _color.SetAdvancedColorAsync(false, enabled),
+                    switches.Add(_colorCard.Option("ACM 自动颜色管理", advanced.WideColorUserEnabled,
+                        () => _color.SetAdvancedColorAsync(false, !advanced.WideColorUserEnabled),
                         advanced.WideColorUserEnabled || (!advanced.LimitedByPolicy && !advanced.HighDynamicRangeUserEnabled)));
                 if (switches.Count > 0)
-                    body.Children.Add(TrayMenuWindow.CreateTileGrid(switches, switches.Count, 64));
+                    _colorCard.Options(body, switches.ToArray());
             }
             if (current.Modes.Count > 0)
                 _colorCard.Options(body, current.Modes.Select(mode =>
