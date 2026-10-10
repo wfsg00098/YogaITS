@@ -6,6 +6,7 @@ internal abstract class SerializedFeatureService : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
     public event Action? Changed;
+    protected void NotifyChanged() => Changed?.Invoke();
 
     protected Task RunAsync(Func<Task> operation) => Task.Run(async () =>
     {

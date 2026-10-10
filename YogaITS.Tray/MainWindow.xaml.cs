@@ -3,6 +3,7 @@ using YogaITS.Tray.Services;
 using YogaITS.Tray.UI;
 using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
+using YogaITS.Tray.Services.Elevoc;
 
 namespace YogaITS.Tray;
 
@@ -17,6 +18,7 @@ public sealed partial class MainWindow : Window
     private readonly LenovoGpuWorkingModeService _gpu = new();
     private readonly HpdService _hpd = new();
     private readonly ColorGamutService _color = new();
+    private readonly ElevocService _audio = new();
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
 
@@ -49,6 +51,8 @@ public sealed partial class MainWindow : Window
         _ = _hpd.RefreshAsync();
         _color.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _color.RefreshAsync();
+        _audio.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
+        _ = _audio.RefreshAsync();
     }
 
     private void InitializeHiddenTrayHost()
@@ -114,6 +118,7 @@ public sealed partial class MainWindow : Window
             _ = _gpu.RefreshAsync();
             _ = _hpd.RefreshAsync();
             _ = _color.RefreshAsync();
+            _ = _audio.RefreshAsync();
             _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow);
             return;
         }
@@ -163,10 +168,11 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color);
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio);
                 _ = _gpu.RefreshAsync();
                 _ = _hpd.RefreshAsync();
                 _ = _color.RefreshAsync();
+                _ = _audio.RefreshAsync();
             }
             else
                 _trayMenuWindow = menu;
@@ -179,6 +185,7 @@ public sealed partial class MainWindow : Window
                 {
                     _controlCenterWindow = null;
                     _featurePanels = null;
+                    _audio.CancelRegistration();
                 }
             };
 
@@ -417,11 +424,13 @@ public sealed partial class MainWindow : Window
     private async Task ExitApplicationAsync()
     {
         _gpu.CancelRetry();
+        _audio.CancelRegistration();
         _systemEvents?.Dispose();
         _systemEvents = null;
         await _gpu.DisposeAsync();
         await _hpd.DisposeAsync();
         await _color.DisposeAsync();
+        await _audio.DisposeAsync();
         DisposeTray();
         Close();
         Environment.Exit(0);

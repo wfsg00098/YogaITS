@@ -9,6 +9,7 @@ namespace YogaITS.Tray.UI;
 internal sealed class FeatureCard
 {
     public Border View { get; } = new();
+    public StackPanel Footer { get; } = new() { Spacing = 6 };
     private readonly StackPanel _body = new() { Spacing = 8 };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75 };
     private Action<StackPanel>? _render;
@@ -29,6 +30,7 @@ internal sealed class FeatureCard
         });
         content.Children.Add(_body);
         content.Children.Add(_status);
+        content.Children.Add(Footer);
         View.Child = content;
     }
 
