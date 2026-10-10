@@ -7,7 +7,7 @@ using Microsoft.UI.Xaml;
 
 namespace YogaITS.Tray.UI;
 
-internal sealed class FeaturePanels
+internal sealed class FeaturePanels : IDisposable
 {
     private readonly LenovoGpuWorkingModeService _gpu;
     private readonly FeatureCard _gpuCard = new("显卡工作模式");
@@ -22,8 +22,9 @@ internal sealed class FeaturePanels
     private readonly FeatureCard _speakerCard = new("扬声器降噪");
     private readonly FeatureCard _voiceCard = new("声纹 / 仅听机主");
     private readonly Button _cancelVoice = new() { Content = "取消录制", IsEnabled = false };
+    private bool _closed;
 
-    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color, ElevocService audio)
+    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color, ElevocService audio, Func<Task> refreshCore)
     {
         _gpu = gpu;
         _hpd = hpd;
@@ -43,8 +44,8 @@ internal sealed class FeaturePanels
         refresh.Click += async (_, _) =>
         {
             refresh.IsEnabled = false;
-            try { await Task.WhenAll(_gpu.RefreshAsync(), _hpd.RefreshAsync(), _color.RefreshAsync(), _audio.RefreshAsync()); }
-            finally { refresh.IsEnabled = true; }
+            try { await Task.WhenAll(refreshCore(), _gpu.RefreshAsync(), _hpd.RefreshAsync(), _color.RefreshAsync(), _audio.RefreshAsync()); }
+            finally { if (!_closed) refresh.IsEnabled = true; }
         };
         host.Children.Add(refresh);
         Render();
@@ -52,6 +53,7 @@ internal sealed class FeaturePanels
 
     public void Render()
     {
+        if (_closed) return;
         var gpu = _gpu.Snapshot;
         _gpuCard.Update(gpu.Supported, body =>
         {
@@ -60,7 +62,7 @@ internal sealed class FeaturePanels
                 _gpuCard.Option("集显模式", current.LogicalMode == GpuWorkingMode.IGPUOnly,
                     () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly), current.ExternalPath == 0),
                 _gpuCard.Option("智能模式", current.LogicalMode == GpuWorkingMode.Auto,
-                    () => _gpu.SelectAsync(GpuWorkingMode.Auto)),
+                    () => _gpu.SelectAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
                 _gpuCard.Option("双显模式", current.LogicalMode == GpuWorkingMode.Default,
                     () => _gpu.SelectAsync(GpuWorkingMode.Default)));
             _gpuCard.Note(body, "智能模式：插电时双显，使用电池时自动尝试集显。外接独显显示器使用中时保留实际状态。");
@@ -70,6 +72,13 @@ internal sealed class FeaturePanels
         RenderHpd();
         RenderColor();
         RenderAudio();
+    }
+
+    public void Dispose()
+    {
+        _closed = true;
+        foreach (var card in new[] { _gpuCard, _wakeCard, _videoCard, _colorCard, _micCard, _speakerCard, _voiceCard })
+            card.Dispose();
     }
 
     private void RenderAudio()

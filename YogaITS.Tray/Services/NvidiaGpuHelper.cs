@@ -44,7 +44,21 @@ public static class NvidiaGpuHelper
         // tray menu does not initialize NVAPI just to decide whether to show the
         // NVIDIA actions. The actions themselves still use NVAPI exactly where
         // needed.
-        return !string.IsNullOrWhiteSpace(FindNvidiaDisplayDeviceInstanceId());
+        using var searcher = new ManagementObjectSearcher(
+            "SELECT Name, PNPDeviceID FROM Win32_VideoController");
+        using var devices = searcher.Get();
+        foreach (ManagementObject device in devices)
+        {
+            using (device)
+            {
+                string name = Convert.ToString(device["Name"]) ?? "";
+                string id = Convert.ToString(device["PNPDeviceID"]) ?? "";
+                if (id.StartsWith(@"PCI\VEN_10DE", StringComparison.OrdinalIgnoreCase) ||
+                    name.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
     }
 
     public static IReadOnlyList<GpuProcessInfo> QueryActiveApplications()

@@ -6,7 +6,7 @@ using Windows.UI;
 namespace YogaITS.Tray.UI;
 
 // Feature panels use the same option tiles and accent treatment as the tray menu.
-internal sealed class FeatureCard
+internal sealed class FeatureCard : IDisposable
 {
     public Border View { get; } = new();
     public StackPanel Footer { get; } = new() { Spacing = 6 };
@@ -14,6 +14,8 @@ internal sealed class FeatureCard
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75 };
     private Action<StackPanel>? _render;
     private bool _busy;
+    private bool _visible;
+    private bool _closed;
     private string? _lastError;
 
     public FeatureCard(string title)
@@ -36,7 +38,9 @@ internal sealed class FeatureCard
 
     public void Update(bool visible, Action<StackPanel> render)
     {
+        if (_closed) return;
         _render = render;
+        _visible = visible;
         if (_busy)
             return;
         View.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
@@ -46,7 +50,16 @@ internal sealed class FeatureCard
             SetStatus(_lastError);
     }
 
-    public void SetStatus(string message) => _status.Text = message;
+    public void SetStatus(string message)
+    {
+        if (!_closed) _status.Text = message;
+    }
+
+    public void Dispose()
+    {
+        _closed = true;
+        _render = null;
+    }
 
     public Button Option(string label, bool selected, Func<Task> action, bool enabled = true)
     {
@@ -66,7 +79,7 @@ internal sealed class FeatureCard
 
     private async Task RunAsync(Func<Task> action)
     {
-        if (_busy)
+        if (_busy || _closed)
             return;
         _busy = true;
         _body.IsHitTestVisible = false;
@@ -79,15 +92,15 @@ internal sealed class FeatureCard
         finally
         {
             _busy = false;
-            _body.IsHitTestVisible = true;
-            _body.Opacity = 1;
-            if (_render is not null)
+            if (!_closed)
             {
-                _body.Children.Clear();
-                _render(_body);
+                _body.IsHitTestVisible = true;
+                _body.Opacity = 1;
+                if (_render is not null)
+                    Update(_visible, _render);
+                if (_lastError is not null)
+                    SetStatus(_lastError);
             }
-            if (_lastError is not null)
-                SetStatus(_lastError);
         }
     }
 }

@@ -21,6 +21,8 @@ public sealed partial class MainWindow : Window
     private readonly ElevocService _audio = new();
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
+    private readonly SemaphoreSlim _coreRefreshGate = new(1, 1);
+    private bool _exiting;
 
     private nint _mainHwnd;
     private DateTime _lastTrayHoverRefresh = DateTime.MinValue;
@@ -33,20 +35,29 @@ public sealed partial class MainWindow : Window
         // startup. This hidden host is never shown, so menu opening later is
         // independent of WMI / EnergyDrv / schtasks latency.
         _stateCache = AppStateCache.Initialize();
+        _stateCache.Changed += () => DispatcherQueue.TryEnqueue(ApplyCoreState);
 
         Closed += MainWindow_Closed;
         InitializeHiddenTrayHost();
-        _systemEvents = new SystemEventMonitor(_mainHwnd);
-        _systemEvents.PowerChanged += () => _ = _gpu.HandleSystemChangeAsync();
-        _systemEvents.DisplayChanged += () => _ = _gpu.HandleSystemChangeAsync();
-        _systemEvents.DisplayChanged += () => _ = _color.RefreshAsync();
+        try { _systemEvents = new SystemEventMonitor(_mainHwnd); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("System event registration failed: " + ex.Message);
+            ShowChild(new InfoWindow("系统事件监听不可用", "无法监听电源及显示变化，智能显卡模式不可用。请重新启动应用。"));
+        }
+        if (_systemEvents is not null)
+        {
+            _systemEvents.PowerChanged += () => _ = _gpu.HandleSystemChangeAsync();
+            _systemEvents.DisplayChanged += () => _ = _gpu.HandleSystemChangeAsync();
+            _systemEvents.DisplayChanged += () => _ = _color.RefreshAsync();
+        }
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
         {
-            if (_gpu.Snapshot.Supported) _systemEvents?.EnablePowerNotifications();
+            if (_gpu.Snapshot.Supported) _gpu.AutoEventsAvailable = _systemEvents?.EnablePowerNotifications() ?? false;
             _featurePanels?.Render();
-            _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow ?? _trayMenuWindow!);
+            _ = RefreshCoreAsync();
         });
-        _ = _gpu.InitializeAsync();
+        _ = _gpu.InitializeAsync(() => _systemEvents?.EnablePowerNotifications() ?? false);
         _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _hpd.RefreshAsync();
         _color.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
@@ -119,7 +130,7 @@ public sealed partial class MainWindow : Window
             _ = _hpd.RefreshAsync();
             _ = _color.RefreshAsync();
             _ = _audio.RefreshAsync();
-            _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow);
+            _ = RefreshCoreAsync();
             return;
         }
         ShowSettingsWindow(true);
@@ -168,7 +179,7 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio);
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio, RefreshCoreAsync);
                 _ = _gpu.RefreshAsync();
                 _ = _hpd.RefreshAsync();
                 _ = _color.RefreshAsync();
@@ -184,6 +195,7 @@ public sealed partial class MainWindow : Window
                 if (ReferenceEquals(_controlCenterWindow, menu))
                 {
                     _controlCenterWindow = null;
+                    _featurePanels?.Dispose();
                     _featurePanels = null;
                     _audio.CancelRegistration();
                 }
@@ -197,7 +209,7 @@ public sealed partial class MainWindow : Window
             // Once the cached UI is already visible, read the dynamic states as
             // one background refresh batch. When complete, apply them to the
             // still-open menu in place.
-            _ = RefreshOpenMenuInBackgroundAsync(menu);
+            _ = RefreshCoreAsync();
         }
         catch (Exception ex)
         {
@@ -207,26 +219,29 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RefreshOpenMenuInBackgroundAsync(TrayMenuWindow menu)
+    private void ApplyCoreState()
     {
+        AppRuntimeSnapshot state = _stateCache.Snapshot;
+        _trayIcon?.SetTooltip(BuildTooltip(state));
+        _trayMenuWindow?.ApplyRefreshedState(state);
+        _controlCenterWindow?.ApplyRefreshedState(state);
+    }
+
+    private async Task RefreshCoreAsync()
+    {
+        await _coreRefreshGate.WaitAsync();
         try
         {
-            AppRuntimeSnapshot refreshed =
-                await _stateCache.RefreshDynamicAsync().ConfigureAwait(false);
-
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _trayIcon?.SetTooltip(BuildTooltip(refreshed));
-
-                _trayMenuWindow?.ApplyRefreshedState(refreshed);
-                _controlCenterWindow?.ApplyRefreshedState(refreshed);
-            });
+            if (_exiting) return;
+            await _stateCache.RefreshDynamicAsync().ConfigureAwait(false);
+            DispatcherQueue.TryEnqueue(ApplyCoreState);
         }
         catch
         {
             // Background refresh is best-effort. The already-visible cached UI
             // remains valid and responsive if one of the probes fails.
         }
+        finally { _coreRefreshGate.Release(); }
     }
 
     private async Task RefreshItsTooltipInBackgroundAsync()
@@ -423,14 +438,18 @@ public sealed partial class MainWindow : Window
 
     private async Task ExitApplicationAsync()
     {
+        if (_exiting) return;
+        _exiting = true;
         _gpu.CancelRetry();
         _audio.CancelRegistration();
         _systemEvents?.Dispose();
         _systemEvents = null;
-        await _gpu.DisposeAsync();
-        await _hpd.DisposeAsync();
-        await _color.DisposeAsync();
-        await _audio.DisposeAsync();
+        try
+        {
+            await Task.WhenAll(_gpu.DisposeAsync().AsTask(), _hpd.DisposeAsync().AsTask(),
+                _color.DisposeAsync().AsTask(), _audio.DisposeAsync().AsTask());
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Feature cleanup: " + ex.Message); }
         DisposeTray();
         Close();
         Environment.Exit(0);
