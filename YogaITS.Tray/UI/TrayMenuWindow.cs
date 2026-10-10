@@ -119,8 +119,6 @@ public sealed class TrayMenuWindow : Window
             nvidiaGpuSupported);
         ConfigureWindow();
         _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
-        if (_fullWindow && _contentRoot is not null)
-            _contentRoot.ActualThemeChanged += (_, _) => ApplyTitleBarAppearance();
         Closed += TrayMenuWindow_Closed;
     }
 
@@ -815,17 +813,6 @@ public sealed class TrayMenuWindow : Window
             : Microsoft.UI.Text.FontWeights.Normal;
     }
 
-    private static Color GetContrastColor(Color background)
-    {
-        double luminance =
-            (0.2126 * background.R) +
-            (0.7152 * background.G) +
-            (0.0722 * background.B);
-
-        return luminance >= 150
-            ? Color.FromArgb(255, 0, 0, 0)
-            : Color.FromArgb(255, 255, 255, 255);
-    }
     private void ConfigureWindow()
     {
         if (_fullWindow)
@@ -837,7 +824,6 @@ public sealed class TrayMenuWindow : Window
             string fullIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
             if (File.Exists(fullIcon))
                 AppWindow.SetIcon(fullIcon);
-            ApplyTitleBarAppearance();
             return;
         }
         var presenter = OverlappedPresenter.CreateForToolWindow();
@@ -891,33 +877,11 @@ public sealed class TrayMenuWindow : Window
             SWP_FRAMECHANGED);
     }
 
-    private void ApplyTitleBarAppearance()
-    {
-        if (!_fullWindow || !AppWindowTitleBar.IsCustomizationSupported()) return;
-        Color background = GetSystemAccentColor();
-        Color foreground = GetContrastColor(background);
-        var titleBar = AppWindow.TitleBar;
-        titleBar.BackgroundColor = titleBar.InactiveBackgroundColor = background;
-        titleBar.ForegroundColor = foreground;
-        titleBar.InactiveForegroundColor = foreground;
-        titleBar.ButtonBackgroundColor = titleBar.ButtonInactiveBackgroundColor = background;
-        titleBar.ButtonForegroundColor = titleBar.ButtonHoverForegroundColor = titleBar.ButtonPressedForegroundColor = foreground;
-        titleBar.ButtonInactiveForegroundColor = foreground;
-        titleBar.ButtonHoverBackgroundColor = BlendColor(background, foreground, 0.12);
-        titleBar.ButtonPressedBackgroundColor = BlendColor(background, foreground, 0.20);
-    }
-
-    private static Color BlendColor(Color background, Color foreground, double amount) => Color.FromArgb(255,
-        (byte)Math.Round(background.R + (foreground.R - background.R) * amount),
-        (byte)Math.Round(background.G + (foreground.G - background.G) * amount),
-        (byte)Math.Round(background.B + (foreground.B - background.B) * amount));
-
     private void AppearanceSettings_ColorValuesChanged(Windows.UI.ViewManagement.UISettings sender, object args)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
             if (_closed) return;
-            ApplyTitleBarAppearance();
             ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
         });
     }
