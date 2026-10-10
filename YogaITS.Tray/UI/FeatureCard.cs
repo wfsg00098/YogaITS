@@ -69,6 +69,13 @@ internal sealed class FeatureCard : IDisposable
         return button;
     }
 
+    public ToggleSwitch Toggle(string label, bool selected, Func<bool, Task> action, bool enabled = true)
+    {
+        var toggle = new ToggleSwitch { Header = label, IsOn = selected, IsEnabled = enabled, OnContent = "开启", OffContent = "关闭" };
+        toggle.Toggled += async (_, _) => await RunAsync(() => action(toggle.IsOn));
+        return toggle;
+    }
+
     public void Options(StackPanel body, params Button[] buttons) =>
         body.Children.Add(TrayMenuWindow.CreateTileGrid(buttons, Math.Min(3, buttons.Length), 48));
 

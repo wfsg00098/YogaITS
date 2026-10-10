@@ -42,6 +42,21 @@ foreach (var (value, mode, blocked) in new[] { (0u, 0, false), (1u << 5, 0, true
     var advanced = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 { value = value, activeColorMode = mode };
     Check((display with { AdvancedColor = advanced }).IsBlocked == blocked, "HDR/ACM/non-SDR gate");
 }
+var supportedColor = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 { value = (1u << 4) | (1u << 6) };
+Check(supportedColor.HighDynamicRangeSupported && supportedColor.WideColorSupported, "HDR and ACM support bits");
+Check(!supportedColor.HighDynamicRangeUserEnabled && !supportedColor.WideColorUserEnabled, "Support is not enabled state");
+Check(!(display with { AdvancedColor = supportedColor }).IsBlocked, "Supported advanced color does not block SDR");
+Check(new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 { value = 1u << 3 }.LimitedByPolicy, "Advanced color policy flag");
+var targetDisplay = display with { AdapterId = new NativeMethods.LUID { LowPart = 42, HighPart = 7 }, SourceId = 3, TargetId = 9 };
+foreach (bool hdr in new[] { false, true })
+foreach (bool enabled in new[] { false, true })
+{
+    var request = DisplayService.CreateColorStateRequest(targetDisplay, hdr, enabled);
+    Check(request.header.type == (hdr ? 16 : 17), "HDR/ACM setter request type");
+    Check(request.header.size == 24, "Native color setter is 24 bytes");
+    Check(request.header.id == 9 && request.header.adapterId.LowPart == 42 && request.header.adapterId.HighPart == 7, "Setter addresses target, not source");
+    Check(request.value == (enabled ? 1u : 0u), "Setter enable bit");
+}
 
 string Voice(double[] data, int count = 192, string type = "FLOAT32") => JsonSerializer.Serialize(new
 {

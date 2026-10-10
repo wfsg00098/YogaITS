@@ -10,6 +10,8 @@ internal static class NativeMethods
     internal const uint DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME = 1;
     internal const uint DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME = 2;
     internal const uint DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2 = 15;
+    internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE = 16;
+    internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_WCG_STATE = 17;
     internal const int DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR = 0;
 
     internal const int WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER = 1;
@@ -131,7 +133,21 @@ internal static class NativeMethods
 
         public readonly bool HighDynamicRangeUserEnabled => (value & (1u << 5)) != 0;
         public readonly bool WideColorUserEnabled => (value & (1u << 7)) != 0;
+        public readonly bool HighDynamicRangeSupported => (value & (1u << 4)) != 0;
+        public readonly bool WideColorSupported => (value & (1u << 6)) != 0;
+        public readonly bool LimitedByPolicy => (value & (1u << 3)) != 0;
     }
+
+    // SET_HDR_STATE and SET_WCG_STATE have identical header + one-bit payload layouts.
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct DISPLAYCONFIG_SET_COLOR_STATE
+    {
+        public DISPLAYCONFIG_DEVICE_INFO_HEADER header;
+        public uint value;
+    }
+
+    [DllImport("user32.dll", EntryPoint = "DisplayConfigSetDeviceInfo")]
+    internal static extern int DisplayConfigSetColorState(ref DISPLAYCONFIG_SET_COLOR_STATE request);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
