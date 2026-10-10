@@ -162,7 +162,11 @@ internal sealed class CoreAudioEndpointMonitor : IDisposable
             _owner = owner;
         }
 
-        public int OnDeviceStateChanged(string deviceId, uint newState) => 0;
+        public int OnDeviceStateChanged(string deviceId, uint newState)
+        {
+            _owner.RaiseDefaultEndpointChanged();
+            return 0;
+        }
 
         public int OnDeviceAdded(string deviceId)
         {

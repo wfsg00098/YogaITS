@@ -21,13 +21,14 @@ internal sealed class SystemEventMonitor : IDisposable
             throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
     }
 
-    public void EnablePowerNotifications()
+    public bool EnablePowerNotifications()
     {
-        if (_powerNotification != 0) return;
+        if (_powerNotification != 0) return true;
         Guid guid = AcDcSource;
         _powerNotification = RegisterPowerSettingNotification(_hwnd, ref guid, 0);
         if (_powerNotification == 0)
             System.Diagnostics.Debug.WriteLine("GPU power notification registration failed.");
+        return _powerNotification != 0;
     }
 
     private nint OnMessage(nint hwnd, uint message, nint wParam, nint lParam, nuint id, nuint data)

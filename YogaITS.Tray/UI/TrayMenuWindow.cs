@@ -27,8 +27,8 @@ public sealed class TrayMenuWindow : Window
     private readonly Action<string, string> _showInfo;
     private readonly Action _exitApp;
 
-    private readonly bool _nightChargeSupported;
-    private readonly bool _flipToStartSupported;
+    private bool _nightChargeSupported;
+    private bool _flipToStartSupported;
 
     private TileVisual? _nightChargeVisual;
     private TileVisual? _flipToStartVisual;
@@ -193,6 +193,9 @@ public sealed class TrayMenuWindow : Window
         InstallOutsideClickHook();
     }
 
+    private StackPanel? _coreStack;
+    private (bool Its, bool Fourth, bool Battery, bool Night, bool Flip, bool Gpu)? _capabilities;
+
     private UIElement BuildContent(
         string modelName,
         ItsCapabilitySnapshot itsCapabilities,
@@ -202,172 +205,27 @@ public sealed class TrayMenuWindow : Window
         FlipToStartSnapshot flipToStartSnapshot,
         bool nvidiaGpuSupported)
     {
-        var outer = new Grid
-        {
-            Padding = new Thickness(9, 8, 9, 8)
-        };
-
-        var stack = new StackPanel
-        {
-            Spacing = 2
-        };
-
-        var header = new Grid
-        {
-            Margin = new Thickness(5, 2, 5, 5)
-        };
-
-        header.ColumnDefinitions.Add(new ColumnDefinition
-        {
-            Width = new GridLength(1, GridUnitType.Star)
-        });
-        header.ColumnDefinitions.Add(new ColumnDefinition
-        {
-            Width = GridLength.Auto
-        });
-
-        var title = new TextBlock
-        {
-            Text = "Yoga控制中心",
-            FontSize = 14,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        var modelPill = CreatePill(modelName);
-
-        Grid.SetColumn(modelPill, 1);
-        header.Children.Add(title);
-        header.Children.Add(modelPill);
-        stack.Children.Add(header);
-        stack.Children.Add(CreateSeparator(new Thickness(5, 2, 5, 4)));
-
-        bool hasContent = false;
-
-        if (itsCapabilities.Supported)
-        {
-            stack.Children.Add(CreateSectionHeader("性能选项"));
-
-            var performanceTiles = new List<UIElement>
-            {
-                CreateModeTile("智能模式", snapshot.Mode == ItsMode.Intelligent, ItsMode.Intelligent),
-                CreateModeTile("安静模式", snapshot.Mode == ItsMode.Cool, ItsMode.Cool),
-                CreateModeTile("性能模式", snapshot.Mode == ItsMode.Performance, ItsMode.Performance)
-            };
-
-            if (itsCapabilities.GeekModeSupported)
-            {
-                performanceTiles.Add(CreateModeTile(
-                    itsCapabilities.FourthModeDisplayName,
-                    snapshot.Mode == ItsMode.Creator,
-                    ItsMode.Creator));
-            }
-
-            stack.Children.Add(CreateTileGrid(performanceTiles, performanceTiles.Count, 54));
-            hasContent = true;
-        }
-
-        if (batterySnapshot.Supported)
-        {
-            if (hasContent)
-                stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
-
-            stack.Children.Add(CreateSectionHeader("充电选项"));
-
-            var chargeTiles = new List<UIElement>
-            {
-                CreateBatteryModeTile("养护模式", batterySnapshot.Mode == BatteryChargeMode.Conservation, BatteryChargeMode.Conservation),
-                CreateBatteryModeTile("常规模式", batterySnapshot.Mode == BatteryChargeMode.Normal, BatteryChargeMode.Normal),
-                CreateBatteryModeTile("快充模式", batterySnapshot.Mode == BatteryChargeMode.RapidCharge, BatteryChargeMode.RapidCharge)
-            };
-
-            if (nightChargeSnapshot.Supported)
-            {
-                _nightChargeVisual = CreateToggleTile(
-                    "夜间优化",
-                    _nightChargeEnabled,
-                    NightChargeButton_Click,
-                    "夜间充电优化");
-                chargeTiles.Add(_nightChargeVisual.Button);
-            }
-
-            stack.Children.Add(CreateTileGrid(chargeTiles, Math.Min(4, chargeTiles.Count), 56));
-            hasContent = true;
-        }
-
-        if (nvidiaGpuSupported)
-        {
-            if (hasContent)
-                stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
-
-            stack.Children.Add(CreateSectionHeader("独显休眠"));
-
-            var gpuTiles = new List<UIElement>
-            {
-                CreateActionTile(
-                    "结束独显\n占用进程",
-                    () =>
-                    {
-                        _killGpuApps();
-                    }),
-                CreateActionTile(
-                    "重启独显设备",
-                    () =>
-                    {
-                        _restartGpu();
-                    })
-            };
-
-            stack.Children.Add(CreateTileGrid(gpuTiles, 2, 62));
-            hasContent = true;
-        }
-
+        var outer = new Grid { Padding = new Thickness(_fullWindow ? 20 : 9, _fullWindow ? 16 : 8, _fullWindow ? 20 : 9, 8) };
+        _coreStack = new StackPanel { Spacing = _fullWindow ? 12 : 2 };
+        PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
+            batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
         {
-            if (hasContent)
-                stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
-
-            stack.Children.Add(CreateSectionHeader("杂项"));
-
-            var miscTiles = new List<UIElement>();
-
-            if (flipToStartSnapshot.Supported)
-            {
-                _flipToStartVisual = CreateToggleTile(
-                    "开盖开机",
-                    _flipToStartEnabled,
-                    FlipToStartButton_Click,
-                    "开盖开机");
-                miscTiles.Add(_flipToStartVisual.Button);
-            }
-
-            _startupVisual = CreateToggleTile(
-                "开机自启",
-                _startupEnabled,
-                StartupButton_Click,
-                "开机自启动，无 UAC");
-            miscTiles.Add(_startupVisual.Button);
-
-            stack.Children.Add(CreateTileGrid(miscTiles, Math.Min(2, miscTiles.Count), 56));
-            hasContent = true;
-        }
-
-        if (hasContent)
-            stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
-
-        stack.Children.Add(CreateExitButton());
-
-        if (_fullWindow)
-        {
-            // Both surfaces share the original controls, callbacks and visual recipe.
-            // The full window keeps the core settings beside the feature cards.
-            var columns = new Grid { ColumnSpacing = 16 };
+            var columns = new Grid { ColumnSpacing = 16, RowSpacing = 16 };
             columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             columns.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            columns.Children.Add(stack);
+            columns.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            columns.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            columns.Children.Add(_coreStack);
             Grid.SetColumn(AdditionalSections, 1);
             columns.Children.Add(AdditionalSections);
-            outer.Padding = new Thickness(20, 36, 20, 20);
+            outer.SizeChanged += (_, args) =>
+            {
+                bool narrow = args.NewSize.Width < 700;
+                columns.ColumnDefinitions[1].Width = narrow ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+                Grid.SetColumn(AdditionalSections, narrow ? 0 : 1);
+                Grid.SetRow(AdditionalSections, narrow ? 1 : 0);
+            };
             outer.Children.Add(new ScrollViewer
             {
                 Content = columns,
@@ -375,16 +233,123 @@ public sealed class TrayMenuWindow : Window
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             });
         }
-        else
-            outer.Children.Add(stack);
+        else outer.Children.Add(_coreStack);
         _contentRoot = outer;
         return outer;
+    }
+
+    private void PopulateCoreSections(
+        StackPanel stack, string modelName, ItsCapabilitySnapshot its,
+        ItsModeSnapshot mode, BatteryChargeSnapshot battery,
+        BatteryToggleSnapshot night, FlipToStartSnapshot flip, bool nvidia)
+    {
+        stack.Children.Clear();
+        _modeTiles.Clear();
+        _chargeModeTiles.Clear();
+        _nightChargeVisual = _flipToStartVisual = _startupVisual = null;
+        _nightChargeSupported = night.Supported;
+        _flipToStartSupported = flip.Supported;
+        _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia);
+
+        var header = new Grid { Margin = new Thickness(5, 2, 5, 5) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new TextBlock
+        {
+            Text = "Yoga控制中心", FontSize = _fullWindow ? 20 : 14,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        var modelPill = CreatePill(modelName);
+        Grid.SetColumn(modelPill, 1);
+        header.Children.Add(modelPill);
+        stack.Children.Add(header);
+
+        void Section(string title, IReadOnlyList<UIElement> items, int columns, double height)
+        {
+            var section = new StackPanel { Spacing = 2 };
+            section.Children.Add(CreateSectionHeader(title));
+            section.Children.Add(CreateTileGrid(items, columns, height));
+            if (_fullWindow)
+                stack.Children.Add(new Border
+                {
+                    Child = section, Padding = new Thickness(10),
+                    CornerRadius = new CornerRadius(8), BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(40, 128, 128, 128))
+                });
+            else
+            {
+                stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
+                stack.Children.Add(section);
+            }
+        }
+
+        if (its.Supported)
+        {
+            var items = new List<UIElement>
+            {
+                CreateModeTile("智能模式", mode.Mode == ItsMode.Intelligent, ItsMode.Intelligent),
+                CreateModeTile("安静模式", mode.Mode == ItsMode.Cool, ItsMode.Cool),
+                CreateModeTile("性能模式", mode.Mode == ItsMode.Performance, ItsMode.Performance)
+            };
+            if (its.GeekModeSupported)
+                items.Add(CreateModeTile(its.FourthModeDisplayName, mode.Mode == ItsMode.Creator, ItsMode.Creator));
+            Section("性能选项", items, items.Count, 54);
+        }
+
+        if (battery.Supported)
+        {
+            var items = new List<UIElement>
+            {
+                CreateBatteryModeTile("养护模式", battery.Mode == BatteryChargeMode.Conservation, BatteryChargeMode.Conservation),
+                CreateBatteryModeTile("常规模式", battery.Mode == BatteryChargeMode.Normal, BatteryChargeMode.Normal),
+                CreateBatteryModeTile("快充模式", battery.Mode == BatteryChargeMode.RapidCharge, BatteryChargeMode.RapidCharge)
+            };
+            if (night.Supported)
+            {
+                _nightChargeVisual = CreateToggleTile("夜间优化", night.Enabled, NightChargeButton_Click, "夜间充电优化");
+                items.Add(_nightChargeVisual.Button);
+            }
+            Section("充电选项", items, items.Count, 56);
+        }
+
+        if (nvidia)
+            Section("独显休眠", new UIElement[]
+            {
+                CreateActionTile("结束独显\n占用进程", _killGpuApps),
+                CreateActionTile("重启独显设备", _restartGpu)
+            }, 2, 62);
+
+        if (_fullWindow)
+        {
+            var items = new List<UIElement>();
+            if (flip.Supported)
+            {
+                _flipToStartVisual = CreateToggleTile("开盖开机", flip.Enabled, FlipToStartButton_Click, "开盖开机");
+                items.Add(_flipToStartVisual.Button);
+            }
+            _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
+            items.Add(_startupVisual.Button);
+            Section("杂项", items, items.Count, 56);
+        }
+        stack.Children.Add(CreateSeparator(new Thickness(5, 5, 5, 4)));
+        stack.Children.Add(CreateExitButton());
     }
 
     public void ApplyRefreshedState(AppRuntimeSnapshot state)
     {
         if (_closed)
             return;
+
+        var capabilities = (state.ItsCapabilities.Supported, state.ItsCapabilities.GeekModeSupported,
+            state.BatteryCharge.Supported, state.NightCharge.Supported, state.FlipToStart.Supported, state.NvidiaGpuSupported);
+        if (_capabilities != capabilities && _coreStack is not null &&
+            !_updatingItsMode && !_updatingChargeMode && !_updatingNightCharge && !_updatingFlipToStart && !_updatingStartup)
+        {
+            PopulateCoreSections(_coreStack, state.MachineInfo.DisplayModel, state.ItsCapabilities,
+                state.ItsMode, state.BatteryCharge, state.NightCharge, state.FlipToStart, state.NvidiaGpuSupported);
+            if (!_fullWindow) ShowAtCursor();
+        }
 
         if (!_updatingItsMode && state.ItsMode.Mode is ItsMode currentMode)
         {

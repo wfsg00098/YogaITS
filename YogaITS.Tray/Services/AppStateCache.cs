@@ -12,6 +12,7 @@ public sealed record AppRuntimeSnapshot(
 
 public sealed class AppStateCache
 {
+    public event Action? Changed;
     private readonly object _gate = new();
     private AppRuntimeSnapshot _snapshot;
     private long _mutationGeneration;
@@ -91,12 +92,14 @@ public sealed class AppStateCache
         Task<FlipToStartSnapshot> flipTask = Task.Run(LenovoFlipToStartHelper.Read);
 
         Task<bool> startupTask = Task.Run(StartupTaskHelper.IsEnabled);
+        Task<bool> gpuTask = Task.Run(SafeHasNvidiaDisplayDevice);
 
         await Task.WhenAll(
             itsTask,
             batteryTask,
             flipTask,
-            startupTask).ConfigureAwait(false);
+            startupTask,
+            gpuTask).ConfigureAwait(false);
 
         ItsModeSnapshot its = itsTask.Result;
         BatteryPair battery = batteryTask.Result;
@@ -114,24 +117,13 @@ public sealed class AppStateCache
                 ? its
                 : _snapshot.ItsMode;
 
-            BatteryChargeSnapshot mergedCharge = battery.Charge.Supported
-                ? battery.Charge
-                : _snapshot.BatteryCharge;
-
-            BatteryToggleSnapshot mergedNight = battery.NightCharge.Supported
-                ? battery.NightCharge
-                : _snapshot.NightCharge;
-
-            FlipToStartSnapshot mergedFlip = flip.Supported
-                ? flip
-                : _snapshot.FlipToStart;
-
             _snapshot = _snapshot with
             {
                 ItsMode = mergedIts,
-                BatteryCharge = mergedCharge,
-                NightCharge = mergedNight,
-                FlipToStart = mergedFlip,
+                BatteryCharge = battery.Charge,
+                NightCharge = battery.NightCharge,
+                FlipToStart = flip,
+                NvidiaGpuSupported = gpuTask.Result,
                 StartupEnabled = startup
             };
             return _snapshot;
@@ -210,6 +202,7 @@ public sealed class AppStateCache
             _snapshot = update(_snapshot);
             _mutationGeneration++;
         }
+        Changed?.Invoke();
     }
 
     private static BatteryPair ReadBatteryPair()

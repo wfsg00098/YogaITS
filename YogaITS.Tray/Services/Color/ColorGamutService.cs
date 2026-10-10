@@ -62,10 +62,11 @@ internal sealed class ColorGamutService : SerializedFeatureService
         Read();
         if (!Snapshot.Supported || _machine is null || _display is null)
             throw new InvalidOperationException("无法确定本机和内屏身份，不能恢复校色文件。");
-        var result = await FactoryRecoveryService.RecoverAsync(_machine, _display).ConfigureAwait(false);
+        var machine = _machine;
+        var result = await FactoryRecoveryService.RecoverAsync(machine, _display).ConfigureAwait(false);
         Read();
         if (!result.Ok)
-            throw new InvalidOperationException(result.Message.Replace(_machine.SerialNumber, "<masked>", StringComparison.OrdinalIgnoreCase));
+            throw new InvalidOperationException(result.Message.Replace(machine.SerialNumber, "<masked>", StringComparison.OrdinalIgnoreCase));
     });
 
     public Task ApplyAsync(string mode) => RunAsync(() =>

@@ -15,7 +15,9 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
 {
     private CancellationTokenSource? _retry;
     private GpuWorkingMode _logical = UserSettingsStore.Get("GpuWorkingMode", GpuWorkingMode.Default);
+    private bool _hasPreference = UserSettingsStore.Get<int?>("GpuWorkingMode", null) is >= 0 and <= 2;
     public GpuWorkingSnapshot Snapshot { get; private set; } = GpuWorkingSnapshot.Unavailable;
+    public bool AutoEventsAvailable { get; set; }
 
     private static ManagementObjectSearcher Search(string className) => new(
         new ManagementScope(@"\\.\root\WMI", new ConnectionOptions
@@ -61,6 +63,8 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             bool supported = Get("LENOVO_GAMEZONE_DATA", "IsSupportIGPUMode", "Data") > 0;
             if (!supported) { Snapshot = GpuWorkingSnapshot.Unavailable; return; }
             int effective = Get("LENOVO_GAMEZONE_DATA", "GetIGPUModeStatus", "Data");
+            if (!_hasPreference)
+                _logical = effective == 1 ? GpuWorkingMode.IGPUOnly : GpuWorkingMode.Default;
             int external;
             try { external = Get("LENOVO_IGPUMODE_HDMI_METHOD", "GetIGPUMHDMIStatus", "HDMI_Status"); }
             catch { external = -1; }
@@ -71,14 +75,15 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("GPU capability read failed: " + ex.Message);
-            Snapshot = GpuWorkingSnapshot.Unavailable;
+            Snapshot = GpuWorkingSnapshot.Unavailable with { Message = ex.Message };
         }
     }
 
-    public Task InitializeAsync() => RunAsync(async () =>
+    public Task InitializeAsync(Func<bool> registerEvents) => RunAsync(async () =>
     {
         Read();
-        if (Snapshot.Supported && _logical == GpuWorkingMode.Auto)
+        if (Snapshot.Supported) AutoEventsAvailable = registerEvents();
+        if (Snapshot.Supported && AutoEventsAvailable && _logical == GpuWorkingMode.Auto)
             await ApplyPolicyAsync(true);
     });
 
@@ -93,8 +98,10 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             if (!Snapshot.Supported) throw new InvalidOperationException("显卡工作模式当前不可用。");
             if (mode == GpuWorkingMode.Auto)
             {
+                if (!AutoEventsAvailable) throw new InvalidOperationException("电源事件监听不可用，不能启用智能模式。");
                 _logical = mode;
                 UserSettingsStore.Set("GpuWorkingMode", mode);
+                _hasPreference = true;
                 await ApplyPolicyAsync(true);
                 return;
             }
@@ -106,6 +113,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
                 throw new InvalidOperationException("切换命令已发送，但实际显卡状态尚未达到目标。");
             _logical = mode;
             UserSettingsStore.Set("GpuWorkingMode", mode);
+            _hasPreference = true;
             Read();
         });
     }
@@ -132,18 +140,19 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
 
     private async Task ApplyPolicyAsync(bool allowRetry)
     {
-        if (!Snapshot.Supported || _logical != GpuWorkingMode.Auto) return;
+        if (!Snapshot.Supported || !AutoEventsAvailable || _logical != GpuWorkingMode.Auto) return;
         try
         {
-            if (Snapshot.PowerSource == 0)
+            int? target = GpuAutoPolicy.Target(Snapshot.PowerSource, Snapshot.ExternalPath);
+            if (target == 0)
             {
                 if (Snapshot.EffectiveMode != 0) await SetAndReadAsync(0);
             }
-            else if (Snapshot.PowerSource == 1 && Snapshot.ExternalPath == 0)
+            else if (target == 1)
             {
                 if (Snapshot.EffectiveMode != 1 || Snapshot.NvidiaPresent)
                     await SetAndReadAsync(1);
-                if (allowRetry && Snapshot.Supported && (Snapshot.EffectiveMode != 1 || Snapshot.NvidiaPresent))
+                if (allowRetry && Snapshot.Supported && Snapshot.PowerSource == 1 && (Snapshot.EffectiveMode != 1 || Snapshot.NvidiaPresent))
                     StartRetry();
             }
         }
@@ -158,8 +167,12 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
     private void StartRetry()
     {
         CancelRetry();
-        _retry = new CancellationTokenSource();
-        _ = RetryAsync(_retry.Token);
+        var retry = new CancellationTokenSource();
+        CancellationToken token = retry.Token;
+        var previous = Interlocked.Exchange(ref _retry, retry);
+        previous?.Cancel();
+        previous?.Dispose();
+        _ = RetryAsync(token);
     }
 
     private async Task RetryAsync(CancellationToken token)

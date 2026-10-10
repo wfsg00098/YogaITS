@@ -86,7 +86,9 @@ internal static class ElevocJson
             }
 
             double l2 = Math.Sqrt(values.Sum(x => x * x));
-            bool valid = values.Count == 192 && (declaredCount is null || declaredCount == 192);
+            bool valid = values.Count == 192 && (declaredCount is null || declaredCount == 192) &&
+                (dataType is null || string.Equals(dataType, "FLOAT32", StringComparison.OrdinalIgnoreCase)) &&
+                Math.Abs(l2 - 1) <= 0.1;
 
             string summary =
                 $"count={values.Count} (declared={declaredCount?.ToString() ?? "?"}), " +
