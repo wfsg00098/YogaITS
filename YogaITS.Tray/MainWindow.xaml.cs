@@ -12,6 +12,9 @@ public sealed partial class MainWindow : Window
     private NativeTrayIcon? _trayIcon;
     private TrayMenuWindow? _trayMenuWindow;
     private TrayMenuWindow? _controlCenterWindow;
+    private readonly LenovoGpuWorkingModeService _gpu = new();
+    private SystemEventMonitor? _systemEvents;
+    private FeaturePanels? _featurePanels;
 
     private nint _mainHwnd;
     private DateTime _lastTrayHoverRefresh = DateTime.MinValue;
@@ -27,6 +30,16 @@ public sealed partial class MainWindow : Window
 
         Closed += MainWindow_Closed;
         InitializeHiddenTrayHost();
+        _systemEvents = new SystemEventMonitor(_mainHwnd);
+        _systemEvents.PowerChanged += () => _ = _gpu.HandleSystemChangeAsync();
+        _systemEvents.DisplayChanged += () => _ = _gpu.HandleSystemChangeAsync();
+        _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_gpu.Snapshot.Supported) _systemEvents?.EnablePowerNotifications();
+            _featurePanels?.Render();
+            _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow ?? _trayMenuWindow!);
+        });
+        _ = _gpu.InitializeAsync();
     }
 
     private void InitializeHiddenTrayHost()
@@ -89,6 +102,7 @@ public sealed partial class MainWindow : Window
         if (_controlCenterWindow is not null)
         {
             _controlCenterWindow.Activate();
+            _ = _gpu.RefreshAsync();
             _ = RefreshOpenMenuInBackgroundAsync(_controlCenterWindow);
             return;
         }
@@ -136,7 +150,11 @@ public sealed partial class MainWindow : Window
                 fullWindow: fullWindow);
 
             if (fullWindow)
+            {
                 _controlCenterWindow = menu;
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu);
+                _ = _gpu.RefreshAsync();
+            }
             else
                 _trayMenuWindow = menu;
 
@@ -145,7 +163,10 @@ public sealed partial class MainWindow : Window
                 if (ReferenceEquals(_trayMenuWindow, menu))
                     _trayMenuWindow = null;
                 if (ReferenceEquals(_controlCenterWindow, menu))
+                {
                     _controlCenterWindow = null;
+                    _featurePanels = null;
+                }
             };
 
             if (fullWindow)
@@ -378,7 +399,14 @@ public sealed partial class MainWindow : Window
     }
 
     private void ExitApplication()
+        => _ = ExitApplicationAsync();
+
+    private async Task ExitApplicationAsync()
     {
+        _gpu.CancelRetry();
+        _systemEvents?.Dispose();
+        _systemEvents = null;
+        await _gpu.DisposeAsync();
         DisposeTray();
         Close();
         Environment.Exit(0);
