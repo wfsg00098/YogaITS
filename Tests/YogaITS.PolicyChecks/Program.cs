@@ -72,6 +72,10 @@ Check(!ElevocJson.SpeakerId(Voice(unit, 191)).IsValid, "Declared voiceprint size
 Check(!ElevocJson.SpeakerId(Voice(unit, type: "FLOAT64")).IsValid, "Wrong voiceprint type rejected");
 Check(!ElevocJson.SpeakerId("{\"Content\":{\"voiceid\":{\"metadata\":{}}}}").IsValid, "Private-mode metadata does not verify registration");
 Check(ElevocJson.SupportedFunctions("{bad json").Count == 0, "Unknown audio capability fails closed");
+Check(ElevocJson.Mode("{\"Content\":{\"mode\":\"environmental\"},\"Header\":{\"status\":\"OK\"}}") == "environmental",
+    "Microphone noise cancellation off reads back as environmental");
+Check(ElevocJson.Mode("{\"Content\":{\"mode\":\"private\"},\"Header\":{\"status\":\"OK\"}}") != "environmental",
+    "Private mode is not mistaken for noise cancellation off");
 
 string temporary = Path.Combine(Path.GetTempPath(), "YogaITS-PolicyChecks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(temporary);

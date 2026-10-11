@@ -80,7 +80,7 @@ internal sealed class FeaturePanels : IDisposable
         {
             var current = _audio.Snapshot;
             var buttons = new List<Button>();
-            foreach (var (label, mode) in new[] { ("关闭", "off"), ("单人通话", "private"), ("多人通话", "shared") })
+            foreach (var (label, mode) in new[] { ("关闭", "environmental"), ("单人通话", "private"), ("多人通话", "shared") })
                 buttons.Add(_micCard.Option(label, current.MicrophoneMode == mode,
                     () => _audio.SetMicrophoneAsync(mode), !_audio.IsRegistering));
             if (current.Special)
