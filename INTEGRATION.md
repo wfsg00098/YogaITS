@@ -32,6 +32,8 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 ## 能力与状态源
 
+大窗口滚动条打开时短暂提示约 1 秒，滚动中显示，最终 ViewChanged（含触屏惯性结束）后 180 ms 隐藏；鼠标悬停、直接拖动时保持可见。仅控制原生滚动条透明度和指示状态，不切换 Visibility、不自行接管触屏手势或指针捕获；保持右侧 8 DIP 范围及原生滚轮、键盘、触屏惯性滚动。明确启用纵向滚动、纵向轨道及惯性，关闭横向滚动和缩放；关闭窗口时释放计时器及事件订阅。依据 [原生滚动控件的输入与触屏行为](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/scroll-controls)。
+
 图标源仍保留在工程 `Assets/YogaITS.ico`，由 `ApplicationIcon` 编译进 EXE 的原生图标资源，不作为 Content 复制。托盘、大小窗口与信息窗口统一从当前 EXE 提取内置图标，不写临时 ICO；图标句柄使用 SafeHandle，按托盘/窗口生命周期释放。发布目录不再需要 `Assets` 文件夹。依据 [ExtractIconEx](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-extracticonexw) 和 [AppWindow.SetIcon(IconId)](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.windowing.appwindow.seticon)。
 
 小窗口独立退出按钮复用功能分组的单列 tile-grid 和水平 Padding，左右边缘与其他分组的按钮区域总宽度对齐；仍为 28 DIP 高度，无分组标题或新增分割线。
