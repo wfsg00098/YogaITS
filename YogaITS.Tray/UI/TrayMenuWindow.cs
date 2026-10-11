@@ -40,6 +40,8 @@ public sealed class TrayMenuWindow : Window
     private readonly Dictionary<BatteryChargeMode, Button> _chargeModeTiles = [];
 
     private FrameworkElement? _contentRoot;
+    private Grid? _windowHeader;
+    private TextBlock? _modelLabel;
     private bool _closed;
     private bool _shown;
 
@@ -109,7 +111,7 @@ public sealed class TrayMenuWindow : Window
 
         Title = "Yoga控制中心";
 
-        ExtendsContentIntoTitleBar = !_fullWindow;
+        ExtendsContentIntoTitleBar = true;
 
         Content = BuildContent(
             modelName,
@@ -246,12 +248,20 @@ public sealed class TrayMenuWindow : Window
             batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
         {
-            outer.Children.Add(new ScrollViewer
+            outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            _windowHeader = CreateWindowHeader(modelName);
+            _windowHeader.Loaded += (_, _) => UpdateHeaderInsets();
+            _windowHeader.SizeChanged += (_, _) => UpdateHeaderInsets();
+            outer.Children.Add(_windowHeader);
+            var scroll = new ScrollViewer
             {
                 Content = _coreStack,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-            });
+            };
+            Grid.SetRow(scroll, 1);
+            outer.Children.Add(scroll);
         }
         else outer.Children.Add(_coreStack);
         _contentRoot = outer;
@@ -271,19 +281,11 @@ public sealed class TrayMenuWindow : Window
         _flipToStartSupported = flip.Supported;
         _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia);
 
-        var header = new Grid { Margin = new Thickness(5, 2, 5, 5) };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(new TextBlock
+        if (_fullWindow)
         {
-            Text = "Yoga控制中心", FontSize = _fullWindow ? 20 : 14,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center
-        });
-        var modelPill = CreatePill(modelName);
-        Grid.SetColumn(modelPill, 1);
-        header.Children.Add(modelPill);
-        stack.Children.Add(header);
+            if (_modelLabel is not null) _modelLabel.Text = modelName;
+        }
+        else stack.Children.Add(CreateWindowHeader(modelName));
 
         void Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
             string? description = null, bool divider = true)
@@ -413,26 +415,45 @@ public sealed class TrayMenuWindow : Window
         }
     }
 
-    private static Border CreatePill(string text)
+    private Grid CreateWindowHeader(string modelName)
     {
-        var pill = new Border
+        var header = new Grid
         {
-            Padding = new Thickness(8, 2, 8, 2),
-            CornerRadius = new CornerRadius(8),
-            MaxWidth = 132
+            Margin = new Thickness(5, 2, 5, _fullWindow ? 12 : 5),
+            MinHeight = _fullWindow ? 56 : 0
         };
-
-        pill.Child = new TextBlock
+        var text = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Left };
+        text.Children.Add(new TextBlock
         {
-            Text = text,
-            FontSize = 10.5,
-            Opacity = 0.72,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            TextWrapping = TextWrapping.NoWrap
-        };
+            Text = "Yoga控制中心", FontSize = _fullWindow ? 20 : 14,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        if (_fullWindow)
+        {
+            _modelLabel = new TextBlock
+            {
+                Text = modelName, FontSize = 12, Opacity = 0.7,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                TextWrapping = TextWrapping.NoWrap,
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            text.Children.Add(_modelLabel);
+        }
+        header.Children.Add(text);
+        return header;
+    }
 
-        return pill;
+    private void UpdateHeaderInsets()
+    {
+        if (!_fullWindow || _windowHeader?.XamlRoot is not { } root || _closed) return;
+        double scale = root.RasterizationScale;
+        var padding = new Thickness(AppWindow.TitleBar.LeftInset / scale, 0, AppWindow.TitleBar.RightInset / scale, 0);
+        if (!_windowHeader.Padding.Equals(padding)) _windowHeader.Padding = padding;
+    }
+
+    private void ControlCenterWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        UpdateHeaderInsets();
     }
 
     private static Grid CreateSectionHeader(string title)
@@ -857,13 +878,14 @@ public sealed class TrayMenuWindow : Window
     {
         if (_fullWindow)
         {
-            ExtendsContentIntoTitleBar = false;
             var fullPresenter = OverlappedPresenter.Create();
             fullPresenter.IsResizable = true;
             AppWindow.SetPresenter(fullPresenter);
             string fullIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
             if (File.Exists(fullIcon))
                 AppWindow.SetIcon(fullIcon);
+            SetTitleBar(_windowHeader);
+            AppWindow.Changed += ControlCenterWindow_Changed;
             return;
         }
         var presenter = OverlappedPresenter.CreateForToolWindow();
@@ -1023,6 +1045,7 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+        if (_fullWindow) AppWindow.Changed -= ControlCenterWindow_Changed;
         Activated -= TrayMenuWindow_Activated;
         SystemBackdrop = null;
         _appearanceSettings.ColorValuesChanged -= AppearanceSettings_ColorValuesChanged;
