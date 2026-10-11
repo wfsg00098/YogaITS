@@ -424,7 +424,13 @@ public sealed class TrayMenuWindow : Window
             Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
                 OptionTileHeightDip, divider: false);
         }
-        else stack.Children.Add(CreateExitButton());
+        else stack.Children.Add(new Border
+        {
+            // Reuse the sections' horizontal padding and tile-grid margins so
+            // the single exit tile aligns with the outer edges of their tiles.
+            Padding = new Thickness(4, 0, 4, 0),
+            Child = CreateTileGrid(new UIElement[] { CreateExitButton() }, 1, 28)
+        });
     }
 
     public void ApplyRefreshedState(AppRuntimeSnapshot state)
