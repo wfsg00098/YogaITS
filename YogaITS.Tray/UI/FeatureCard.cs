@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Runtime.CompilerServices;
 
 namespace YogaITS.Tray.UI;
 
@@ -9,6 +10,7 @@ internal sealed class FeatureCard : IDisposable
     public Border View { get; } = new();
     public StackPanel Footer { get; } = new() { Spacing = 8, Visibility = Visibility.Collapsed };
     private readonly StackPanel _body = new() { Spacing = 8 };
+    private readonly StackPanel _content = new() { Spacing = 8 };
     private readonly TextBlock _status = new()
     {
         TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75, Visibility = Visibility.Collapsed
@@ -22,17 +24,20 @@ internal sealed class FeatureCard : IDisposable
     private bool _visible;
     private bool _closed;
     private string? _lastError;
+    private int _nextChild;
+    private sealed record OptionBinding(Func<Task> Action, bool KeepInteractive, bool Selected);
+    private readonly ConditionalWeakTable<Button, OptionBinding> _bindings = new();
 
     public FeatureCard(string title)
     {
         View.Style = TrayMenuWindow.GetSettingsStyle("SettingsCardStyle");
-        var content = new StackPanel { Spacing = 8 };
-        content.Children.Add(TrayMenuWindow.CreateGroupTitle(title));
-        content.Children.Add(_body);
-        content.Children.Add(_status);
-        content.Children.Add(_statusDetail);
-        content.Children.Add(Footer);
-        View.Child = content;
+        SettingsMotion.Reposition(_content);
+        _content.Children.Add(TrayMenuWindow.CreateGroupTitle(title));
+        _content.Children.Add(_body);
+        _content.Children.Add(_status);
+        _content.Children.Add(_statusDetail);
+        _content.Children.Add(Footer);
+        View.Child = _content;
     }
 
     public void Update(bool visible, Action<StackPanel> render)
@@ -43,8 +48,12 @@ internal sealed class FeatureCard : IDisposable
         if (_busy)
             return;
         View.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        _body.Children.Clear();
+        _nextChild = 0;
+        SettingsMotion.Reposition(_content);
+        SettingsMotion.Reposition(_body);
         render(_body);
+        while (_body.Children.Count > _nextChild)
+            _body.Children.RemoveAt(_body.Children.Count - 1);
         RefreshFooterVisibility();
         if (_lastError is not null)
             SetStatus(_lastError);
@@ -53,6 +62,7 @@ internal sealed class FeatureCard : IDisposable
     public void SetStatus(string message, string? detail = null)
     {
         if (_closed) return;
+        SettingsMotion.Reposition(_content);
         _status.Text = message;
         _status.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
         _statusDetail.Text = detail ?? "";
@@ -77,26 +87,67 @@ internal sealed class FeatureCard : IDisposable
         Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, TrayMenuWindow.OptionTileHeightDip,
             TrayMenuWindow.ControlCenterButtonFontSize);
         button.IsEnabled = enabled;
+        _bindings.Add(button, new OptionBinding(action, keepInteractive, selected));
         button.Click += async (_, _) =>
         {
-            if (!keepInteractive) { await RunAsync(action); return; }
+            // Retained controls always invoke the newest snapshot's action.
+            var binding = _bindings.GetValue(button, _ => throw new InvalidOperationException());
+            if (!binding.KeepInteractive) { await RunAsync(binding.Action); return; }
             if (_closed) return;
             _lastError = null;
             // Long-running recording uses service state for its start/stop button.
             // It must remain renderable and clickable while awaiting completion.
-            try { await action(); }
+            try { await binding.Action(); }
             catch (OperationCanceledException) { SetStatus("操作已取消，状态已重新读取。"); }
             catch (Exception ex) { SetStatus(ex.Message); }
         };
         return button;
     }
 
-    public void Options(StackPanel body, params Button[] buttons) =>
-        body.Children.Add(TrayMenuWindow.CreateTileGrid(buttons, Math.Min(3, buttons.Length), TrayMenuWindow.OptionTileHeightDip));
+    public void Options(StackPanel body, params Button[] buttons)
+    {
+        int columns = Math.Min(3, buttons.Length);
+        if (_nextChild < body.Children.Count && body.Children[_nextChild] is Grid grid &&
+            grid.ColumnDefinitions.Count == columns && grid.Children.Count == buttons.Length &&
+            grid.Children.All(child => child is Border { Child: Button }))
+        {
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                var retained = (Button)((Border)grid.Children[i]).Child;
+                var candidate = buttons[i];
+                var binding = _bindings.GetValue(candidate, _ => throw new InvalidOperationException());
+                _bindings.Remove(retained);
+                _bindings.Add(retained, binding);
+                TrayMenuWindow.UpdateOptionLabel(retained, candidate);
+                TrayMenuWindow.RefreshOptionTile(retained, binding.Selected);
+                retained.IsEnabled = candidate.IsEnabled;
+            }
+            _nextChild++;
+            return;
+        }
+        PutChild(body, TrayMenuWindow.CreateTileGrid(buttons, columns, TrayMenuWindow.OptionTileHeightDip));
+    }
 
     public void Note(StackPanel body, string text)
     {
-        if (!string.IsNullOrWhiteSpace(text)) body.Children.Add(TrayMenuWindow.CreateDescription(text));
+        if (string.IsNullOrWhiteSpace(text)) return;
+        var note = _nextChild < body.Children.Count && body.Children[_nextChild] is ContentControl existing
+            ? existing : new ContentControl
+            {
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                IsTabStop = false
+            };
+        SettingsMotion.SetDescription(note, text);
+        if (_nextChild < body.Children.Count && ReferenceEquals(body.Children[_nextChild], note))
+            _nextChild++;
+        else PutChild(body, note);
+    }
+
+    private void PutChild(StackPanel body, UIElement child)
+    {
+        if (_nextChild < body.Children.Count)
+            body.Children.RemoveAt(_nextChild);
+        body.Children.Insert(_nextChild++, child);
     }
 
     private async Task RunAsync(Func<Task> action)
@@ -105,7 +156,6 @@ internal sealed class FeatureCard : IDisposable
             return;
         _busy = true;
         _body.IsHitTestVisible = false;
-        _body.Opacity = 0.65;
         _lastError = null;
         SetStatus("");
         try { await action(); }
@@ -117,7 +167,6 @@ internal sealed class FeatureCard : IDisposable
             if (!_closed)
             {
                 _body.IsHitTestVisible = true;
-                _body.Opacity = 1;
                 if (_render is not null)
                     Update(_visible, _render);
                 if (_lastError is not null)

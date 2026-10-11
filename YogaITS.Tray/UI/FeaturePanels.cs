@@ -45,6 +45,7 @@ internal sealed class FeaturePanels : IDisposable
     public void Render()
     {
         if (_closed) return;
+        SettingsMotion.Reposition(_host);
         var gpu = _gpu.Snapshot;
         _gpuCard.Update(gpu.Supported, body =>
         {
