@@ -77,7 +77,10 @@ internal sealed class FeatureCard : IDisposable
     public void Options(StackPanel body, params Button[] buttons) =>
         body.Children.Add(TrayMenuWindow.CreateTileGrid(buttons, Math.Min(3, buttons.Length), TrayMenuWindow.OptionTileHeightDip));
 
-    public void Note(StackPanel body, string text) => body.Children.Add(TrayMenuWindow.CreateDescription(text));
+    public void Note(StackPanel body, string text)
+    {
+        if (!string.IsNullOrWhiteSpace(text)) body.Children.Add(TrayMenuWindow.CreateDescription(text));
+    }
 
     private async Task RunAsync(Func<Task> action)
     {

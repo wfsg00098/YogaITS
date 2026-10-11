@@ -176,6 +176,13 @@ public sealed class AppStateCache
         Update(current => current with { BatteryCharge = snapshot });
     }
 
+    public void UpdateBatterySelection(BatteryChargeSnapshot charge, BatteryToggleSnapshot night) =>
+        Update(current => current with
+        {
+            BatteryCharge = charge.Supported ? charge : current.BatteryCharge,
+            NightCharge = night.Supported ? night : current.NightCharge
+        });
+
     public void UpdateNightCharge(BatteryToggleSnapshot snapshot)
     {
         if (!snapshot.Supported)

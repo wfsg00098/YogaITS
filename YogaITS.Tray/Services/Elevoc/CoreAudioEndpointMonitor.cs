@@ -19,8 +19,14 @@ internal enum AudioRole
 internal sealed record AudioEndpointInfo(
     AudioDataFlow Flow,
     string Id,
-    string FriendlyName)
+    string FriendlyName,
+    Guid? JackSubType = null)
 {
+    // Built-in array classification is conservative: unknown/ordinary/headset
+    // microphones do not expose the directional sub-options.
+    public bool IsInternalMicrophone => Flow == AudioDataFlow.Capture && JackSubType is Guid type &&
+        (type == new Guid("DFF21BE5-F70F-11D0-B917-00A0C9223196") ||
+         type == new Guid("DFF21BE6-F70F-11D0-B917-00A0C9223196"));
     public bool LooksLikeInternalDmic
     {
         get
@@ -67,8 +73,9 @@ internal sealed class CoreAudioEndpointMonitor : IDisposable
         try
         {
             string id = GetDeviceId(device);
-            string name = GetFriendlyName(device) ?? id;
-            return new AudioEndpointInfo(flow, id, name);
+            string name = GetStringProperty(device, PropertyKeys.DeviceFriendlyName) ?? id;
+            string? jack = GetStringProperty(device, PropertyKeys.JackSubType);
+            return new AudioEndpointInfo(flow, id, name, Guid.TryParse(jack, out var type) ? type : null);
         }
         finally
         {
@@ -93,7 +100,7 @@ internal sealed class CoreAudioEndpointMonitor : IDisposable
         }
     }
 
-    private static string? GetFriendlyName(IMMDevice device)
+    private static string? GetStringProperty(IMMDevice device, PropertyKey key)
     {
         int hr = device.OpenPropertyStore(STGM_READ, out IPropertyStore? store);
         if (hr < 0 || store is null)
@@ -101,7 +108,6 @@ internal sealed class CoreAudioEndpointMonitor : IDisposable
 
         try
         {
-            PropertyKey key = PropertyKeys.DeviceFriendlyName;
             hr = store.GetValue(ref key, out PropVariant value);
             if (hr < 0)
                 return null;
@@ -312,6 +318,9 @@ internal sealed class CoreAudioEndpointMonitor : IDisposable
 
     private static class PropertyKeys
     {
+        public static PropertyKey JackSubType =>
+            new(new Guid("1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E"), 8);
+
         public static PropertyKey DeviceFriendlyName =>
             new(
                 new Guid("A45C254E-DF1C-4EFD-8020-67D146A850E0"),

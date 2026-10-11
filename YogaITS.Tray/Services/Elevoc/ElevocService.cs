@@ -3,7 +3,7 @@ namespace YogaITS.Tray.Services.Elevoc;
 internal sealed record ElevocSnapshot(
     bool Uplink, bool Downlink, bool Special, bool VoiceId, bool VoiceIdRegistered,
     bool? VoiceIdAllowedInHeadset, string? MicrophoneMode, string? SpeakerMode,
-    string CaptureName, string RenderName)
+    string CaptureName, string RenderName, bool InternalMicrophone = false)
 {
     public static ElevocSnapshot Unavailable { get; } = new(false, false, false, false, false, null, null, null, "", "");
 }
@@ -54,7 +54,7 @@ internal sealed class ElevocService : SerializedFeatureService
                 Ok(voice) && ElevocJson.Bool(voice, "is_voiceid_setted") == true,
                 Ok(headset) ? ElevocJson.Bool(headset, "is_voiceid_enabled_in_headset") : null,
                 Ok(mic) ? ElevocJson.Mode(mic) : null, Ok(speaker) ? ElevocJson.Mode(speaker) : null,
-                _capture?.FriendlyName ?? "", render?.FriendlyName ?? "");
+                _capture?.FriendlyName ?? "", render?.FriendlyName ?? "", _capture?.IsInternalMicrophone == true);
         }
         catch (Exception ex)
         {
@@ -91,12 +91,18 @@ internal sealed class ElevocService : SerializedFeatureService
     {
         Read();
         if (!Snapshot.Uplink || _client is null ||
-            (mode == "special" && !Snapshot.Special) ||
-            (mode == "voiceid" && (!Snapshot.VoiceId || !Snapshot.VoiceIdRegistered)))
+            (mode == "special" && !ElevocMicrophonePolicy.ShowPosition(Snapshot.InternalMicrophone, Snapshot.Special, Snapshot.MicrophoneMode)) ||
+            (mode == "voiceid" && (!ElevocMicrophonePolicy.ShowVoice(Snapshot.InternalMicrophone, Snapshot.VoiceId, Snapshot.MicrophoneMode) || !Snapshot.VoiceIdRegistered)))
             throw new InvalidOperationException("当前麦克风不支持该降噪模式。");
+        await SetMicrophoneModeAndReadAsync(mode);
+    });
+
+    // Caller holds the service gate. Reuse this for disabling Voice ID before deletion.
+    private async Task SetMicrophoneModeAndReadAsync(string mode)
+    {
         try
         {
-            RequireOk(_client.SetMicrophoneMode(mode));
+            RequireOk(_client!.SetMicrophoneMode(mode));
             // Match the final probe: allow the backend to apply the mode before verification.
             await Task.Delay(150).ConfigureAwait(false);
         }
@@ -108,7 +114,7 @@ internal sealed class ElevocService : SerializedFeatureService
                 $"模式设置已发送，但服务回读未确认生效。请求模式：{mode}；实际模式：{Snapshot.MicrophoneMode ?? "未知"}。" +
                 $"当前麦克风设备：{Snapshot.CaptureName}。" +
                 (mode == "voiceid" && !Snapshot.VoiceIdRegistered ? "服务未确认已注册声纹。" : ""));
-    });
+    }
 
     public Task SetSpeakerAsync(bool enabled) => RunAsync(() =>
     {
@@ -122,16 +128,24 @@ internal sealed class ElevocService : SerializedFeatureService
         return Task.CompletedTask;
     });
 
-    public Task RemoveVoiceAsync() => RunAsync(() =>
+    public Task RemoveVoiceAsync() => RunAsync(async () =>
     {
         Read();
+        RequireVoice();
+        string endpoint = _capture!.Id;
+        long generation = Interlocked.Read(ref _endpointGeneration);
+        if (Snapshot.MicrophoneMode == "voiceid")
+            await SetMicrophoneModeAndReadAsync("private");
+        // Do not delete on a newly selected endpoint after the asynchronous mode change.
+        if (generation != Interlocked.Read(ref _endpointGeneration) ||
+            _audio!.GetDefault(AudioDataFlow.Capture)?.Id != endpoint)
+            throw new OperationCanceledException("音频设备已变化，声纹删除已停止。");
         RequireVoice();
         try { RequireOk(_client!.RemoveVoiceId()); }
         finally { Read(); }
         if (Snapshot.VoiceIdRegistered)
             throw new InvalidOperationException("服务回读显示声纹仍然存在。");
         RegistrationStatus = "声纹已删除。";
-        return Task.CompletedTask;
     });
 
     public Task InspectVoiceAsync() => RunAsync(() =>
@@ -151,6 +165,8 @@ internal sealed class ElevocService : SerializedFeatureService
     {
         Read();
         RequireVoice();
+        if (!Snapshot.InternalMicrophone)
+            throw new InvalidOperationException("请使用内置麦克风录制声纹。");
         string endpoint = _capture!.Id;
         string? originalMode = Snapshot.MicrophoneMode;
         long generation = Interlocked.Read(ref _endpointGeneration);
