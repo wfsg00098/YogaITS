@@ -29,6 +29,12 @@ internal static class SettingsMotion
             {
                 HorizontalOffset = 0, VerticalOffset = 0
             });
-        control.Content = TrayMenuWindow.CreateDescription(text);
+        // ContentThemeTransition animates the content's opacity toward 1.
+        // Keep the secondary-text dimming on the stable parent, so completing
+        // the transition cannot jump from opaque text back to 70% opacity.
+        control.Opacity = 0.7;
+        var description = TrayMenuWindow.CreateDescription(text);
+        description.Opacity = 1;
+        control.Content = description;
     }
 }
