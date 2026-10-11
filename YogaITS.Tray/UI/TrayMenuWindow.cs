@@ -17,7 +17,7 @@ public sealed class TrayMenuWindow : Window
     internal const double ControlCenterButtonFontSize = 12.5;
     private readonly bool _fullWindow;
     private readonly Windows.UI.ViewManagement.UISettings _appearanceSettings = new();
-    internal StackPanel AdditionalSections { get; } = new() { Spacing = 12 };
+    internal StackPanel AdditionalSections { get; } = new() { Spacing = 8 };
 
     private readonly nint _ownerHwnd;
     private readonly Func<ItsMode, Task<ItsSetResult>> _setMode;
@@ -246,11 +246,14 @@ public sealed class TrayMenuWindow : Window
             Style = GetSettingsStyle("SettingsWindowRootStyle"),
             Padding = _fullWindow ? new Thickness(8) : new Thickness(9, 8, 9, 8)
         };
-        _coreStack = new StackPanel { Spacing = _fullWindow ? 12 : 8 };
+        _coreStack = new StackPanel { Spacing = 8 };
         PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
             batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
         {
+            // The native scrollbar expands over the viewport. Reserve its 16-DIP
+            // lane plus an 8-DIP gap so it cannot cover content or separator lines.
+            _coreStack.Margin = new Thickness(0, 0, 24, 0);
             outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             _windowHeader = CreateWindowHeader(modelName);
@@ -303,6 +306,7 @@ public sealed class TrayMenuWindow : Window
                 foreach (var button in items.OfType<Button>())
                 {
                     button.MinHeight = height;
+                    button.Padding = new Thickness(8);
                     if (button.Tag is OptionTileState tile) tile.Label.FontSize = ControlCenterButtonFontSize;
                 }
             }
@@ -315,12 +319,12 @@ public sealed class TrayMenuWindow : Window
             {
                 Style = GetSettingsStyle("SettingsCardStyle"),
                 Child = section,
-                Padding = new Thickness(_fullWindow ? 12 : 4)
+                Padding = new Thickness(_fullWindow ? 8 : 4)
             };
             if (!divider)
             {
                 container.BorderThickness = new Thickness(0);
-                container.Padding = new Thickness(12, 12, 12, 0);
+                container.Padding = new Thickness(8, 8, 8, 0);
             }
             (host ?? stack).Children.Add(container);
         }
@@ -438,8 +442,8 @@ public sealed class TrayMenuWindow : Window
         var header = new Grid
         {
             // Extend only the drag surface through the 8-DIP page padding.
-            Margin = _fullWindow ? new Thickness(-8, -8, -8, 12) : new Thickness(5, 2, 5, 5),
-            MinHeight = _fullWindow ? 64 : 0,
+            Margin = _fullWindow ? new Thickness(-8, -8, -8, 0) : new Thickness(5, 2, 5, 5),
+            MinHeight = _fullWindow ? 32 : 0,
             Background = TransparentBrush()
         };
         var text = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Left };
@@ -469,8 +473,8 @@ public sealed class TrayMenuWindow : Window
         double scale = root.RasterizationScale;
         // Padding belongs inside the drag element: its bounds now start at y=0,
         // while the heading keeps its existing position and avoids caption buttons.
-        var padding = new Thickness(13 + AppWindow.TitleBar.LeftInset / scale, 8,
-            13 + AppWindow.TitleBar.RightInset / scale, 0);
+        var padding = new Thickness(8 + AppWindow.TitleBar.LeftInset / scale, 8,
+            8 + AppWindow.TitleBar.RightInset / scale, 0);
         if (!_windowHeader.Padding.Equals(padding)) _windowHeader.Padding = padding;
     }
 
@@ -671,7 +675,7 @@ public sealed class TrayMenuWindow : Window
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(6, 8, 6, 8),
+            Padding = fontSize is null ? new Thickness(6, 8, 6, 8) : new Thickness(8),
             MinHeight = minHeight,
             Style = GetSettingsStyle(selected ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle"),
             Margin = new Thickness(0),
@@ -753,7 +757,7 @@ public sealed class TrayMenuWindow : Window
             Background = TransparentBrush()
         };
 
-        if (_fullWindow) button.Margin = new Thickness(20, 0, 20, 0);
+        if (_fullWindow) button.Margin = new Thickness(16, 0, 16, 0);
 
         button.Click += (_, _) =>
         {
