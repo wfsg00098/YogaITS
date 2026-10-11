@@ -202,6 +202,17 @@ public sealed class AppStateCache
     public void UpdateStartup(bool enabled) =>
         Update(current => current with { StartupEnabled = enabled });
 
+    public void UpdateNvidiaPresence(bool present)
+    {
+        lock (_gate)
+        {
+            if (_snapshot.NvidiaGpuSupported == present) return;
+            _snapshot = _snapshot with { NvidiaGpuSupported = present };
+            _mutationGeneration++;
+        }
+        Changed?.Invoke();
+    }
+
     private void Update(Func<AppRuntimeSnapshot, AppRuntimeSnapshot> update)
     {
         lock (_gate)

@@ -49,15 +49,21 @@ public sealed partial class MainWindow : Window
         }
         if (_systemEvents is not null)
         {
-            _systemEvents.PowerChanged += () => _ = _gpu.HandleSystemChangeAsync();
-            _systemEvents.DisplayChanged += () => _ = _gpu.HandleSystemChangeAsync();
+            _systemEvents.PowerChanged += () => _ = RefreshGpuForSystemChangeAsync("电源事件");
+            _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件");
             _systemEvents.DisplayChanged += () => _ = _color.RefreshAsync();
         }
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
         {
-            if (_gpu.Snapshot.Supported) _gpu.AutoEventsAvailable = _systemEvents?.EnablePowerNotifications() ?? false;
+            if (_exiting) return;
+            if (_gpu.Snapshot.Supported)
+            {
+                _gpu.AutoEventsAvailable = _systemEvents?.EnablePowerNotifications() ?? false;
+                // Publish the completed GPU read directly, including Auto retries.
+                // Never defer this behind window activation or a full-window refresh.
+                _stateCache.UpdateNvidiaPresence(_gpu.Snapshot.NvidiaPresent);
+            }
             _featurePanels?.Render();
-            if (!_controlCenterRefreshing) _ = RefreshCoreAsync();
         });
         _ = _gpu.InitializeAsync(() => _systemEvents?.EnablePowerNotifications() ?? false);
         _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
@@ -233,6 +239,27 @@ public sealed partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine("Control center refresh failed: " + ex.GetType().Name);
         }
         finally { _controlCenterRefreshing = false; }
+    }
+
+    private async Task RefreshGpuForSystemChangeAsync(string trigger)
+    {
+        if (_exiting) return;
+        try
+        {
+            System.Diagnostics.Debug.WriteLine("GPU 后台刷新：" + trigger);
+            // The hidden message host owns these subscriptions for the app lifetime.
+            // The service reads in every mode; only Auto is allowed to apply policy.
+            await _gpu.HandleSystemChangeAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("GPU 事件处理失败：" + ex.Message);
+        }
+        finally
+        {
+            // Refresh both menus even when a focus-triggered batch is in flight.
+            if (!_exiting) await RefreshCoreAsync();
+        }
     }
 
     private void ApplyCoreState()

@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../YogaITS.Tray/Services/GpuAutoPolicy.cs" Link="GpuAutoPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/SystemEventMonitor.cs" Link="SystemEventMonitor.cs" />
     <Compile Include="../../YogaITS.Tray/Services/LenovoBatteryHelper.cs" Link="LenovoBatteryHelper.cs" />
     <Compile Include="../../YogaITS.Tray/Services/BatteryChargeSelection.cs" Link="BatteryChargeSelection.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SerializedFeatureService.cs" Link="SerializedFeatureService.cs" />
