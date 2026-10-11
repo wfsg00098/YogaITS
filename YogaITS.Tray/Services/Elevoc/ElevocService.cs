@@ -14,9 +14,11 @@ internal sealed class ElevocService : SerializedFeatureService
     private CoreAudioEndpointMonitor? _audio;
     private AudioEndpointInfo? _capture;
     private CancellationTokenSource? _registration;
+    private readonly object _registrationSync = new();
     private long _endpointGeneration;
     public ElevocSnapshot Snapshot { get; private set; } = ElevocSnapshot.Unavailable;
     public bool IsRegistering => _registration is not null;
+    public bool IsRecording { get; private set; }
     public string RegistrationStatus { get; private set; } = "";
 
     private static bool Ok(string response) => string.Equals(ElevocJson.Status(response), "OK", StringComparison.OrdinalIgnoreCase);
@@ -172,7 +174,11 @@ internal sealed class ElevocService : SerializedFeatureService
         string? originalMode = Snapshot.MicrophoneMode;
         long generation = Interlocked.Read(ref _endpointGeneration);
         using var cancellation = new CancellationTokenSource();
-        _registration = cancellation;
+        lock (_registrationSync)
+        {
+            _registration = cancellation;
+            IsRecording = true;
+        }
         CancellationToken token = cancellation.Token;
         bool success = false;
         bool written = false;
@@ -192,7 +198,16 @@ internal sealed class ElevocService : SerializedFeatureService
                 await recorder.RecordAsync(wavePath, TimeSpan.FromSeconds(20), progress, token);
 
             CheckEndpoint();
-            written = true;
+            // Stop and the irreversible submission boundary are mutually exclusive.
+            // An accepted stop must never race into SetSpeakerID with partial audio.
+            lock (_registrationSync)
+            {
+                token.ThrowIfCancellationRequested();
+                IsRecording = false;
+                written = true;
+            }
+            RegistrationStatus = "正在注册并验证声纹……";
+            NotifyChanged();
             RequireOk(_client.SetSpeakerIdFromWaveFile(endpoint, wavePath));
             string isSet = _client.IsVoiceIdSet();
             RequireOk(isSet);
@@ -217,6 +232,10 @@ internal sealed class ElevocService : SerializedFeatureService
             if (!success) throw new InvalidOperationException("声纹最终状态验证失败。");
             RegistrationStatus = "声纹注册成功，已启用仅听机主模式。";
         }
+        catch (OperationCanceledException) when (!written)
+        {
+            RegistrationStatus = "录制已停止，本次录音已丢弃。";
+        }
         catch
         {
             RegistrationStatus = written ? "注册未完整通过，服务可能已写入新声纹。" : "声纹注册已取消或失败。";
@@ -230,7 +249,11 @@ internal sealed class ElevocService : SerializedFeatureService
                 try { RequireOk(_client!.SetMicrophoneMode(originalMode)); }
                 catch { RegistrationStatus += " 原模式恢复失败。"; }
             }
-            _registration = null;
+            lock (_registrationSync)
+            {
+                _registration = null;
+                IsRecording = false;
+            }
             try { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
             catch { System.Diagnostics.Debug.WriteLine("Temporary voice recording cleanup failed."); }
             Read();
@@ -247,8 +270,19 @@ internal sealed class ElevocService : SerializedFeatureService
 
     public void CancelRegistration()
     {
-        try { _registration?.Cancel(); }
-        catch (ObjectDisposedException) { }
+        lock (_registrationSync)
+        {
+            try { _registration?.Cancel(); }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    public void StopRecording()
+    {
+        lock (_registrationSync)
+        {
+            if (IsRecording) _registration?.Cancel();
+        }
     }
 
     protected override void Close()

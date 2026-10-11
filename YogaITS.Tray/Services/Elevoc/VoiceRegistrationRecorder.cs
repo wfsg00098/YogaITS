@@ -33,6 +33,7 @@ internal sealed class VoiceRegistrationRecorder : IDisposable
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (_waveIn != 0)
             throw new InvalidOperationException("录音已经在运行。");
@@ -80,12 +81,14 @@ internal sealed class VoiceRegistrationRecorder : IDisposable
             remainingSeconds?.Report(0);
 
             _ = waveInStop(_waveIn);
-            _ = waveInReset(_waveIn);
+            uint resetResult = waveInReset(_waveIn);
+            if (resetResult != 0)
+                throw new Win32Exception(unchecked((int)resetResult), $"waveInReset 失败: {resetResult}");
 
             WaveHeader header = Marshal.PtrToStructure<WaveHeader>(_header);
             int bytesRecorded = checked((int)header.dwBytesRecorded);
 
-            if (bytesRecorded <= 0)
+            if (bytesRecorded <= 0 || header.dwBytesRecorded > header.dwBufferLength)
                 throw new InvalidOperationException("麦克风没有返回任何录音数据。");
 
             if ((bytesRecorded & 1) != 0)
@@ -100,6 +103,7 @@ internal sealed class VoiceRegistrationRecorder : IDisposable
         }
 
         int sampleCount = pcmBytes.Length / 2;
+        cancellationToken.ThrowIfCancellationRequested();
         int minimumSamples = checked(sampleRate * 15);
 
         if (sampleCount < minimumSamples)
@@ -129,6 +133,7 @@ internal sealed class VoiceRegistrationRecorder : IDisposable
 
         double rms = Math.Sqrt(sumSquares / Math.Max(1, sampleCount));
 
+        cancellationToken.ThrowIfCancellationRequested();
         WriteFloatWave(outputWavePath, samples, sampleRate);
 
         return new VoiceCaptureResult(
@@ -256,11 +261,18 @@ internal sealed class VoiceRegistrationRecorder : IDisposable
     {
         if (_waveIn != 0)
         {
-            if (_prepared && _header != 0)
-                _ = waveInUnprepareHeader(_waveIn, _header, (uint)_headerSize);
-
-            _prepared = false;
-            _ = waveInClose(_waveIn);
+            _ = waveInStop(_waveIn);
+            uint result = ReleaseDevice(ref _prepared,
+                () => waveInReset(_waveIn),
+                () => waveInUnprepareHeader(_waveIn, _header, (uint)_headerSize),
+                () => waveInClose(_waveIn));
+            if (result != 0)
+            {
+                // Keep native memory alive if the driver may still own it.
+                // Dispose can retry, but must never turn a cleanup failure into UAF.
+                System.Diagnostics.Debug.WriteLine($"Voice capture cleanup failed: {result}");
+                return;
+            }
             _waveIn = 0;
         }
 
@@ -279,18 +291,26 @@ internal sealed class VoiceRegistrationRecorder : IDisposable
         _headerSize = 0;
     }
 
+    internal static uint ReleaseDevice(ref bool prepared, Func<uint> reset,
+        Func<uint> unprepare, Func<uint> close)
+    {
+        uint result = reset();
+        if (result != 0) return result;
+        if (prepared)
+        {
+            result = unprepare();
+            if (result != 0) return result;
+            prepared = false;
+        }
+        return close();
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
 
         _disposed = true;
-
-        if (_waveIn != 0)
-        {
-            _ = waveInStop(_waveIn);
-            _ = waveInReset(_waveIn);
-        }
 
         CleanupNative();
     }

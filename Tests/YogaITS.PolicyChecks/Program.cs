@@ -98,6 +98,37 @@ foreach (bool enabled in new[] { false, true })
     Check(request.value == (enabled ? 1u : 0u), "Setter enable bit");
 }
 
+foreach (var (preparedAtStart, resetResult, unprepareResult, closeResult, expectedCalls) in new[]
+{
+    (true, 0u, 0u, 0u, "reset,unprepare,close"),
+    (false, 0u, 0u, 0u, "reset,close"),
+    (true, 7u, 0u, 0u, "reset"),
+    (true, 0u, 33u, 0u, "reset,unprepare"),
+    (true, 0u, 0u, 33u, "reset,unprepare,close")
+})
+{
+    var calls = new List<string>();
+    bool prepared = preparedAtStart;
+    uint cleanupResult = VoiceRegistrationRecorder.ReleaseDevice(ref prepared,
+        () => { calls.Add("reset"); return resetResult; },
+        () => { calls.Add("unprepare"); return unprepareResult; },
+        () => { calls.Add("close"); return closeResult; });
+    Check(string.Join(",", calls) == expectedCalls, "Capture cleanup resets before unpreparing/closing and stops on failure");
+    Check((cleanupResult == 0) == (resetResult == 0 && unprepareResult == 0 && closeResult == 0),
+        "Capture cleanup permits freeing native memory only after successful release");
+    Check(prepared == (preparedAtStart && (resetResult != 0 || unprepareResult != 0)),
+        "Failed unprepare retains ownership for safe cleanup retry");
+}
+using (var stoppedCapture = new CancellationTokenSource())
+using (var recorder = new VoiceRegistrationRecorder())
+{
+    stoppedCapture.Cancel();
+    bool canceled = false;
+    try { await recorder.RecordAsync("unused.wav", TimeSpan.FromSeconds(20), cancellationToken: stoppedCapture.Token); }
+    catch (OperationCanceledException) { canceled = true; }
+    Check(canceled, "Pre-canceled voice capture never opens a microphone or creates a recording file");
+}
+
 string Voice(double[] data, int count = 192, string type = "FLOAT32") => JsonSerializer.Serialize(new
 {
     Header = new { status = "OK" },
