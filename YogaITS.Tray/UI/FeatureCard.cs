@@ -14,6 +14,10 @@ internal sealed class FeatureCard : IDisposable
         TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75, Visibility = Visibility.Collapsed
     };
     private Action<StackPanel>? _render;
+    private readonly TextBlock _statusDetail = new()
+    {
+        TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7, Visibility = Visibility.Collapsed
+    };
     private bool _busy;
     private bool _visible;
     private bool _closed;
@@ -26,6 +30,7 @@ internal sealed class FeatureCard : IDisposable
         content.Children.Add(TrayMenuWindow.CreateGroupTitle(title));
         content.Children.Add(_body);
         content.Children.Add(_status);
+        content.Children.Add(_statusDetail);
         content.Children.Add(Footer);
         View.Child = content;
     }
@@ -45,11 +50,13 @@ internal sealed class FeatureCard : IDisposable
             SetStatus(_lastError);
     }
 
-    public void SetStatus(string message)
+    public void SetStatus(string message, string? detail = null)
     {
         if (_closed) return;
         _status.Text = message;
         _status.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
+        _statusDetail.Text = detail ?? "";
+        _statusDetail.Visibility = string.IsNullOrWhiteSpace(detail) ? Visibility.Collapsed : Visibility.Visible;
     }
 
     public void RefreshFooterVisibility()
@@ -65,12 +72,22 @@ internal sealed class FeatureCard : IDisposable
         _render = null;
     }
 
-    public Button Option(string label, bool selected, Func<Task> action, bool enabled = true)
+    public Button Option(string label, bool selected, Func<Task> action, bool enabled = true, bool keepInteractive = false)
     {
         Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, TrayMenuWindow.OptionTileHeightDip,
             TrayMenuWindow.ControlCenterButtonFontSize);
         button.IsEnabled = enabled;
-        button.Click += async (_, _) => await RunAsync(action);
+        button.Click += async (_, _) =>
+        {
+            if (!keepInteractive) { await RunAsync(action); return; }
+            if (_closed) return;
+            _lastError = null;
+            // Long-running recording uses service state for its start/stop button.
+            // It must remain renderable and clickable while awaiting completion.
+            try { await action(); }
+            catch (OperationCanceledException) { SetStatus("操作已取消，状态已重新读取。"); }
+            catch (Exception ex) { SetStatus(ex.Message); }
+        };
         return button;
     }
 

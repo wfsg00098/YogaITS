@@ -21,7 +21,8 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _micCard = new("麦克风降噪");
     private readonly FeatureCard _speakerCard = new("扬声器降噪");
     private readonly FeatureCard _voiceCard = new("声纹管理");
-    private readonly Button _cancelVoice = new() { Content = "取消录制", IsEnabled = false };
+    private bool _voiceStartPending;
+    private const string VoiceReadingExample = "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。";
     private bool _closed;
 
     public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color, ElevocService audio)
@@ -38,8 +39,6 @@ internal sealed class FeaturePanels : IDisposable
         host.Children.Add(_speakerCard.View);
         host.Children.Add(_micCard.View);
         host.Children.Add(_voiceCard.View);
-        _cancelVoice.Click += (_, _) => _audio.CancelRegistration();
-        _voiceCard.Footer.Children.Add(_cancelVoice);
         Render();
     }
 
@@ -122,25 +121,32 @@ internal sealed class FeaturePanels : IDisposable
             var current = _audio.Snapshot;
             _voiceCard.Note(body, current.VoiceIdRegistered ? "已注册声纹" : "尚未注册声纹，录制后可以启用仅听机主。");
             _voiceCard.Options(body,
-                _voiceCard.Option(current.VoiceIdRegistered ? "重新录制（20 秒）" : "录制声纹（20 秒）", false, async () =>
+                _voiceCard.Option(_audio.IsRegistering ? (_audio.IsRecording ? "停止录制" : "正在注册……")
+                    : current.VoiceIdRegistered ? "重新录制（20 秒）" : "录制声纹（20 秒）", false, async () =>
                 {
-                    if (!await ConfirmAsync("录制声纹", "将使用当前默认麦克风录制 20 秒。已有声纹会被新的注册结果替换；完成后启用仅听机主。", "开始录制")) return;
-                    var progress = new Progress<int>(seconds => _voiceCard.SetStatus(seconds > 0
-                        ? $"正在录音，剩余 {seconds} 秒。请连续朗读下方文字。" : "正在注册并验证声纹……"));
-                    await _audio.RegisterVoiceAsync(progress);
-                }, !_audio.IsRegistering),
+                    if (_audio.IsRecording) { _audio.StopRecording(); return; }
+                    if (_audio.IsRegistering || _voiceStartPending) return;
+                    _voiceStartPending = true;
+                    try
+                    {
+                        if (!await ConfirmAsync("录制声纹", "将使用当前默认麦克风录制 20 秒。已有声纹会被新的注册结果替换；完成后启用仅听机主。", "开始录制")) return;
+                        var progress = new Progress<int>(seconds =>
+                        {
+                            if (_audio.IsRecording && seconds > 0)
+                                _voiceCard.SetStatus($"正在录音，剩余 {seconds} 秒。请连续朗读下方文字。", VoiceReadingExample);
+                        });
+                        await _audio.RegisterVoiceAsync(progress);
+                    }
+                    finally { _voiceStartPending = false; }
+                }, !_audio.IsRegistering || _audio.IsRecording, keepInteractive: true),
                 _voiceCard.Option("读取声纹状态", false, _audio.InspectVoiceAsync, current.VoiceIdRegistered && !_audio.IsRegistering),
                 _voiceCard.Option("删除声纹", false, async () =>
                 {
                     if (await ConfirmAsync("删除声纹", "确定删除当前声纹？将先关闭仅听机主，再删除声纹。删除后需要重新录制才能使用仅听机主。", "删除"))
                         await _audio.RemoveVoiceAsync();
                 }, current.VoiceIdRegistered && !_audio.IsRegistering));
-            _voiceCard.Note(body, "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。");
-            _voiceCard.SetStatus(_audio.RegistrationStatus);
+            _voiceCard.SetStatus(_audio.RegistrationStatus, _audio.IsRecording ? VoiceReadingExample : null);
         });
-        _cancelVoice.IsEnabled = _audio.IsRegistering;
-        _cancelVoice.Visibility = _audio.IsRegistering ? Visibility.Visible : Visibility.Collapsed;
-        _voiceCard.RefreshFooterVisibility();
     }
 
     private async Task<bool> ConfirmAsync(string title, string message, string primary)

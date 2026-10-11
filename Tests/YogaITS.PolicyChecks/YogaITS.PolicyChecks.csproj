@@ -16,6 +16,7 @@
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocJson.cs" Link="ElevocJson.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocMicrophonePolicy.cs" Link="ElevocMicrophonePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/CoreAudioEndpointMonitor.cs" Link="CoreAudioEndpointMonitor.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Elevoc/VoiceRegistrationRecorder.cs" Link="VoiceRegistrationRecorder.cs" />
     <Compile Include="../../YogaITS.Tray/UI/SettingsOptionText.cs" Link="SettingsOptionText.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/NativeMethods.cs" Link="NativeMethods.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/DisplayService.cs" Link="DisplayService.cs" />
