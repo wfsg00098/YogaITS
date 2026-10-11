@@ -21,8 +21,7 @@ public sealed class TrayMenuWindow : Window
 
     private readonly nint _ownerHwnd;
     private readonly Func<ItsMode, Task<ItsSetResult>> _setMode;
-    private readonly Func<BatteryChargeMode, Task<BatteryActionResult>> _setChargeMode;
-    private readonly Func<bool, Task<BatteryToggleResult>> _setNightCharge;
+    private readonly Func<BatteryChargeMode, bool, Task<BatterySelectionResult>> _setChargeOption;
     private readonly Func<bool, Task<FlipToStartResult>> _setFlipToStart;
     private readonly Action _killGpuApps;
     private readonly Action _restartGpu;
@@ -43,6 +42,8 @@ public sealed class TrayMenuWindow : Window
     private FrameworkElement? _contentRoot;
     private Grid? _windowHeader;
     private TextBlock? _modelLabel;
+    private TextBlock? _performanceDescription;
+    private TextBlock? _chargeDescription;
     private bool _closed;
     private bool _shown;
 
@@ -80,8 +81,7 @@ public sealed class TrayMenuWindow : Window
         bool nvidiaGpuSupported,
         bool startupEnabled,
         Func<ItsMode, Task<ItsSetResult>> setMode,
-        Func<BatteryChargeMode, Task<BatteryActionResult>> setChargeMode,
-        Func<bool, Task<BatteryToggleResult>> setNightCharge,
+        Func<BatteryChargeMode, bool, Task<BatterySelectionResult>> setChargeOption,
         Func<bool, Task<FlipToStartResult>> setFlipToStart,
         Action killGpuApps,
         Action restartGpu,
@@ -93,8 +93,7 @@ public sealed class TrayMenuWindow : Window
         _fullWindow = fullWindow;
         _ownerHwnd = ownerHwnd;
         _setMode = setMode;
-        _setChargeMode = setChargeMode;
-        _setNightCharge = setNightCharge;
+        _setChargeOption = setChargeOption;
         _setFlipToStart = setFlipToStart;
         _killGpuApps = killGpuApps;
         _restartGpu = restartGpu;
@@ -318,6 +317,7 @@ public sealed class TrayMenuWindow : Window
         stack.Children.Clear();
         _modeTiles.Clear();
         _chargeModeTiles.Clear();
+        _performanceDescription = _chargeDescription = null;
         _nightChargeVisual = _flipToStartVisual = _startupVisual = null;
         _nightChargeSupported = night.Supported;
         _flipToStartSupported = flip.Supported;
@@ -329,7 +329,7 @@ public sealed class TrayMenuWindow : Window
         }
         else stack.Children.Add(CreateWindowHeader(modelName));
 
-        void Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
+        TextBlock? Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
             string? description = null, bool divider = true, StackPanel? host = null)
         {
             if (_fullWindow)
@@ -345,8 +345,13 @@ public sealed class TrayMenuWindow : Window
             var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
             section.Children.Add(CreateTileGrid(items, columns, height));
+            TextBlock? note = null;
             if (_fullWindow && description is not null)
-                section.Children.Add(CreateDescription(description));
+            {
+                note = CreateDescription(description);
+                note.Visibility = string.IsNullOrWhiteSpace(description) ? Visibility.Collapsed : Visibility.Visible;
+                section.Children.Add(note);
+            }
             var container = new Border
             {
                 Style = GetSettingsStyle("SettingsCardStyle"),
@@ -359,6 +364,7 @@ public sealed class TrayMenuWindow : Window
                 container.Padding = new Thickness(8, 8, 8, 0);
             }
             (host ?? stack).Children.Add(container);
+            return note;
         }
 
         if (its.Supported)
@@ -371,25 +377,25 @@ public sealed class TrayMenuWindow : Window
             };
             if (its.GeekModeSupported)
                 items.Add(CreateModeTile(its.FourthModeDisplayName, mode.Mode == ItsMode.Creator, ItsMode.Creator));
-            Section("性能选项", items, items.Count, 54,
-                "智能模式平衡性能与能耗，安静模式侧重降低噪声，性能模式侧重释放性能。实际功耗、风扇策略及可用模式由本机驱动决定。");
+            _performanceDescription = Section("性能选项", items, items.Count, 54, "");
+            RefreshPerformanceDescription(mode.Mode);
         }
 
         if (battery.Supported)
         {
             var items = new List<UIElement>
             {
-                CreateBatteryModeTile("养护模式", battery.Mode == BatteryChargeMode.Conservation, BatteryChargeMode.Conservation),
-                CreateBatteryModeTile("常规模式", battery.Mode == BatteryChargeMode.Normal, BatteryChargeMode.Normal),
-                CreateBatteryModeTile("快充模式", battery.Mode == BatteryChargeMode.RapidCharge, BatteryChargeMode.RapidCharge)
+                CreateBatteryModeTile("养护模式", !night.Enabled && battery.Mode == BatteryChargeMode.Conservation, BatteryChargeMode.Conservation),
+                CreateBatteryModeTile("常规模式", !night.Enabled && battery.Mode == BatteryChargeMode.Normal, BatteryChargeMode.Normal),
+                CreateBatteryModeTile("智能快充", !night.Enabled && battery.Mode == BatteryChargeMode.RapidCharge, BatteryChargeMode.RapidCharge)
             };
             if (night.Supported)
             {
                 _nightChargeVisual = CreateToggleTile("夜间优化", night.Enabled, NightChargeButton_Click, "夜间充电优化");
                 items.Add(_nightChargeVisual.Button);
             }
-            Section("充电选项", items, items.Count, 56,
-                "养护模式限制充电上限，适合长期插电使用；常规模式正常充电，快充模式优先充电速度。夜间优化由本机服务管理夜间充电策略。");
+            _chargeDescription = Section(_fullWindow ? "充电设置" : "充电选项", items, items.Count, 56,
+                SettingsOptionText.ChargeDescription(battery.Mode.ToString(), night.Supported && night.Enabled));
         }
 
         if (nvidia)
@@ -403,18 +409,15 @@ public sealed class TrayMenuWindow : Window
         if (_fullWindow)
         {
             stack.Children.Add(AdditionalSections);
-            var items = new List<UIElement>();
             if (flip.Supported)
             {
                 _flipToStartVisual = CreateToggleTile("开盖开机", flip.Enabled, FlipToStartButton_Click, "开盖开机");
-                items.Add(_flipToStartVisual.Button);
+                Section("开盖开机", new UIElement[] { _flipToStartVisual.Button }, 1, OptionTileHeightDip,
+                    "开启后，当您打开笔记本盖子时，系统将自动开机。（设置改变后，重启电脑方可生效）");
             }
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
-            items.Add(_startupVisual.Button);
-            var footer = new StackPanel { Spacing = 4 };
-            Section("杂项", items, items.Count, 56, divider: false, host: footer);
-            footer.Children.Add(CreateExitButton());
-            stack.Children.Add(footer);
+            Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
+                OptionTileHeightDip, divider: false);
         }
         else stack.Children.Add(CreateExitButton());
     }
@@ -451,7 +454,7 @@ public sealed class TrayMenuWindow : Window
             state.NightCharge.Supported)
         {
             _nightChargeEnabled = state.NightCharge.Enabled;
-            RefreshToggleVisual(_nightChargeVisual, _nightChargeEnabled);
+            RefreshChargeModeTiles();
         }
 
         if (!_updatingFlipToStart &&
@@ -605,30 +608,39 @@ public sealed class TrayMenuWindow : Window
         }
     }
 
-    private async Task SetChargeModeFromTileAsync(BatteryChargeMode requested)
+    private async Task SetChargeModeFromTileAsync(BatteryChargeMode requested, bool night = false)
     {
-        if (_updatingChargeMode || _currentChargeMode == requested)
+        if (_updatingChargeMode || (_currentChargeMode == requested && _nightChargeEnabled == night))
             return;
 
-        _updatingChargeMode = true;
-        RefreshChargeModeTiles(requested);
+        _updatingChargeMode = _updatingNightCharge = true;
+        foreach (var button in _chargeModeTiles.Values) button.IsEnabled = false;
+        if (_nightChargeVisual is not null) _nightChargeVisual.Button.IsEnabled = false;
+        RefreshChargeModeTiles(requested, night);
 
         try
         {
-            BatteryActionResult result = await _setChargeMode(requested);
-            if (result.Snapshot.Supported)
-                _currentChargeMode = result.Snapshot.Mode;
+            BatterySelectionResult result = await _setChargeOption(requested, night);
+            if (result.Charge.Supported) _currentChargeMode = result.Charge.Mode;
+            if (result.Night.Supported) _nightChargeEnabled = result.Night.Enabled;
+            if (!result.Success) _showInfo("充电设置失败", result.Message);
         }
+        catch (Exception ex) { _showInfo("充电设置失败", ex.Message); }
         finally
         {
-            _updatingChargeMode = false;
+            _updatingChargeMode = _updatingNightCharge = false;
             if (!_closed)
+            {
+                foreach (var button in _chargeModeTiles.Values) button.IsEnabled = true;
+                if (_nightChargeVisual is not null) _nightChargeVisual.Button.IsEnabled = true;
                 RefreshChargeModeTiles();
+            }
         }
     }
 
     private void RefreshModeTiles(ItsMode? pending = null)
     {
+        RefreshPerformanceDescription(pending ?? _currentItsMode);
         foreach ((ItsMode mode, Button button) in _modeTiles)
         {
             RefreshOptionTile(
@@ -638,15 +650,40 @@ public sealed class TrayMenuWindow : Window
         }
     }
 
-    private void RefreshChargeModeTiles(BatteryChargeMode? pending = null)
+    private void RefreshChargeModeTiles(BatteryChargeMode? pending = null, bool pendingNight = false)
     {
+        RefreshChargeDescription(pending, pendingNight);
         foreach ((BatteryChargeMode mode, Button button) in _chargeModeTiles)
         {
             RefreshOptionTile(
                 button,
-                selected: _currentChargeMode == mode,
-                pending: pending == mode);
+                selected: !_nightChargeEnabled && _currentChargeMode == mode,
+                pending: !pendingNight && pending == mode);
         }
+        if (_nightChargeVisual is not null)
+            RefreshOptionTile(_nightChargeVisual.Button, _nightChargeEnabled, pending is not null && pendingNight);
+    }
+
+    private void RefreshPerformanceDescription(ItsMode? mode)
+    {
+        if (_performanceDescription is null) return;
+        string description = mode switch
+        {
+            ItsMode.Intelligent => "平衡性能与能耗，适合日常使用。",
+            ItsMode.Cool => "侧重降低运行噪声，适合安静环境。",
+            ItsMode.Performance => "侧重释放性能，适合高负载任务。",
+            ItsMode.Creator => "面向创作或高性能任务的扩展性能模式。",
+            _ => ""
+        };
+        _performanceDescription.Text = description;
+        _performanceDescription.Visibility = description.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void RefreshChargeDescription(BatteryChargeMode? pending = null, bool pendingNight = false)
+    {
+        if (_chargeDescription is null) return;
+        _chargeDescription.Text = SettingsOptionText.ChargeDescription(
+            (pending ?? _currentChargeMode)?.ToString(), pending is not null ? pendingNight : _nightChargeSupported && _nightChargeEnabled);
     }
 
     private TileVisual CreateToggleTile(
@@ -789,8 +826,6 @@ public sealed class TrayMenuWindow : Window
             Background = TransparentBrush()
         };
 
-        if (_fullWindow) button.Margin = new Thickness(16, 0, 16, 0);
-
         button.Click += (_, _) =>
         {
             Close();
@@ -802,43 +837,8 @@ public sealed class TrayMenuWindow : Window
 
     private async void NightChargeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_nightChargeSupported || _updatingNightCharge || _nightChargeVisual is null)
-            return;
-
-        bool requested = !_nightChargeEnabled;
-        _updatingNightCharge = true;
-        _nightChargeVisual.Button.IsEnabled = false;
-        _nightChargeEnabled = requested;
-        RefreshToggleVisual(_nightChargeVisual, _nightChargeEnabled);
-
-        try
-        {
-            BatteryToggleResult result = await _setNightCharge(requested);
-            if (!result.Success)
-            {
-                _nightChargeEnabled = result.Snapshot.Supported
-                    ? result.Snapshot.Enabled
-                    : !requested;
-                RefreshToggleVisual(_nightChargeVisual, _nightChargeEnabled);
-                _showInfo("夜间充电优化设置失败", result.Message);
-            }
-            else
-            {
-                _nightChargeEnabled = result.Snapshot.Enabled;
-                RefreshToggleVisual(_nightChargeVisual, _nightChargeEnabled);
-            }
-        }
-        catch (Exception ex)
-        {
-            _nightChargeEnabled = !requested;
-            RefreshToggleVisual(_nightChargeVisual, _nightChargeEnabled);
-            _showInfo("夜间充电优化设置失败", ex.Message);
-        }
-        finally
-        {
-            _nightChargeVisual.Button.IsEnabled = true;
-            _updatingNightCharge = false;
-        }
+        if (_nightChargeSupported)
+            await SetChargeModeFromTileAsync(BatteryChargeMode.Normal, night: true);
     }
 
     private async void FlipToStartButton_Click(object sender, RoutedEventArgs e)

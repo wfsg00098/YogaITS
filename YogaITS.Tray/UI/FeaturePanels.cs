@@ -15,12 +15,12 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _wakeCard = new("唤醒和睡眠");
     private readonly FeatureCard _videoCard = new("播放和暂停");
     private readonly ColorGamutService _color;
-    private readonly FeatureCard _colorCard = new("屏幕色域");
+    private readonly FeatureCard _colorCard = new("色彩管理");
     private readonly ElevocService _audio;
     private readonly StackPanel _host;
     private readonly FeatureCard _micCard = new("麦克风降噪");
     private readonly FeatureCard _speakerCard = new("扬声器降噪");
-    private readonly FeatureCard _voiceCard = new("声纹 / 仅听机主");
+    private readonly FeatureCard _voiceCard = new("声纹管理");
     private readonly Button _cancelVoice = new() { Content = "取消录制", IsEnabled = false };
     private bool _closed;
 
@@ -80,17 +80,23 @@ internal sealed class FeaturePanels : IDisposable
         {
             var current = _audio.Snapshot;
             var buttons = new List<Button>();
-            foreach (var (label, mode) in new[] { ("关闭", "environmental"), ("单人通话", "private"), ("多人通话", "shared") })
-                buttons.Add(_micCard.Option(label, current.MicrophoneMode == mode,
+            foreach (var (label, mode) in new[] { ("关闭降噪", "environmental"), ("单人通话", "private"), ("多人通话", "shared") })
+                buttons.Add(_micCard.Option(label, mode switch
+                    {
+                        "private" => ElevocMicrophonePolicy.SinglePerson(current.MicrophoneMode),
+                        "shared" => ElevocMicrophonePolicy.MultiplePeople(current.MicrophoneMode),
+                        _ => current.MicrophoneMode == mode
+                    },
                     () => _audio.SetMicrophoneAsync(mode), !_audio.IsRegistering));
-            if (current.Special)
-                buttons.Add(_micCard.Option("多人通话 + 人声定位", current.MicrophoneMode == "special",
-                    () => _audio.SetMicrophoneAsync("special"), !_audio.IsRegistering));
-            if (current.VoiceId)
-                buttons.Add(_micCard.Option("单人通话 + 仅听机主", current.MicrophoneMode == "voiceid",
-                    () => _audio.SetMicrophoneAsync("voiceid"), current.VoiceIdRegistered && !_audio.IsRegistering));
             _micCard.Options(body, buttons.ToArray());
-            _micCard.Note(body, "降低麦克风采集的环境噪声，按通话人数选择单人或多人模式。人声定位与仅听机主仅在设备支持时显示；仅听机主需要先注册声纹。");
+            if (ElevocMicrophonePolicy.ShowVoice(current.InternalMicrophone, current.VoiceId, current.MicrophoneMode))
+                _micCard.Options(body, _micCard.Option("仅听机主", current.MicrophoneMode == "voiceid",
+                    () => _audio.SetMicrophoneAsync(current.MicrophoneMode == "voiceid" ? "private" : "voiceid"),
+                    current.VoiceIdRegistered && !_audio.IsRegistering));
+            if (ElevocMicrophonePolicy.ShowPosition(current.InternalMicrophone, current.Special, current.MicrophoneMode))
+                _micCard.Options(body, _micCard.Option("人声定位", current.MicrophoneMode == "special",
+                    () => _audio.SetMicrophoneAsync(current.MicrophoneMode == "special" ? "shared" : "special"), !_audio.IsRegistering));
+            _micCard.Note(body, SettingsOptionText.MicrophoneDescription(current.MicrophoneMode));
             _micCard.SetStatus($"当前麦克风设备：{current.CaptureName}");
         });
         _speakerCard.Update(audio.Downlink, body =>
@@ -99,10 +105,15 @@ internal sealed class FeaturePanels : IDisposable
             _speakerCard.Options(body,
                 _speakerCard.Option("开启", current.SpeakerMode == "enable", () => _audio.SetSpeakerAsync(true), !_audio.IsRegistering),
                 _speakerCard.Option("关闭", current.SpeakerMode == "disable", () => _audio.SetSpeakerAsync(false), !_audio.IsRegistering));
-            _speakerCard.Note(body, "降低播放语音中的背景噪声，作用于当前默认输出设备。实际降噪效果由设备与音频服务支持情况决定。");
+            _speakerCard.Note(body, current.SpeakerMode switch
+            {
+                "enable" => "开启后，电脑扬声器将仅播放人声，并过滤其他声音。",
+                "disable" => "关闭后，电脑扬声器将播放所有声音。",
+                _ => ""
+            });
             _speakerCard.SetStatus($"当前扬声器设备：{current.RenderName}");
         });
-        _voiceCard.Update(audio.VoiceId, body =>
+        _voiceCard.Update(audio.InternalMicrophone && audio.VoiceId, body =>
         {
             var current = _audio.Snapshot;
             _voiceCard.Note(body, current.VoiceIdRegistered ? "已注册声纹" : "尚未注册声纹，录制后可以启用仅听机主。");
@@ -117,7 +128,7 @@ internal sealed class FeaturePanels : IDisposable
                 _voiceCard.Option("读取声纹状态", false, _audio.InspectVoiceAsync, current.VoiceIdRegistered && !_audio.IsRegistering),
                 _voiceCard.Option("删除声纹", false, async () =>
                 {
-                    if (await ConfirmAsync("删除声纹", "确定删除当前声纹？删除后需要重新录制才能使用仅听机主。", "删除"))
+                    if (await ConfirmAsync("删除声纹", "确定删除当前声纹？将先关闭仅听机主，再删除声纹。删除后需要重新录制才能使用仅听机主。", "删除"))
                         await _audio.RemoveVoiceAsync();
                 }, current.VoiceIdRegistered && !_audio.IsRegistering));
             _voiceCard.Note(body, "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。");
@@ -161,7 +172,7 @@ internal sealed class FeaturePanels : IDisposable
             }
             if (current.Modes.Count > 0)
                 _colorCard.Options(body, current.Modes.Select(mode =>
-                    _colorCard.Option(mode.Brightness is int brightness ? $"{mode.Name} [{brightness}]" : mode.Name,
+                    _colorCard.Option(SettingsOptionText.ColorLabel(mode.Name, mode.Brightness),
                         current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
                         !current.Blocked && current.CurrentMode != mode.Name)).ToArray());
             _colorCard.Options(body,
@@ -169,7 +180,7 @@ internal sealed class FeaturePanels : IDisposable
                     () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
                 _colorCard.Option("在线恢复校色文件", false, _color.RecoverAsync));
             _colorCard.Note(body, "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。");
-            _colorCard.SetStatus($"当前色域：{current.CurrentMode}。{current.Message}");
+            _colorCard.SetStatus($"当前颜色配置：{SettingsOptionText.ColorLabel(current.CurrentMode)}。{current.Message}");
         });
     }
 
@@ -190,9 +201,13 @@ internal sealed class FeaturePanels : IDisposable
                 _wakeCard.Option(new[] { "快", "中", "慢" }[value], state.LeaveWaitTimeRaw == value,
                     () => _hpd.SetAsync(HpdSetting.LeaveWaitTime, value), state.LeaveEnabled)).ToArray());
             if (current.Features.CameraAssist)
-                _wakeCard.Options(body, _wakeCard.Option("人员辅助判定", state.CameraAssist,
+                _wakeCard.Options(body, _wakeCard.Option("人员辅助判定（面部识别数据）", state.CameraAssist,
                     () => _hpd.SetAsync(HpdSetting.CameraAssist, state.CameraAssist ? 0 : 1), state.LeaveEnabled));
-            _wakeCard.Note(body, "检测人员靠近时自动唤醒，离开后按所选速度自动睡眠。人员辅助判定仅在本机支持时显示；这些功能由 SmartSense 服务执行。");
+            _wakeCard.Note(body, string.Join("\n", new[]
+            {
+                state.ApproachEnabled ? "检测到人员靠近时自动唤醒电脑。" : "自动唤醒已关闭。",
+                state.LeaveEnabled ? "检测到人员离开后，按所选速度自动进入睡眠。" : "自动睡眠已关闭。"
+            }));
             _wakeCard.SetStatus("");
         });
         _videoCard.Update(snapshot.Features.AutoVideoPause, body =>
@@ -200,7 +215,9 @@ internal sealed class FeaturePanels : IDisposable
             if (_hpd.Snapshot.State is not { } state) return;
             _videoCard.Options(body, _videoCard.Option("人走暂停 / 人回播放", state.VideoPause,
                 () => _hpd.SetAsync(HpdSetting.VideoPause, state.VideoPause ? 0 : 1)));
-            _videoCard.Note(body, "检测到人员离开时暂停播放，返回时恢复播放。由 SmartSense 服务执行，仅支持部分播放器及版本。");
+            _videoCard.Note(body, state.VideoPause
+                ? "检测到人员离开时暂停播放，返回时恢复播放。"
+                : "人走暂停 / 人回播放已关闭。");
             _videoCard.SetStatus("");
         });
     }

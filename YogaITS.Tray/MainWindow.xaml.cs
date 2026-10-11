@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
     private readonly SemaphoreSlim _coreRefreshGate = new(1, 1);
+    private readonly SemaphoreSlim _chargeSelectionGate = new(1, 1);
     private bool _exiting;
     private bool _controlCenterRefreshing;
 
@@ -161,8 +162,7 @@ public sealed partial class MainWindow : Window
                 nvidiaGpuSupported: state.NvidiaGpuSupported,
                 startupEnabled: state.StartupEnabled,
                 setMode: SetModeAsync,
-                setChargeMode: SetChargeModeAsync,
-                setNightCharge: SetNightChargeAsync,
+                setChargeOption: SetChargeOptionAsync,
                 setFlipToStart: SetFlipToStartAsync,
                 killGpuApps: KillGpuAppsDirect,
                 restartGpu: RestartGpuDirect,
@@ -317,44 +317,18 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task<BatteryActionResult> SetChargeModeAsync(BatteryChargeMode mode)
+    private async Task<BatterySelectionResult> SetChargeOptionAsync(BatteryChargeMode mode, bool night)
     {
+        await _chargeSelectionGate.WaitAsync();
         try
         {
-            BatteryActionResult result =
-                await LenovoBatteryHelper.SetChargeModeAsync(mode);
-
-            _stateCache.UpdateBatteryCharge(result.Snapshot);
-
-            if (!result.Success)
-            {
-                ShowChild(new InfoWindow(
-                    "充电模式切换失败",
-                    result.Message));
-            }
-
+            var result = await Task.Run(() => BatteryChargeSelection.ApplyAsync(mode, night,
+                LenovoBatteryHelper.ReadNightCharge, LenovoBatteryHelper.ReadChargeMode,
+                LenovoBatteryHelper.SetNightChargeAsync, LenovoBatteryHelper.SetChargeModeAsync));
+            _stateCache.UpdateBatterySelection(result.Charge, result.Night);
             return result;
         }
-        catch (Exception ex)
-        {
-            ShowChild(new InfoWindow(
-                "充电模式切换失败",
-                ex.Message));
-
-            return new BatteryActionResult(
-                Success: false,
-                Message: ex.Message,
-                Snapshot: _stateCache.Snapshot.BatteryCharge);
-        }
-    }
-
-    private async Task<BatteryToggleResult> SetNightChargeAsync(bool enabled)
-    {
-        BatteryToggleResult result =
-            await LenovoBatteryHelper.SetNightChargeAsync(enabled);
-
-        _stateCache.UpdateNightCharge(result.Snapshot);
-        return result;
+        finally { _chargeSelectionGate.Release(); }
     }
 
     private async Task<FlipToStartResult> SetFlipToStartAsync(bool enabled)

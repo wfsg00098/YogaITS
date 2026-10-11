@@ -7,10 +7,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../YogaITS.Tray/Services/GpuAutoPolicy.cs" Link="GpuAutoPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/LenovoBatteryHelper.cs" Link="LenovoBatteryHelper.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/BatteryChargeSelection.cs" Link="BatteryChargeSelection.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SerializedFeatureService.cs" Link="SerializedFeatureService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/HpdState.cs" Link="HpdState.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/HpdFeatureProfile.cs" Link="HpdFeatureProfile.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocJson.cs" Link="ElevocJson.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocMicrophonePolicy.cs" Link="ElevocMicrophonePolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Elevoc/CoreAudioEndpointMonitor.cs" Link="CoreAudioEndpointMonitor.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/SettingsOptionText.cs" Link="SettingsOptionText.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/NativeMethods.cs" Link="NativeMethods.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/DisplayService.cs" Link="DisplayService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/ProfileService.cs" Link="ProfileService.cs" />

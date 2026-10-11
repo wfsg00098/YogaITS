@@ -7,6 +7,7 @@ using YogaITS.Tray.Services;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Hpd;
+using YogaITS.Tray.UI;
 
 int checks = 0;
 void Check(bool condition, string name)
@@ -76,6 +77,90 @@ Check(ElevocJson.Mode("{\"Content\":{\"mode\":\"environmental\"},\"Header\":{\"s
     "Microphone noise cancellation off reads back as environmental");
 Check(ElevocJson.Mode("{\"Content\":{\"mode\":\"private\"},\"Header\":{\"status\":\"OK\"}}") != "environmental",
     "Private mode is not mistaken for noise cancellation off");
+
+foreach (bool internalMic in new[] { false, true })
+foreach (bool supported in new[] { false, true })
+foreach (string? mode in new string?[] { null, "environmental", "private", "voiceid", "shared", "special", "unknown" })
+{
+    Check(ElevocMicrophonePolicy.ShowVoice(internalMic, supported, mode) ==
+        (internalMic && supported && mode is "private" or "voiceid"), "Voice option requires internal mic and single-person family");
+    Check(ElevocMicrophonePolicy.ShowPosition(internalMic, supported, mode) ==
+        (internalMic && supported && mode is "shared" or "special"), "Position option requires internal mic and multi-person family");
+}
+var arrayMic = new AudioEndpointInfo(AudioDataFlow.Capture, "test", "renamed device",
+    new Guid("DFF21BE5-F70F-11D0-B917-00A0C9223196"));
+Check(arrayMic.IsInternalMicrophone, "Array microphone classification does not depend on friendly name");
+Check(!(arrayMic with { Flow = AudioDataFlow.Render }).IsInternalMicrophone, "Render endpoint cannot be an internal microphone");
+Check(!(arrayMic with { JackSubType = null }).IsInternalMicrophone, "Unknown microphone type hides sub-options");
+Check(!(arrayMic with { JackSubType = new Guid("DFF21BE3-F70F-11D0-B917-00A0C9223196") }).IsInternalMicrophone,
+    "Headset microphone does not expose internal directional sub-options");
+foreach (var (mode, label) in new[]
+{
+    ("Default", "出厂默认（D65）"), ("Native", "鲜艳（Native）"), ("sRGB", "网页办公（sRGB-D65）"),
+    ("DisplayP3", "摄影/数码影院（P3-D65）"), ("DCIP3", "原生数码影院（DCI-P3）"),
+    ("AdobeRGB", "摄影印刷（Adobe-RGB-D65）"), ("REC709", "SDTV视频（REC709）")
+})
+{
+    Check(SettingsOptionText.ColorLabel(mode) == label, "Color display labels preserve profile IDs");
+    Check(SettingsOptionText.ColorLabel(mode, 80) == label + "[80]", "Color label includes factory brightness");
+}
+Check(SettingsOptionText.ColorLabel("Custom") == "Custom", "Unknown color profiles keep original names");
+Check(SettingsOptionText.MicrophoneDescription("environmental").Contains("所有"), "Off microphone description");
+Check(SettingsOptionText.MicrophoneDescription("voiceid").Contains("学习"), "Voice ID microphone description");
+Check(SettingsOptionText.MicrophoneDescription("special").Contains("空间"), "Position microphone description");
+Check(SettingsOptionText.MicrophoneDescription(null) == "", "Unknown modes do not show an unrelated description");
+Check(SettingsOptionText.ChargeDescription("Conservation", false).Contains("75%-80%"), "Conservation charge description");
+Check(SettingsOptionText.ChargeDescription("Normal", false).Contains("常规"), "Normal charge description");
+Check(SettingsOptionText.ChargeDescription("RapidCharge", false).Contains("更快"), "Rapid charge description");
+Check(!SettingsOptionText.ChargeDescription("Normal", true).Contains("常规") &&
+    SettingsOptionText.ChargeDescription("Normal", true).Contains("80%"), "Night selection displays its own mutually exclusive description");
+
+foreach (var requested in Enum.GetValues<BatteryChargeMode>())
+foreach (bool night in new[] { false, true })
+foreach (bool supported in new[] { false, true })
+{
+    var calls = new List<string>();
+    var charge = new BatteryChargeSnapshot(true, BatteryChargeMode.Conservation, "test");
+    var nightState = new BatteryToggleSnapshot(supported, supported);
+    var result = await BatteryChargeSelection.ApplyAsync(requested, night, () => nightState, () => charge,
+        enabled =>
+        {
+            calls.Add("night:" + enabled);
+            nightState = new(supported, enabled);
+            return Task.FromResult(new BatteryToggleResult(true, "", nightState));
+        },
+        mode =>
+        {
+            calls.Add("mode:" + mode);
+            charge = new(true, mode, "test");
+            return Task.FromResult(new BatteryActionResult(true, "", charge));
+        });
+    var expectedMode = night ? BatteryChargeMode.Normal : requested;
+    string[] expected = night && !supported ? [] : supported
+        ? ["night:" + night, "mode:" + expectedMode] : ["mode:" + expectedMode];
+    Check(calls.SequenceEqual(expected), "Night is set before base mode, and always uses Normal");
+    Check(result.Success == (!night || supported), "Unsupported night selection fails without writing");
+    if (result.Success)
+        Check(result.Charge.Mode == expectedMode && (!supported || result.Night.Enabled == night),
+            "Selection result contains both confirmed battery states");
+}
+bool wroteBaseMode = false;
+var toggleFailure = await BatteryChargeSelection.ApplyAsync(BatteryChargeMode.Normal, true,
+    () => new(true, false), () => new(true, BatteryChargeMode.Normal, "test"),
+    _ => Task.FromResult(new BatteryToggleResult(false, "", new(true, false))),
+    mode =>
+    {
+        wroteBaseMode = true;
+        return Task.FromResult(new BatteryActionResult(true, "", new(true, mode, "test")));
+    });
+Check(!toggleFailure.Success && !wroteBaseMode, "Failed night write prevents the following base-mode write");
+Check(toggleFailure.Message.Length > 0, "Failed battery operations retain a meaningful error");
+var unconfirmedNight = await BatteryChargeSelection.ApplyAsync(BatteryChargeMode.Normal, true,
+    () => new(true, false), () => new(true, BatteryChargeMode.Normal, "test"),
+    _ => Task.FromResult(new BatteryToggleResult(true, "", new(true, true))),
+    mode => Task.FromResult(new BatteryActionResult(true, "", new(true, mode, "test"))));
+Check(!unconfirmedNight.Success, "Successful write acknowledgements cannot replace final night readback");
+Check(!unconfirmedNight.Night.Enabled, "Failed confirmation reports actual night state");
 
 string temporary = Path.Combine(Path.GetTempPath(), "YogaITS-PolicyChecks-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(temporary);
