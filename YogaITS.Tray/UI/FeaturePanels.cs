@@ -125,6 +125,7 @@ internal sealed class FeaturePanels : IDisposable
         });
         _cancelVoice.IsEnabled = _audio.IsRegistering;
         _cancelVoice.Visibility = _audio.IsRegistering ? Visibility.Visible : Visibility.Collapsed;
+        _voiceCard.RefreshFooterVisibility();
     }
 
     private async Task<bool> ConfirmAsync(string title, string message, string primary)
