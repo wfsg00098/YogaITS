@@ -7,9 +7,12 @@ namespace YogaITS.Tray.UI;
 internal sealed class FeatureCard : IDisposable
 {
     public Border View { get; } = new();
-    public StackPanel Footer { get; } = new() { Spacing = 6 };
+    public StackPanel Footer { get; } = new() { Spacing = 6, Visibility = Visibility.Collapsed };
     private readonly StackPanel _body = new() { Spacing = 8 };
-    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75 };
+    private readonly TextBlock _status = new()
+    {
+        TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75, Visibility = Visibility.Collapsed
+    };
     private Action<StackPanel>? _render;
     private bool _busy;
     private bool _visible;
@@ -37,13 +40,23 @@ internal sealed class FeatureCard : IDisposable
         View.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         _body.Children.Clear();
         render(_body);
+        RefreshFooterVisibility();
         if (_lastError is not null)
             SetStatus(_lastError);
     }
 
     public void SetStatus(string message)
     {
-        if (!_closed) _status.Text = message;
+        if (_closed) return;
+        _status.Text = message;
+        _status.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    public void RefreshFooterVisibility()
+    {
+        if (!_closed)
+            Footer.Visibility = Footer.Children.Any(child => child.Visibility == Visibility.Visible)
+                ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void Dispose()
