@@ -58,6 +58,12 @@ foreach (long capability in new[] { 0L, 0x40L })
 var failed = HpdFeatureProfile.Create(0x40, Hpd(1, 3), -1);
 Check(!failed.WakeSleepSection && !failed.AutoVideoPause && !failed.CameraAssist, "Failed HPD read hides features");
 
+Check(AppLaunchPolicy.ShouldOpenControlCenter([]), "Argument-free launch opens the control center");
+foreach (string[] arguments in new[] { new[] { "--startup" }, new[] { "--STARTUP" }, new[] { "other", "--startup" } })
+    Check(!AppLaunchPolicy.ShouldOpenControlCenter(arguments), "Startup launch never opens or signals the control center");
+foreach (string[] arguments in new[] { new[] { "--startup-other" }, new[] { "--startup=true" }, new[] { "other" } })
+    Check(AppLaunchPolicy.ShouldOpenControlCenter(arguments), "Only the exact startup flag suppresses the control center");
+
 var display = new DisplayInfo(default, 0, 0, 11, "test", "test", "", "", "test", "PANEL", 1, null, 0);
 Check(display.IsBlocked, "Unknown Advanced Color blocks writes");
 foreach (uint value in new[] { 0u, 1u << 5, 1u << 7, (1u << 5) | (1u << 7), (1u << 3) | (1u << 5) })
