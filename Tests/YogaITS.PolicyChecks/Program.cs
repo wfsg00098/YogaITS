@@ -89,6 +89,13 @@ foreach (string? mode in new string?[] { null, "environmental", "private", "voic
 }
 var arrayMic = new AudioEndpointInfo(AudioDataFlow.Capture, "test", "renamed device",
     new Guid("DFF21BE5-F70F-11D0-B917-00A0C9223196"));
+var propVariantType = typeof(CoreAudioEndpointMonitor).GetNestedType("PropVariant",
+    System.Reflection.BindingFlags.NonPublic)!;
+Check(System.Runtime.InteropServices.Marshal.SizeOf(propVariantType) == 24,
+    "Core Audio PROPVARIANT reserves the full x64 native union");
+Check(System.Runtime.InteropServices.Marshal.OffsetOf(propVariantType, "VarType").ToInt32() == 0 &&
+    System.Runtime.InteropServices.Marshal.OffsetOf(propVariantType, "PointerValue").ToInt32() == 8,
+    "Core Audio PROPVARIANT header and pointer match native offsets");
 Check(arrayMic.IsInternalMicrophone, "Array microphone classification does not depend on friendly name");
 Check(!(arrayMic with { Flow = AudioDataFlow.Render }).IsInternalMicrophone, "Render endpoint cannot be an internal microphone");
 Check(!(arrayMic with { JackSubType = null }).IsInternalMicrophone, "Unknown microphone type hides sub-options");

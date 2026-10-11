@@ -47,6 +47,8 @@ HDR 或 ACM 开启时，颜色状态统一显示“当前颜色配置：不适�
 
 内置麦克风采用保守阵列类型识别：读取 [PKEY_AudioEndpoint_JackSubType](https://learn.microsoft.com/en-us/windows/win32/coreaudio/pkey-audioendpoint-jacksubtype)，按 Windows SDK 的 MIC_ARRAY / PROCESSING_MIC_ARRAY 分类，并叠加当前 endpoint 的 RPC 能力。未知、普通麦克风或耳机类型不显示方向性子选项，不靠设备名称判断；设备切换仅刷新，不自动写模式。
 
+Core Audio 属性读取使用完整的 x64 PROPVARIANT（24 字节，类型标记偏移 0、指针偏移 8），避免原先仅声明字符串成员时产生的 16 字节缓冲区不足和原生内存越界。策略检查覆盖大小及偏移；已用只读诊断在本机验证内置麦克风和扬声器端点、插孔类型及 Elevoc 模式正常读取。结构依据 [Windows PROPVARIANT 定义](https://learn.microsoft.com/en-us/windows/win32/api/propidlbase/ns-propidlbase-propvariant)。
+
 原有功能保留 Lenovo ITS/EnergyDrv/FlipToStart 的能力检测。NVIDIA 存在性在后台刷新时重新读取，平台切至集显后独显休眠区域可动态隐藏。
 
 ## 写入约束
