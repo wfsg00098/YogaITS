@@ -126,7 +126,7 @@ public sealed partial class MainWindow : Window
     {
         if (_controlCenterWindow is not null)
         {
-            _controlCenterWindow.Activate();
+            _controlCenterWindow.ShowInForeground();
             return;
         }
         ShowSettingsWindow(true);
