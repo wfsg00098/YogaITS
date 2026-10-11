@@ -12,7 +12,7 @@
 
 大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。分组无背景或外围框，仅底部灰色分割线；按钮复用 WinUI 默认模板，无填充，灰色/强调色边线分别表示未选中/选中，悬停及按下不增加背景填充。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
 
-大窗口所有分组标题共用 SettingsSectionTitleStyle（14 DIP、SemiBold、主题主文本色、22 DIP 最小高度），标题与选项间隔 8 DIP。大窗口所有选项及退出按钮统一使用 48 DIP 最小高度；退出按钮复用无填充边线卡片，并与组内选项对齐。小窗口保留紧凑标题与退出布局。
+大窗口所有分组标题共用 SettingsSectionTitleStyle（14 DIP、SemiBold、主题主文本色、22 DIP 最小高度），标题与选项间隔 8 DIP。大窗口所有选项及退出按钮统一使用 48 DIP 最小高度，文字统一为 12.5 DIP（原为 10.5/11 DIP），长标签仍允许换行并自然增高，不设置裁切用的固定高度；退出按钮复用无填充边线卡片，并与组内选项对齐。小窗口保留原字号、紧凑标题与退出布局。
 
 大小窗口在用户通过托盘打开时共用 ShowInForeground：最小化时先恢复，再 Activate 并调用 SetForegroundWindow 请求前台焦点；再次点击已存在的大窗口也走此路径，不重设尺寸或位置。后台刷新不调用前台激活。遵循 [Windows 前台激活规则](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setforegroundwindow)，不通过模拟输入或绑定线程绕过系统限制；实机焦点行为仍需确认。
 
