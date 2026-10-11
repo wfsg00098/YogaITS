@@ -380,6 +380,7 @@ public sealed class TrayMenuWindow : Window
                 container.BorderThickness = new Thickness(0);
                 container.Padding = _fullWindow ? new Thickness(8, 8, 8, 0) : new Thickness(4, 4, 4, 0);
             }
+            else SettingsMotion.SeparateDivider(container);
             (host ?? stack).Children.Add(container);
             return note;
         }
@@ -450,6 +451,9 @@ public sealed class TrayMenuWindow : Window
         if (_closed)
             return;
         if (_coreStack is not null) SettingsMotion.Reposition(_coreStack);
+        if (_coreStack is not null)
+            foreach (var group in _coreStack.Children.OfType<Border>())
+                SettingsMotion.RepositionGroup(group);
         SettingsMotion.Reposition(AdditionalSections);
 
         var capabilities = (state.ItsCapabilities.Supported, state.ItsCapabilities.GeekModeSupported,

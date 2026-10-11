@@ -38,6 +38,7 @@ internal sealed class FeatureCard : IDisposable
         _content.Children.Add(_statusDetail);
         _content.Children.Add(Footer);
         View.Child = _content;
+        SettingsMotion.SeparateDivider(View);
     }
 
     public void Update(bool visible, Action<StackPanel> render)
@@ -51,6 +52,7 @@ internal sealed class FeatureCard : IDisposable
         _nextChild = 0;
         SettingsMotion.Reposition(_content);
         SettingsMotion.Reposition(_body);
+        SettingsMotion.RepositionGroup(View);
         render(_body);
         while (_body.Children.Count > _nextChild)
             _body.Children.RemoveAt(_body.Children.Count - 1);
@@ -63,6 +65,7 @@ internal sealed class FeatureCard : IDisposable
     {
         if (_closed) return;
         SettingsMotion.Reposition(_content);
+        SettingsMotion.RepositionGroup(View);
         _status.Text = message;
         _status.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
         _statusDetail.Text = detail ?? "";
@@ -157,7 +160,8 @@ internal sealed class FeatureCard : IDisposable
         _busy = true;
         _body.IsHitTestVisible = false;
         _lastError = null;
-        SetStatus("");
+        // Keep the current device/status row while awaiting hardware I/O.
+        // Collapsing it here would shrink the group, then grow it on readback.
         try { await action(); }
         catch (OperationCanceledException) { _lastError = "操作已取消，状态已重新读取。"; }
         catch (Exception ex) { _lastError = ex.Message; }
