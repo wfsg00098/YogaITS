@@ -209,13 +209,16 @@ internal sealed class FeaturePanels : IDisposable
                     () => _hpd.SetAsync(HpdSetting.AutoWake, state.ApproachEnabled ? 0 : 1)),
                 _wakeCard.Option("自动睡眠", state.LeaveEnabled,
                     () => _hpd.SetAsync(HpdSetting.AutoSleep, state.LeaveEnabled ? 0 : 1)));
-            _wakeCard.Note(body, "人离开后进入睡眠的速度");
-            _wakeCard.Options(body, Enumerable.Range(0, 3).Select(value =>
-                _wakeCard.Option(new[] { "快", "中", "慢" }[value], state.LeaveWaitTimeRaw == value,
-                    () => _hpd.SetAsync(HpdSetting.LeaveWaitTime, value), state.LeaveEnabled)).ToArray());
-            if (current.Features.CameraAssist)
-                _wakeCard.Options(body, _wakeCard.Option("人员辅助判定（面部识别数据）", state.CameraAssist,
-                    () => _hpd.SetAsync(HpdSetting.CameraAssist, state.CameraAssist ? 0 : 1), state.LeaveEnabled));
+            if (state.LeaveEnabled)
+            {
+                _wakeCard.Note(body, "人离开后进入睡眠的速度");
+                _wakeCard.Options(body, Enumerable.Range(0, 3).Select(value =>
+                    _wakeCard.Option(new[] { "快", "中", "慢" }[value], state.LeaveWaitTimeRaw == value,
+                        () => _hpd.SetAsync(HpdSetting.LeaveWaitTime, value))).ToArray());
+                if (current.Features.CameraAssist)
+                    _wakeCard.Options(body, _wakeCard.Option("人员辅助判定（面部识别数据）", state.CameraAssist,
+                        () => _hpd.SetAsync(HpdSetting.CameraAssist, state.CameraAssist ? 0 : 1)));
+            }
             _wakeCard.Note(body, string.Join("\n", new[]
             {
                 state.ApproachEnabled ? "检测到人员靠近时自动唤醒电脑。" : "自动唤醒已关闭。",
