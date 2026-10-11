@@ -327,7 +327,10 @@ internal sealed class CoreAudioEndpointMonitor : IDisposable
                 14);
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    // x64 PROPVARIANT includes a 16-byte counted-array union after its
+    // 8-byte header, even when we only read the string pointer member.
+    // Omitting the full size lets native GetValue overwrite adjacent memory.
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
     private struct PropVariant
     {
         [FieldOffset(0)]
