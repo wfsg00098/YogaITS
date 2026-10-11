@@ -47,7 +47,7 @@
 - 色域：Factory 源不修改；保留 managed ICC 注册刷新、字节验证、association、STANDARD 回读、WCS、可选亮度和最后的 C1 DWM 刷新。模式来自当前 STANDARD，不自动恢复旧色域。
 - HDR / ACM：通过 DisplayConfigSetDeviceInfo 的 SET_HDR_STATE / SET_WCG_STATE 设置当前内屏 target；串行写入并有限回读确认。结构与标志依据 [Windows SDK 定义](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)，关闭后只刷新能力，不应用 ICC。
 - 在线恢复：只在用户点击时下载；完整序列号仅用于 Lenovo 请求及本机校验。下载和 staged copy 验证通过后替换缓存。
-- 麦克风降噪：设置成功后按最终 Probe 等待 150 ms 再回读；不匹配时显示请求模式、实际模式和当前设备，便于区分延迟与设备能力限制。不自动重写模式，耳机插拔仍只刷新。
+- 麦克风降噪：2026-10-11 根据管家实测纠正关闭映射，内置麦克风及耳机均发送并回读 `environmental`，不再使用 `off` 执行关闭。客户端保留 `off` 仅用于旧状态恢复兼容。设置成功后等待 150 ms 再回读；不匹配时显示请求模式、实际模式和当前设备。不自动重写模式，耳机插拔仍只刷新。
 - HPD：保留 ContextCreate/ContextClose 生命周期；设置后检查 rc 并回读；不暴露距离或 YogaMode。
 - 音频：设备变化只刷新能力和状态，不重写偏好模式。Voice ID 删除二次确认。注册按 private → 48 kHz/20 秒 FLOAT32 WAV → SetSpeakerID(file) → registered → voiceid → data[192] → 最终复核。
 - 注册失败尽力恢复原模式；设备变化后不向新端点恢复模式。数据需 192 维有限数值，FLOAT32，L2 接近 1。私有模式的 metadata-only 返回不视为声纹丢失。timestamp 交由服务管理。

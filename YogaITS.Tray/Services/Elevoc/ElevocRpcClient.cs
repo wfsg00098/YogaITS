@@ -70,7 +70,7 @@ internal sealed class ElevocRpcClient : IDisposable
         string normalized = mode?.Trim().ToLowerInvariant()
             ?? throw new ArgumentNullException(nameof(mode));
 
-        if (normalized is not ("off" or "private" or "shared" or "special" or "voiceid"))
+        if (normalized is not ("environmental" or "off" or "private" or "shared" or "special" or "voiceid"))
             throw new ArgumentOutOfRangeException(nameof(mode), mode, "未知的 Elevoc uplink mode。");
 
         return SendObject(new
