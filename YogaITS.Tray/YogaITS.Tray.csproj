@@ -29,12 +29,6 @@
     <PackageReference Include="System.Management" Version="10.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="Assets\YogaITS.ico">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
   <!--
     .NET 10 + unpackaged WinUI 3 publish currently generates the project PRI
     but may fail to add it to ResolvedFileToPublish. Without the app PRI,

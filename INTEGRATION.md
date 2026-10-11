@@ -32,6 +32,8 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 ## 能力与状态源
 
+图标源仍保留在工程 `Assets/YogaITS.ico`，由 `ApplicationIcon` 编译进 EXE 的原生图标资源，不作为 Content 复制。托盘、大小窗口与信息窗口统一从当前 EXE 提取内置图标，不写临时 ICO；图标句柄使用 SafeHandle，按托盘/窗口生命周期释放。发布目录不再需要 `Assets` 文件夹。依据 [ExtractIconEx](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-extracticonexw) 和 [AppWindow.SetIcon(IconId)](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.windowing.appwindow.seticon)。
+
 小窗口独立退出按钮复用功能分组的单列 tile-grid 和水平 Padding，左右边缘与其他分组的按钮区域总宽度对齐；仍为 28 DIP 高度，无分组标题或新增分割线。
 
 普通启动（不含独立 `--startup` 参数）自动打开大窗口；带 `--startup` 仅驻留托盘，不主动抢焦点。开机任务原本已携带该参数，无需重新配置。单实例通过当前用户会话的命名自动重置事件传递“打开大窗口”请求：运行中再次普通启动会唤出已有窗口，再次带 `--startup` 启动则直接退出，不影响现有窗口状态。隐藏 MainWindow 始终不 Activate，界面请求交给其 DispatcherQueue。

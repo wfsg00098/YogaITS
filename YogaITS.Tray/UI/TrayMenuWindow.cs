@@ -956,9 +956,7 @@ public sealed class TrayMenuWindow : Window
             var fullPresenter = OverlappedPresenter.Create();
             fullPresenter.IsResizable = true;
             AppWindow.SetPresenter(fullPresenter);
-            string fullIcon = Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
-            if (File.Exists(fullIcon))
-                AppWindow.SetIcon(fullIcon);
+            WindowHelpers.SetAppIcon(this);
             SetTitleBar(_windowHeader);
             ApplySystemControlButtonTheme();
             AppWindow.Changed += ControlCenterWindow_Changed;
@@ -973,11 +971,7 @@ public sealed class TrayMenuWindow : Window
 
         AppWindow.SetPresenter(presenter);
 
-        string iconPath =
-            Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
-
-        if (File.Exists(iconPath))
-            AppWindow.SetIcon(iconPath);
+        WindowHelpers.SetAppIcon(this);
 
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 

@@ -80,16 +80,12 @@ public sealed partial class MainWindow : Window
 
     private void InitializeHiddenTrayHost()
     {
-        string iconPath =
-            Path.Combine(AppContext.BaseDirectory, "Assets", "YogaITS.ico");
-
         _mainHwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
         AppRuntimeSnapshot state = _stateCache.Snapshot;
 
         _trayIcon = new NativeTrayIcon(
             _mainHwnd,
-            iconPath,
             BuildTooltip(state));
 
         _trayIcon.MouseMove += TrayIcon_MouseMove;
