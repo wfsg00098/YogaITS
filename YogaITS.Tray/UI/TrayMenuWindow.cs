@@ -46,6 +46,7 @@ public sealed class TrayMenuWindow : Window
     private TextBlock? _chargeDescription;
     private bool _closed;
     private bool _shown;
+    private bool _isActive;
 
     private ItsMode? _currentItsMode;
     private BatteryChargeMode? _currentChargeMode;
@@ -221,8 +222,12 @@ public sealed class TrayMenuWindow : Window
 
     private void TrayMenuWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
-        if (_contentRoot is not Grid root || _closed) return;
-        if (args.WindowActivationState == WindowActivationState.Deactivated)
+        if (_closed) return;
+        _isActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        if (_fullWindow)
+            ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        if (_contentRoot is not Grid root) return;
+        if (!_isActive)
             root.ClearValue(Grid.BackgroundProperty); // Theme-aware opaque fallback from the root style.
         else
             root.Background = TransparentBrush(); // Expose native Mica; system policy still controls fallback.
@@ -401,7 +406,7 @@ public sealed class TrayMenuWindow : Window
         if (nvidia)
             Section("独显休眠", new UIElement[]
             {
-                CreateActionTile("结束独显占用进程", _killGpuApps),
+                CreateActionTile(_fullWindow ? "结束独显占用进程" : "结束独显\n占用进程", _killGpuApps),
                 CreateActionTile("重启独显设备", _restartGpu)
             }, 2, 62,
                 "结束占用独显的可处理进程，或重启独显设备以尝试恢复休眠。结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁；实际休眠还取决于外接显示器及其他占用。");
@@ -1147,7 +1152,7 @@ public sealed class TrayMenuWindow : Window
         }
     }
 
-    private static void ApplyDwmAppearance(nint hwnd)
+    private void ApplyDwmAppearance(nint hwnd)
     {
         // Mica is owned by Window.SystemBackdrop, not a competing DWM recipe.
         int preference = 2; // DWMWCP_ROUND
@@ -1157,11 +1162,10 @@ public sealed class TrayMenuWindow : Window
             ref preference,
             sizeof(int));
 
-        // Always force the current Windows Accent Color onto our DWM border.
-        // Do not follow the user's global "Show accent color on title bars and
-        // window borders" switch. Without an explicit border color DWM can draw
-        // a light/white non-client edge around this tool window.
-        uint borderColor = GetAccentColorRef();
+        // Force accent on the full window only while active, independently of
+        // global accent settings. On deactivation restore DWM's default border.
+        // Keep the compact tool window's existing accent behavior unchanged.
+        uint borderColor = _fullWindow && !_isActive ? DWMWA_COLOR_DEFAULT : GetAccentColorRef();
 
         _ = DwmSetWindowAttributeUInt(
             hwnd,
@@ -1236,6 +1240,7 @@ public sealed class TrayMenuWindow : Window
     private const uint MONITOR_DEFAULTTONEAREST = 2;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWA_BORDER_COLOR = 34;
+    private const uint DWMWA_COLOR_DEFAULT = 0xFFFFFFFF;
 
     // DWM_COLOR_NONE = suppress the system-drawn border completely.
     private const uint DWMWA_COLOR_NONE = 0xFFFFFFFE;

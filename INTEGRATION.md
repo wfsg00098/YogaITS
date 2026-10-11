@@ -32,6 +32,8 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 ## 能力与状态源
 
+小窗口的独显操作标签固定为“结束独显\n占用进程”两行，大窗口保持“结束独显占用进程”。大窗口仅获焦时强制强调色边框，忽略系统对应开关；失焦时写入 `DWMWA_COLOR_DEFAULT` 恢复系统默认边框，强调色变化时仍遵循当前激活状态，不修改系统全局设置。小窗口边框行为不变。依据 [DWM 边框颜色与激活状态说明](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute)。
+
 | 功能 | 显示/启用规则 |
 | --- | --- |
 | GPU 工作模式 | IsSupportIGPUMode.Data > 0；实际状态来自 GetIGPUModeStatus，逻辑模式由本应用保存 |
