@@ -81,6 +81,9 @@ internal sealed class FeaturePanels : IDisposable
             var current = _audio.Snapshot;
             var buttons = new List<Button>();
             foreach (var (label, mode) in new[] { ("关闭降噪", "environmental"), ("单人通话", "private"), ("多人通话", "shared") })
+            {
+                if (mode == "shared" && !ElevocMicrophonePolicy.SupportsMultiplePeople(current.InternalMicrophone))
+                    continue;
                 buttons.Add(_micCard.Option(label, mode switch
                     {
                         "private" => ElevocMicrophonePolicy.SinglePerson(current.MicrophoneMode),
@@ -88,6 +91,7 @@ internal sealed class FeaturePanels : IDisposable
                         _ => current.MicrophoneMode == mode
                     },
                     () => _audio.SetMicrophoneAsync(mode), !_audio.IsRegistering));
+            }
             _micCard.Options(body, buttons.ToArray());
             if (ElevocMicrophonePolicy.ShowVoice(current.InternalMicrophone, current.VoiceId, current.MicrophoneMode))
                 _micCard.Options(body, _micCard.Option("仅听机主", current.MicrophoneMode == "voiceid",
