@@ -2,6 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI.ViewManagement;
 
 namespace YogaITS.Tray.UI;
 
@@ -14,6 +16,11 @@ internal sealed class TransientScrollBar : IDisposable
     private readonly DispatcherTimer _hideTimer = new();
     private readonly PointerEventHandler _pressed;
     private readonly PointerEventHandler _released;
+    private readonly UISettings _uiSettings = new();
+    private readonly VisualStateGroup? _indicatorStates;
+    private readonly List<VisualTransition> _fadeInTransitions = new();
+    private readonly long _indicatorModeCallback;
+    private bool _visible;
     private bool _scrolling;
     private bool _hovering;
     private bool _dragging;
@@ -27,6 +34,39 @@ internal sealed class TransientScrollBar : IDisposable
         _lastOffset = scroll.VerticalOffset;
         _pressed = Bar_PointerPressed;
         _released = Bar_PointerReleased;
+        _bar.ApplyTemplate();
+        if (VisualTreeHelper.GetChildrenCount(_bar) > 0 &&
+            VisualTreeHelper.GetChild(_bar, 0) is FrameworkElement root)
+        {
+            _indicatorStates = VisualStateManager.GetVisualStateGroups(root)
+                .FirstOrDefault(group => group.Name == "ScrollingIndicatorStates");
+            if (_indicatorStates != null)
+            {
+                // Reuse the native fade-out storyboard. Add generated fade-ins
+                // to its existing states, using the template's opacity duration.
+                foreach (string target in new[] { "TouchIndicator", "MouseIndicator" })
+                {
+                    var transition = new VisualTransition
+                    {
+                        From = "NoIndicator",
+                        To = target,
+                        GeneratedDuration = new Duration(TimeSpan.FromMilliseconds(83))
+                    };
+                    _indicatorStates.Transitions.Add(transition);
+                    _fadeInTransitions.Add(transition);
+                }
+            }
+        }
+        _indicatorModeCallback = _bar.RegisterPropertyChangedCallback(
+            ScrollBar.IndicatorModeProperty, (_, _) =>
+            {
+                // ScrollViewer also changes indicator mode on pointer movement
+                // and its own auto-hide timer. Reconcile after that native update
+                // without changing input handling or restarting our hide timer.
+                _bar.DispatcherQueue.TryEnqueue(ApplyIndicatorState);
+            });
+        VisualStateManager.GoToState(_bar, "NoIndicator", false);
+        _indicatorStates?.CurrentState?.Storyboard?.SkipToFill();
         _hideTimer.Tick += HideTimer_Tick;
         _scroll.ViewChanging += Scroll_ViewChanging;
         _scroll.ViewChanged += Scroll_ViewChanged;
@@ -46,9 +86,20 @@ internal sealed class TransientScrollBar : IDisposable
     {
         if (_disposed) return;
         _hideTimer.Stop();
-        if (_scroll.ScrollableHeight <= 0) { _bar.Opacity = 0; return; }
-        _bar.Opacity = 1;
-        VisualStateManager.GoToState(_scroll, _hovering || _dragging ? "MouseIndicator" : "TouchIndicator", false);
+        _visible = _scroll.ScrollableHeight > 0;
+        ApplyIndicatorState();
+    }
+
+    private void ApplyIndicatorState()
+    {
+        if (_disposed) return;
+        bool animate = _uiSettings.AnimationsEnabled;
+        string state = !_visible ? "NoIndicator" :
+            _hovering || _dragging ? "MouseIndicator" : "TouchIndicator";
+        VisualStateManager.GoToState(_bar, state, animate);
+        // useTransitions=false skips generated transitions, not the native
+        // state's storyboard. Complete that too when system animations are off.
+        if (!animate) _indicatorStates?.CurrentState?.Storyboard?.SkipToFill();
     }
 
     private void HideAfter(int milliseconds = 180)
@@ -63,9 +114,8 @@ internal sealed class TransientScrollBar : IDisposable
     {
         _hideTimer.Stop();
         if (_disposed || _scrolling || _hovering || _dragging) return;
-        // Do not collapse or disable the bar: keep geometry, accessibility and
-        // pointer discovery intact, independently of native auto-hide delays.
-        _bar.Opacity = 0;
+        _visible = false;
+        ApplyIndicatorState();
     }
 
     private void Scroll_ViewChanging(object? sender, ScrollViewerViewChangingEventArgs args)
@@ -117,6 +167,10 @@ internal sealed class TransientScrollBar : IDisposable
         _disposed = true;
         _hideTimer.Stop();
         _hideTimer.Tick -= HideTimer_Tick;
+        _bar.UnregisterPropertyChangedCallback(ScrollBar.IndicatorModeProperty, _indicatorModeCallback);
+        if (_indicatorStates != null)
+            foreach (var transition in _fadeInTransitions)
+                _indicatorStates.Transitions.Remove(transition);
         _scroll.ViewChanging -= Scroll_ViewChanging;
         _scroll.ViewChanged -= Scroll_ViewChanged;
         _bar.PointerEntered -= Bar_PointerEntered;
