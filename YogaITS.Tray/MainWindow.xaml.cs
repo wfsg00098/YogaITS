@@ -143,6 +143,11 @@ public sealed partial class MainWindow : Window
         ShowSettingsWindow(true);
     }
 
+    internal void RequestOpenControlCenter() => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (!_exiting) ShowControlCenter();
+    });
+
     private void ShowSettingsWindow(bool fullWindow)
     {
         // Critical path: cache only. No WMI, EnergyDrv, registry/service state
