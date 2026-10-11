@@ -41,6 +41,7 @@ public sealed class TrayMenuWindow : Window
 
     private FrameworkElement? _contentRoot;
     private Grid? _windowHeader;
+    private TransientScrollBar? _transientScrollBar;
     private TextBlock? _modelLabel;
     private TextBlock? _performanceDescription;
     private TextBlock? _chargeDescription;
@@ -273,7 +274,12 @@ public sealed class TrayMenuWindow : Window
                 Margin = new Thickness(0, 0, -8, 0),
                 Padding = new Thickness(0, 0, 8, 0),
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollMode = ScrollMode.Disabled,
+                VerticalScrollMode = ScrollMode.Enabled,
+                IsVerticalRailEnabled = true,
+                IsScrollInertiaEnabled = true,
+                ZoomMode = ZoomMode.Disabled
             };
             scroll.Resources["ScrollViewerScrollBarMargin"] = new Thickness(0);
             scroll.Loaded += (_, _) => FitScrollBarToPagePadding(scroll);
@@ -285,7 +291,7 @@ public sealed class TrayMenuWindow : Window
         return outer;
     }
 
-    private static void FitScrollBarToPagePadding(ScrollViewer scroll)
+    private void FitScrollBarToPagePadding(ScrollViewer scroll)
     {
         scroll.ApplyTemplate();
         var bar = FindVerticalScrollBar(scroll);
@@ -300,6 +306,8 @@ public sealed class TrayMenuWindow : Window
             ? Math.Min(1, 8 / bar.ActualWidth) : 1;
         bar.SizeChanged += (_, _) => UpdateWidth();
         UpdateWidth();
+        _transientScrollBar?.Dispose();
+        _transientScrollBar = new TransientScrollBar(scroll, bar);
     }
 
     private static Microsoft.UI.Xaml.Controls.Primitives.ScrollBar? FindVerticalScrollBar(DependencyObject root)
@@ -1116,6 +1124,7 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+        _transientScrollBar?.Dispose();
         if (_fullWindow && _contentRoot is not null)
             _contentRoot.ActualThemeChanged -= ContentRoot_ActualThemeChanged;
         if (_fullWindow) AppWindow.Changed -= ControlCenterWindow_Changed;
