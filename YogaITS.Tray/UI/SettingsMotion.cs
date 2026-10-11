@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI.ViewManagement;
@@ -17,6 +18,27 @@ internal static class SettingsMotion
             panel.ChildrenTransitions.Add(new RepositionThemeTransition { IsStaggeringEnabled = false });
         else if (!enabled)
             panel.ChildrenTransitions.Clear();
+    }
+
+    public static void SeparateDivider(Border group)
+    {
+        // A bottom border follows resized bounds immediately; a distinct child
+        // has a changing layout position that RepositionThemeTransition animates.
+        var content = group.Child;
+        var padding = group.Padding;
+        group.Child = null;
+        group.Padding = new Thickness(0);
+        group.BorderThickness = new Thickness(0);
+        var layout = new StackPanel();
+        layout.Children.Add(new Border { Child = content, Padding = padding });
+        layout.Children.Add(new Border { Style = TrayMenuWindow.GetSettingsStyle("SettingsDividerStyle") });
+        Reposition(layout);
+        group.Child = layout;
+    }
+
+    public static void RepositionGroup(Border group)
+    {
+        if (group.Child is Panel layout) Reposition(layout);
     }
 
     public static void SetDescription(ContentControl control, string text)
