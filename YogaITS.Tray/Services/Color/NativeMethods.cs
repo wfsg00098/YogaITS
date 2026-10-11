@@ -13,6 +13,8 @@ internal static class NativeMethods
     internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE = 16;
     internal const uint DISPLAYCONFIG_DEVICE_INFO_SET_WCG_STATE = 17;
     internal const int DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR = 0;
+    internal const int DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG = 1;
+    internal const int DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR = 2;
 
     internal const int WCS_PROFILE_MANAGEMENT_SCOPE_CURRENT_USER = 1;
     internal const int CPT_ICC = 0;
@@ -131,6 +133,9 @@ internal static class NativeMethods
         public uint bitsPerColorChannel;
         public int activeColorMode;
 
+        // User-enabled bits are preferences, not the effective display mode.
+        public readonly bool HdrActive => activeColorMode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR;
+        public readonly bool AcmActive => activeColorMode == DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG;
         public readonly bool HighDynamicRangeUserEnabled => (value & (1u << 5)) != 0;
         public readonly bool WideColorUserEnabled => (value & (1u << 7)) != 0;
         public readonly bool HighDynamicRangeSupported => (value & (1u << 4)) != 0;

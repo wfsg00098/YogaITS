@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private readonly SemaphoreSlim _chargeSelectionGate = new(1, 1);
     private bool _exiting;
     private bool _controlCenterRefreshing;
+    private CancellationTokenSource? _colorRefreshDebounce;
 
     private nint _mainHwnd;
     private DateTime _lastTrayHoverRefresh = DateTime.MinValue;
@@ -49,9 +50,12 @@ public sealed partial class MainWindow : Window
         }
         if (_systemEvents is not null)
         {
+            // Color management needs AC/DC events even on machines without GPU modes.
+            _systemEvents.EnablePowerNotifications();
             _systemEvents.PowerChanged += () => _ = RefreshGpuForSystemChangeAsync("电源事件");
             _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件");
-            _systemEvents.DisplayChanged += () => _ = _color.RefreshAsync();
+            _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
+            _systemEvents.DisplayChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
         }
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
         {
@@ -239,6 +243,35 @@ public sealed partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine("Control center refresh failed: " + ex.GetType().Name);
         }
         finally { _controlCenterRefreshing = false; }
+    }
+
+    private void ScheduleColorRefresh()
+    {
+        if (_exiting) return;
+        _colorRefreshDebounce?.Cancel();
+        _colorRefreshDebounce?.Dispose();
+        _colorRefreshDebounce = new CancellationTokenSource();
+        _ = RefreshColorForSystemChangeAsync(_colorRefreshDebounce.Token);
+    }
+
+    private async Task RefreshColorForSystemChangeAsync(CancellationToken token)
+    {
+        try
+        {
+            // Windows applies battery HDR policy asynchronously. Two bounded,
+            // coalesced reads cover settling without introducing periodic polling.
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                await Task.Delay(750, token);
+                if (_exiting || token.IsCancellationRequested) return;
+                await _color.RefreshAsync();
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Color event refresh failed: " + ex.Message);
+        }
     }
 
     private async Task RefreshGpuForSystemChangeAsync(string trigger)
@@ -457,6 +490,8 @@ public sealed partial class MainWindow : Window
     {
         if (_exiting) return;
         _exiting = true;
+        _colorRefreshDebounce?.Cancel();
+        _colorRefreshDebounce?.Dispose();
         _gpu.CancelRetry();
         _audio.CancelRegistration();
         _systemEvents?.Dispose();

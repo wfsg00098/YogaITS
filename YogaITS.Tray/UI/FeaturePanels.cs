@@ -160,13 +160,13 @@ internal sealed class FeaturePanels : IDisposable
             {
                 var switches = new List<Button>();
                 if (advanced.HighDynamicRangeSupported || advanced.HighDynamicRangeUserEnabled)
-                    switches.Add(_colorCard.Option("HDR", advanced.HighDynamicRangeUserEnabled,
+                    switches.Add(_colorCard.Option("HDR", advanced.HdrActive,
                         () => _color.SetAdvancedColorAsync(true, !advanced.HighDynamicRangeUserEnabled),
-                        advanced.HighDynamicRangeUserEnabled || !advanced.LimitedByPolicy));
+                        advanced.HighDynamicRangeUserEnabled || advanced.HighDynamicRangeSupported));
                 if (advanced.WideColorSupported || advanced.WideColorUserEnabled)
-                    switches.Add(_colorCard.Option("ACM 自动颜色管理", advanced.WideColorUserEnabled,
+                    switches.Add(_colorCard.Option("ACM 自动颜色管理", advanced.AcmActive,
                         () => _color.SetAdvancedColorAsync(false, !advanced.WideColorUserEnabled),
-                        advanced.WideColorUserEnabled || (!advanced.LimitedByPolicy && !advanced.HighDynamicRangeUserEnabled)));
+                        advanced.WideColorUserEnabled || (!advanced.LimitedByPolicy && !advanced.HdrActive)));
                 if (switches.Count > 0)
                     _colorCard.Options(body, switches.ToArray());
             }
@@ -181,8 +181,8 @@ internal sealed class FeaturePanels : IDisposable
                 _colorCard.Option("在线恢复校色文件", false, _color.RecoverAsync));
             _colorCard.Note(body, "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。");
             _colorCard.SetStatus(SettingsOptionText.ColorStatus(current.CurrentMode, current.Message,
-                current.AdvancedColor?.HighDynamicRangeUserEnabled == true,
-                current.AdvancedColor?.WideColorUserEnabled == true));
+                current.AdvancedColor?.HdrActive == true,
+                current.AdvancedColor?.AcmActive == true));
         });
     }
 

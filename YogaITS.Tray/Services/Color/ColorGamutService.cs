@@ -56,9 +56,11 @@ internal sealed class ColorGamutService : SerializedFeatureService
         if (_display is null || _display.AdvancedColor is not { } state)
             throw new InvalidOperationException("当前无法读取内屏高级颜色能力，请刷新后重试。");
         bool supported = hdr ? state.HighDynamicRangeSupported : state.WideColorSupported;
-        if (enabled && (!supported || state.LimitedByPolicy))
+        // HDR writes change the preference only; Windows decides whether it can
+        // become active (including the user's battery policy). Never change policy.
+        if (enabled && (!supported || !hdr && state.LimitedByPolicy))
             throw new InvalidOperationException("系统当前不允许开启该高级颜色功能。");
-        if (!hdr && enabled && state.HighDynamicRangeUserEnabled)
+        if (!hdr && enabled && state.HdrActive)
             throw new InvalidOperationException("请先关闭 HDR，再开启 ACM。");
         var request = DisplayService.CreateColorStateRequest(_display, hdr, enabled);
         bool verified = false;
@@ -78,7 +80,7 @@ internal sealed class ColorGamutService : SerializedFeatureService
         }
         finally { Read(); }
         if (!verified)
-            throw new InvalidOperationException("设置已发送，但系统尚未确认目标状态，请刷新查看。");
+            throw new InvalidOperationException("设置已发送，但系统尚未确认启用偏好，请刷新查看。");
         // Refresh capabilities only. Turning off HDR/ACM never reapplies an old ICC.
     });
 

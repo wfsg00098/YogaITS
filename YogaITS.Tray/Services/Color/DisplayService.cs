@@ -19,8 +19,8 @@ internal sealed record DisplayInfo(
     int AdvancedColorError)
 {
     public bool IsInternalOutput => OutputTechnology is 6u or 11u or 13u or 0x80000000u;
-    public bool HdrEnabled => AdvancedColor?.HighDynamicRangeUserEnabled ?? false;
-    public bool AcmEnabled => AdvancedColor?.WideColorUserEnabled ?? false;
+    public bool HdrEnabled => AdvancedColor?.HdrActive ?? false;
+    public bool AcmEnabled => AdvancedColor?.AcmActive ?? false;
     public bool IsBlocked => AdvancedColor is null || HdrEnabled || AcmEnabled ||
         AdvancedColor.Value.activeColorMode != NativeMethods.DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR;
 

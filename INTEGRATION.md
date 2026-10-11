@@ -22,7 +22,7 @@
 
 色彩管理按钮使用“管家选项（对应颜色配置）[亮度]”：Default→出厂默认（D65）、Native→鲜艳（Native）、sRGB→网页办公（sRGB-D65）、DisplayP3→摄影/数码影院（P3-D65）、DCIP3→原生数码影院（DCI-P3）、AdobeRGB→摄影印刷（Adobe-RGB-D65）、REC709→SDTV视频（REC709）。只修改显示文字，底层 profile ID、工厂亮度和 HDR/ACM 写入保护不变。
 
-HDR 或 ACM 开启时，颜色状态统一显示“当前颜色配置：不适用。HDR或者ACM已开启。”，不显示旧 SDR 配置或关闭后才能切换的说明；关闭后恢复当前颜色配置及校色文件等相关提示，写入禁用逻辑不变。
+HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColorMode`，不把 `userEnabled` 偏好位当成实际启用状态。实际 HDR 或 WCG 时，颜色状态统一显示“当前颜色配置：不适用。HDR或者ACM已开启。”；实际 SDR 时恢复当前配置及校色文件提示，即使 HDR 启用偏好仍为真，也允许通过其余安全校验后切换色域。状态不可读或未知非 SDR 模式仍阻止写入。电源、屏幕事件独立于窗口焦点触发色彩刷新，750 ms 防抖后读取并延迟复核一次；后续事件取消旧延迟，退出时停止，无常态轮询。电源通知不依赖 GPU 模式能力。
 
 大小窗口均将夜间优化作为第四个互斥充电选项。选择夜间优化先开启夜间标志，再设置常规模式；选择另外三个选项先关闭夜间标志，再设置目标模式。两窗口共享串行写入入口，任一步失败停止后续写入，最后回读两项状态并一次更新缓存；夜间开启时只选中夜间优化，不同时选中常规模式。大窗口只显示当前选项的一条说明。
 
@@ -38,8 +38,8 @@ HDR 或 ACM 开启时，颜色状态统一显示“当前颜色配置：不适�
 | 集显选择 | GetIGPUMHDMIStatus 必须为 0；未知状态也禁用，写入前再次读取 |
 | GPU 智能模式 | 电源通知注册成功；AC 目标双显，DC 且独显显示路径未占用时目标集显；电源未知时不切换 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份及 LCD 亮度通道可读取；Factory 缺失为可恢复状态 |
-| 色域写入 | HDR/ACM 关闭、activeColorMode 为 SDR、Advanced Color 可读取；ICC 的 CxF 必须匹配本机序列号、面板及 Machine Type |
-| HDR / ACM 开关 | 对应 supported 或 userEnabled 为真时显示；策略限制时禁止开启；HDR 开启时禁止开启 ACM，仍允许关闭已开启项 |
+| 色域写入 | 实际 activeColorMode 为 SDR、Advanced Color 可读取；ICC 的 CxF 必须匹配本机序列号、面板及 Machine Type |
+| HDR / ACM 开关 | 对应 supported 或 userEnabled 为真时显示；选中表示实际 HDR/WCG；点击反转 userEnabled 偏好，HDR 不以策略限制阻止偏好请求，ACM 开启仍检查策略及实际 HDR |
 | 唤醒/睡眠 | GetAll rc=0 且 unAwareAbility 非零 |
 | 人员辅助判定 | 唤醒/睡眠支持、sensor_type != 4、capability & 0x40 非零 |
 | 播放/暂停 | GetAll rc=0，且 sensor_type 为 3/4 或 unAwareAbility 非零 |
@@ -57,7 +57,7 @@ Core Audio 属性读取使用完整的 x64 PROPVARIANT（24 字节，类型标�
 
 - GPU：直接对枚举获得的 WMI 实例 InvokeMethod；不读取 ReturnValue。设置后等待并回读。Auto 的 DC 过渡最多重试 5 次、间隔 5 秒；AC/拓扑事件及手动选择取消旧重试。
 - 色域：Factory 源不修改；保留 managed ICC 注册刷新、字节验证、association、STANDARD 回读、WCS、可选亮度和最后的 C1 DWM 刷新。模式来自当前 STANDARD，不自动恢复旧色域。
-- HDR / ACM：通过 DisplayConfigSetDeviceInfo 的 SET_HDR_STATE / SET_WCG_STATE 设置当前内屏 target；串行写入并有限回读确认。结构与标志依据 [Windows SDK 定义](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)，关闭后只刷新能力，不应用 ICC。
+- HDR / ACM：通过 DisplayConfigSetDeviceInfo 的 SET_HDR_STATE / SET_WCG_STATE 设置当前内屏 target 的启用偏好；串行写入并有限回读确认偏好，随后重新读取实际模式，不要求实际模式与偏好一致。HDR 请求不修改 Windows 的电池策略，也不在电源事件中自动写偏好；系统拒绝请求时保留错误提示。实际暂时关闭而偏好仍启用时，点击会关闭保存的偏好，卡片仍按回读的实际状态显示。结构与标志依据 [Windows SDK 定义](https://raw.githubusercontent.com/microsoft/win32metadata/main/generation/WinSDK/RecompiledIdlHeaders/um/wingdi.h)，[Windows 电池 HDR 策略](https://support.microsoft.com/en-gb/windows/hardware/display-graphics/hdr-settings-in-windows)可暂时关闭 HDR 并在接回电源后恢复。关闭后只刷新能力，不应用 ICC。
 - 在线恢复：只在用户点击时下载；完整序列号仅用于 Lenovo 请求及本机校验。下载和 staged copy 验证通过后替换缓存。
 - 麦克风降噪：2026-10-11 根据管家实测纠正关闭映射，内置麦克风及耳机均发送并回读 `environmental`，不再使用 `off` 执行关闭。客户端保留 `off` 仅用于旧状态恢复兼容。设置成功后等待 150 ms 再回读；不匹配时显示请求模式、实际模式和当前设备。不自动重写模式，耳机插拔仍只刷新。
 - HPD：保留 ContextCreate/ContextClose 生命周期；设置后检查 rc 并回读；不暴露距离或 YogaMode。
@@ -78,6 +78,8 @@ Core Audio 属性读取使用完整的 x64 PROPVARIANT（24 字节，类型标�
 
 ## 待实机验收
 
+2026-10-11 HDR 实际状态修正：309 项 PolicyChecks 通过，覆盖 SDR/HDR/WCG/未知模式、启用偏好和策略位组合、电池暂时关闭及接电恢复状态；Release 发布与 PRI 检查通过。检查未执行硬件写入，电源切换和 HDR 点击行为仍需以下实机验收。
+
 - [ ] 退出原版后启动 dist/YogaITS.Tray.exe，确认左右键行为、大窗口布局、主题、不同 DPI、窄窗口及关闭后驻留。
 - [ ] 大小窗口获得焦点时显示 Mica，Alt+Tab 失焦后显示纯色；浅深主题及关闭透明效果/高对比度下回退正常；小窗口打开后外部点击仍关闭，能力刷新不抢焦点。
 - [ ] 大窗口头部拖动、双击最大化、系统三个控制按钮及不同 DPI 下的按钮避让正常；滚动内容时头部保持固定，型号仅在大窗口主标题下方显示。
@@ -85,6 +87,7 @@ Core Audio 属性读取使用完整的 x64 PROPVARIANT（24 字节，类型标�
 - [ ] 管理员运行验证 GPU 双显/集显互切、AC/DC 智能切换、外接独显屏保护、拔屏重评估和重启后 Auto 恢复。
 - [ ] 验证 HPD 各开关和快/中/慢回读；缺少 SmartSense 服务时隐藏。
 - [ ] 在色域卡片切换 HDR/ACM，确认回读状态与禁用原因；关闭后反复切换色域；验证亮度开关、内屏拓扑变化、在线恢复成功与身份不匹配阻断。
+- [ ] Windows 开启“使用电池时关闭 HDR”：拔电后卡片按实际 SDR 取消选中并允许色域切换；接电后实际 HDR 恢复则再次阻止色域写入，失焦/最小化仍更新。电池下点击 HDR 只修改启用偏好，不覆盖电池策略、不因实际仍 SDR 而误报偏好设置失败。
 - [ ] 验证麦克风/扬声器各模式、耳机插拔后能力变化；设备切换只刷新、不覆盖服务 preferred mode。
 - [ ] 验证 20 秒声纹注册、取消、录制途中设备变化、重新注册及删除；private 下读取不误报声纹丢失。
 - [ ] 缺少相关驱动/服务的机器隐藏相应功能，恢复服务后切回窗口重新检测；验证获得焦点仅触发一次刷新、不叠加批次。

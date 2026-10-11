@@ -60,11 +60,28 @@ Check(!failed.WakeSleepSection && !failed.AutoVideoPause && !failed.CameraAssist
 
 var display = new DisplayInfo(default, 0, 0, 11, "test", "test", "", "", "test", "PANEL", 1, null, 0);
 Check(display.IsBlocked, "Unknown Advanced Color blocks writes");
-foreach (var (value, mode, blocked) in new[] { (0u, 0, false), (1u << 5, 0, true), (1u << 7, 0, true), (0u, 1, true) })
+foreach (uint value in new[] { 0u, 1u << 5, 1u << 7, (1u << 5) | (1u << 7), (1u << 3) | (1u << 5) })
+foreach (int mode in new[] { 0, 1, 2, 99 })
 {
     var advanced = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 { value = value, activeColorMode = mode };
-    Check((display with { AdvancedColor = advanced }).IsBlocked == blocked, "HDR/ACM/non-SDR gate");
+    var actualDisplay = display with { AdvancedColor = advanced };
+    Check(actualDisplay.IsBlocked == (mode != 0), "Only effective SDR permits gamut, regardless of preferences/policy");
+    Check(actualDisplay.HdrEnabled == (mode == 2) && advanced.HdrActive == (mode == 2), "HDR display state uses actual mode");
+    Check(actualDisplay.AcmEnabled == (mode == 1) && advanced.AcmActive == (mode == 1), "ACM display state uses actual mode");
+    Check((actualDisplay.ColorBlockReason.Length > 0) == (mode != 0), "Block reason follows effective mode");
 }
+var batteryColor = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2
+{
+    value = (1u << 3) | (1u << 4) | (1u << 5), activeColorMode = 0
+};
+Check(batteryColor.HighDynamicRangeUserEnabled && !batteryColor.HdrActive,
+    "Battery policy can suspend HDR without clearing user preference");
+Check(SettingsOptionText.ColorStatus("Native", "", batteryColor.HdrActive, batteryColor.AcmActive) ==
+    SettingsOptionText.ColorStatus("Native", "", false, false), "Suspended HDR shows SDR color status");
+var pluggedColor = batteryColor;
+pluggedColor.activeColorMode = 2;
+Check(pluggedColor.HighDynamicRangeUserEnabled == batteryColor.HighDynamicRangeUserEnabled && pluggedColor.HdrActive &&
+    (display with { AdvancedColor = pluggedColor }).IsBlocked, "Restored HDR blocks gamut without changing preference");
 var supportedColor = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 { value = (1u << 4) | (1u << 6) };
 Check(supportedColor.HighDynamicRangeSupported && supportedColor.WideColorSupported, "HDR and ACM support bits");
 Check(!supportedColor.HighDynamicRangeUserEnabled && !supportedColor.WideColorUserEnabled, "Support is not enabled state");
