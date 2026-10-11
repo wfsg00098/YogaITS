@@ -8,7 +8,7 @@
 
 右键保留原有快捷菜单并移除杂项。左键使用共用控制组件构建纵向单列窗口：性能、充电、独显休眠、新增功能、杂项；不因失去焦点关闭，支持滚动和缩放。两种窗口共用缓存和设置回调。
 
-控制中心每次从非激活变为激活时并行刷新各组能力和状态，刷新期间不叠加批次；没有手动刷新按钮。HDR/ACM 复用选项卡片，点击切换、选中表示开启。大窗口内容延伸至标题栏，以固定页面头部作为 SetTitleBar 拖动区，保留系统三个控制按钮，不单独设置按钮颜色；根据 LeftInset / RightInset 和 RasterizationScale 预留按钮区域。型号在主标题下方左对齐，无胶囊装饰；小窗口不显示型号。只有边框强制显示系统强调色，无视系统对应显示开关。系统颜色变化时更新边框，关闭窗口时取消订阅，不修改 Windows 全局设置。实现依据 [自定义标题栏接口](https://learn.microsoft.com/en-us/windows/apps/develop/title-bar)。
+控制中心每次从非激活变为激活时并行刷新各组能力和状态，刷新期间不叠加批次；没有手动刷新按钮。HDR/ACM 复用选项卡片，点击切换、选中表示开启。大窗口内容延伸至标题栏，以固定页面头部作为 SetTitleBar 拖动区；头部布局边界从窗口 y=0 开始，文字间距放在内部 Padding，支持靠近顶部拖动。保留系统三个控制按钮，图标按 ActualTheme 使用浅色黑/深色白，失焦使用可读灰色，背景透明，悬停及按下使用低透明度对比色；主题变化时更新，关闭窗口时取消订阅。根据 LeftInset / RightInset 和 RasterizationScale 预留按钮区域。型号在主标题下方左对齐，无胶囊装饰；小窗口不显示型号。只有边框强制显示系统强调色，无视系统对应显示开关，不修改 Windows 全局设置。实现依据 [自定义标题栏接口](https://learn.microsoft.com/en-us/windows/apps/develop/title-bar)。
 
 大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。分组无背景或外围框，仅底部灰色分割线；按钮复用 WinUI 默认模板，无填充，灰色/强调色边线分别表示未选中/选中，悬停及按下不增加背景填充。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
 
