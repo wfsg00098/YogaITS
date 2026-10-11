@@ -16,6 +16,28 @@ void Check(bool condition, string name)
     checks++;
 }
 
+var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x8013, acDcSetting) == SystemStateChange.Power,
+    "AC/DC notifications refresh GPU state without a visible or active window");
+Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x8013, Guid.Empty) == SystemStateChange.None,
+    "Unrelated power settings do not trigger GPU policy");
+Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x8013) == SystemStateChange.None,
+    "Missing power setting data is ignored");
+Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x000A) == SystemStateChange.Power,
+    "General power status changes refresh cached GPU state");
+foreach (int resume in new[] { 0x0012, 0x0007 })
+    Check(SystemEventMonitor.ClassifyMessage(0x0218, resume) == (SystemStateChange.Power | SystemStateChange.Display),
+        "Resume updates power and display state");
+Check(SystemEventMonitor.ClassifyMessage(0x007E, 0) == SystemStateChange.Display,
+    "Display topology notifications refresh GPU state");
+Check(SystemEventMonitor.ClassifyMessage(0x0219, 0x0007) == SystemStateChange.Display,
+    "Monitor or dock device changes refresh even without a resolution change");
+Check(SystemEventMonitor.ClassifyMessage(0x0219, 0x8001) == SystemStateChange.None,
+    "Device removal permission queries do not trigger hardware policy");
+Check(SystemEventMonitor.ClassifyMessage(0x0007, 0) == SystemStateChange.None &&
+    SystemEventMonitor.ClassifyMessage(0x0008, 0) == SystemStateChange.None,
+    "Focus gain/loss are not required system event sources");
+
 foreach (int power in new[] { -1, 0, 1, 2 })
 foreach (int path in new[] { -1, 0, 1 })
 {
