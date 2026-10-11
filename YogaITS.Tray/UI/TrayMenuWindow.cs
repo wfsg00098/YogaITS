@@ -14,6 +14,7 @@ public sealed class TrayMenuWindow : Window
 {
     private const int BaseWidthDip = 244;
     internal const double OptionTileHeightDip = 48;
+    internal const double ControlCenterButtonFontSize = 12.5;
     private readonly bool _fullWindow;
     private readonly Windows.UI.ViewManagement.UISettings _appearanceSettings = new();
     internal StackPanel AdditionalSections { get; } = new() { Spacing = 12 };
@@ -300,7 +301,11 @@ public sealed class TrayMenuWindow : Window
             if (_fullWindow)
             {
                 height = OptionTileHeightDip;
-                foreach (var button in items.OfType<Button>()) button.MinHeight = height;
+                foreach (var button in items.OfType<Button>())
+                {
+                    button.MinHeight = height;
+                    if (button.Tag is OptionTileState tile) tile.Label.FontSize = ControlCenterButtonFontSize;
+                }
             }
             var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
@@ -633,12 +638,13 @@ public sealed class TrayMenuWindow : Window
         string text,
         bool selected,
         bool isAction,
-        double minHeight)
+        double minHeight,
+        double? fontSize = null)
     {
         var label = new TextBlock
         {
             Text = text,
-            FontSize = isAction ? 11 : 10.5,
+            FontSize = fontSize ?? (isAction ? 11 : 10.5),
             FontWeight = selected
                 ? Microsoft.UI.Text.FontWeights.SemiBold
                 : Microsoft.UI.Text.FontWeights.Normal,
@@ -724,7 +730,7 @@ public sealed class TrayMenuWindow : Window
 
     private Button CreateExitButton()
     {
-        var button = _fullWindow ? CreateOptionTile("退出", false, true, OptionTileHeightDip) : new Button
+        var button = _fullWindow ? CreateOptionTile("退出", false, true, OptionTileHeightDip, ControlCenterButtonFontSize) : new Button
         {
             Content = new TextBlock
             {

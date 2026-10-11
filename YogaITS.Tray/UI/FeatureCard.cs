@@ -54,7 +54,8 @@ internal sealed class FeatureCard : IDisposable
 
     public Button Option(string label, bool selected, Func<Task> action, bool enabled = true)
     {
-        Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, TrayMenuWindow.OptionTileHeightDip);
+        Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, TrayMenuWindow.OptionTileHeightDip,
+            TrayMenuWindow.ControlCenterButtonFontSize);
         button.IsEnabled = enabled;
         button.Click += async (_, _) => await RunAsync(action);
         return button;
