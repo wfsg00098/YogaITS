@@ -174,8 +174,20 @@ public sealed class TrayMenuWindow : Window
         AppWindow.MoveAndResize(new RectInt32(
             area.X + (area.Width - width) / 2,
             area.Y + (area.Height - height) / 2, width, height));
-        Activate();
+        ShowInForeground();
         ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
+    }
+
+    public void ShowInForeground()
+    {
+        if (_closed) return;
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        if (IsIconic(hwnd)) _ = ShowWindow(hwnd, 9); // SW_RESTORE; retain the previous size and position.
+        Activate();
+        // Activate alone can leave Explorer's tray panel in the foreground.
+        // Request foreground activation only in the user's window-opening path.
+        if (!SetForegroundWindow(hwnd))
+            System.Diagnostics.Debug.WriteLine("Windows declined foreground activation for the settings window.");
     }
 
     private int GetDesiredHeightDip()
@@ -197,7 +209,7 @@ public sealed class TrayMenuWindow : Window
         if (!_shown)
         {
             _shown = true;
-            Activate();
+            ShowInForeground();
         }
         ApplyDwmAppearance(hwnd);
         InstallOutsideClickHook();
@@ -1196,6 +1208,18 @@ public sealed class TrayMenuWindow : Window
         int nCode,
         nint wParam,
         nint lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(nint hwnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(nint hwnd, int command);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
