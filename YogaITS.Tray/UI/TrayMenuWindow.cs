@@ -251,9 +251,6 @@ public sealed class TrayMenuWindow : Window
             batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
         {
-            // The native scrollbar expands over the viewport. Reserve its 16-DIP
-            // lane plus an 8-DIP gap so it cannot cover content or separator lines.
-            _coreStack.Margin = new Thickness(0, 0, 24, 0);
             outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             _windowHeader = CreateWindowHeader(modelName);
@@ -267,15 +264,50 @@ public sealed class TrayMenuWindow : Window
             var scroll = new ScrollViewer
             {
                 Content = _coreStack,
+                // Extend only the viewport into the existing right page padding.
+                // Content still ends 8 DIP from the window edge.
+                Margin = new Thickness(0, 0, -8, 0),
+                Padding = new Thickness(0, 0, 8, 0),
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
             };
+            scroll.Resources["ScrollViewerScrollBarMargin"] = new Thickness(0);
+            scroll.Loaded += (_, _) => FitScrollBarToPagePadding(scroll);
             Grid.SetRow(scroll, 1);
             outer.Children.Add(scroll);
         }
         else outer.Children.Add(_coreStack);
         _contentRoot = outer;
         return outer;
+    }
+
+    private static void FitScrollBarToPagePadding(ScrollViewer scroll)
+    {
+        scroll.ApplyTemplate();
+        var bar = FindVerticalScrollBar(scroll);
+        if (bar is null) return;
+
+        // Keep the native template, hover states and drag handling. Compress only
+        // its horizontal rendering, anchored to the right, into the 8-DIP gutter.
+        var scale = new ScaleTransform();
+        bar.RenderTransformOrigin = new Windows.Foundation.Point(1, 0);
+        bar.RenderTransform = scale;
+        void UpdateWidth() => scale.ScaleX = bar.ActualWidth > 0
+            ? Math.Min(1, 8 / bar.ActualWidth) : 1;
+        bar.SizeChanged += (_, _) => UpdateWidth();
+        UpdateWidth();
+    }
+
+    private static Microsoft.UI.Xaml.Controls.Primitives.ScrollBar? FindVerticalScrollBar(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is Microsoft.UI.Xaml.Controls.Primitives.ScrollBar { Name: "VerticalScrollBar" } bar)
+                return bar;
+            if (FindVerticalScrollBar(child) is { } descendant) return descendant;
+        }
+        return null;
     }
 
     private void PopulateCoreSections(
