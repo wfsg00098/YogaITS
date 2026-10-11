@@ -26,8 +26,8 @@ internal sealed record DisplayInfo(
 
     public string ColorBlockReason => AdvancedColor is null
         ? $"无法读取高级颜色状态（错误码 {AdvancedColorError}），暂不能切换色域。"
-        : HdrEnabled ? "HDR 已开启。关闭 HDR 后可在 SDR 状态下切换色域。"
-        : AcmEnabled ? "ACM 已开启。关闭 ACM 后可在 SDR 状态下切换色域。"
+        : HdrEnabled ? "HDR 已开启。"
+        : AcmEnabled ? "ACM 已开启。"
         : AdvancedColor.Value.activeColorMode != NativeMethods.DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR
             ? "系统仍在使用高级颜色模式，请稍后刷新。" : "";
 }
