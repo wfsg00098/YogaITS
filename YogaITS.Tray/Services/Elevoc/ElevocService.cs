@@ -91,6 +91,7 @@ internal sealed class ElevocService : SerializedFeatureService
     {
         Read();
         if (!Snapshot.Uplink || _client is null ||
+            (mode == "shared" && !ElevocMicrophonePolicy.SupportsMultiplePeople(Snapshot.InternalMicrophone)) ||
             (mode == "special" && !ElevocMicrophonePolicy.ShowPosition(Snapshot.InternalMicrophone, Snapshot.Special, Snapshot.MicrophoneMode)) ||
             (mode == "voiceid" && (!ElevocMicrophonePolicy.ShowVoice(Snapshot.InternalMicrophone, Snapshot.VoiceId, Snapshot.MicrophoneMode) || !Snapshot.VoiceIdRegistered)))
             throw new InvalidOperationException("当前麦克风不支持该降噪模式。");

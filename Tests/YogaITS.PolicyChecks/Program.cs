@@ -118,6 +118,9 @@ Check(ElevocJson.Mode("{\"Content\":{\"mode\":\"private\"},\"Header\":{\"status\
     "Private mode is not mistaken for noise cancellation off");
 
 foreach (bool internalMic in new[] { false, true })
+    Check(ElevocMicrophonePolicy.SupportsMultiplePeople(internalMic) == internalMic,
+        "Multi-person mode requires an internal microphone, not uplink capability alone");
+foreach (bool internalMic in new[] { false, true })
 foreach (bool supported in new[] { false, true })
 foreach (string? mode in new string?[] { null, "environmental", "private", "voiceid", "shared", "special", "unknown" })
 {
@@ -140,6 +143,13 @@ Check(!(arrayMic with { Flow = AudioDataFlow.Render }).IsInternalMicrophone, "Re
 Check(!(arrayMic with { JackSubType = null }).IsInternalMicrophone, "Unknown microphone type hides sub-options");
 Check(!(arrayMic with { JackSubType = new Guid("DFF21BE3-F70F-11D0-B917-00A0C9223196") }).IsInternalMicrophone,
     "Headset microphone does not expose internal directional sub-options");
+var headsetMic = arrayMic with { JackSubType = new Guid("DFF21BE3-F70F-11D0-B917-00A0C9223196") };
+Check(!ElevocMicrophonePolicy.SupportsMultiplePeople(headsetMic.IsInternalMicrophone),
+    "Headset hides multi-person mode and rejects shared writes");
+Check(ElevocMicrophonePolicy.SupportsMultiplePeople(arrayMic.IsInternalMicrophone),
+    "Returning to the array microphone restores multi-person availability");
+Check(!ElevocMicrophonePolicy.SupportsMultiplePeople((arrayMic with { JackSubType = null }).IsInternalMicrophone),
+    "Unknown microphone type conservatively hides multi-person mode");
 foreach (var (mode, label) in new[]
 {
     ("Default", "出厂默认（D65）"), ("Native", "鲜艳（Native）"), ("sRGB", "网页办公（sRGB-D65）"),
