@@ -361,7 +361,7 @@ public sealed class TrayMenuWindow : Window
             if (!divider)
             {
                 container.BorderThickness = new Thickness(0);
-                container.Padding = new Thickness(8, 8, 8, 0);
+                container.Padding = _fullWindow ? new Thickness(8, 8, 8, 0) : new Thickness(4, 4, 4, 0);
             }
             (host ?? stack).Children.Add(container);
             return note;
@@ -415,11 +415,12 @@ public sealed class TrayMenuWindow : Window
                 Section("开盖开机", new UIElement[] { _flipToStartVisual.Button }, 1, OptionTileHeightDip,
                     "开启后，当您打开笔记本盖子时，系统将自动开机。（设置改变后，重启电脑方可生效）");
             }
-            _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
-            Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
-                OptionTileHeightDip, divider: false);
         }
-        else stack.Children.Add(CreateExitButton());
+        // Both windows share the startup/exit group; lid-open startup remains
+        // exclusive to the full control center and is not part of miscellaneous.
+        _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
+        Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
+            _fullWindow ? OptionTileHeightDip : 56, divider: false);
     }
 
     public void ApplyRefreshedState(AppRuntimeSnapshot state)
@@ -810,21 +811,9 @@ public sealed class TrayMenuWindow : Window
 
     private Button CreateExitButton()
     {
-        var button = _fullWindow ? CreateOptionTile("退出", false, true, OptionTileHeightDip, ControlCenterButtonFontSize) : new Button
-        {
-            Content = new TextBlock
-            {
-                Text = "退出",
-                FontSize = 12.5
-            },
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Padding = new Thickness(9, 5, 9, 5),
-            MinHeight = 28,
-            Margin = new Thickness(0, 2, 0, 0),
-            CornerRadius = new CornerRadius(6),
-            Background = TransparentBrush()
-        };
+        var button = CreateOptionTile("退出", false, true,
+            _fullWindow ? OptionTileHeightDip : 56,
+            _fullWindow ? ControlCenterButtonFontSize : null);
 
         button.Click += (_, _) =>
         {
