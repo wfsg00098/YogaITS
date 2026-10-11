@@ -180,7 +180,9 @@ internal sealed class FeaturePanels : IDisposable
                     () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
                 _colorCard.Option("在线恢复校色文件", false, _color.RecoverAsync));
             _colorCard.Note(body, "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。");
-            _colorCard.SetStatus($"当前颜色配置：{SettingsOptionText.ColorLabel(current.CurrentMode)}。{current.Message}");
+            _colorCard.SetStatus(SettingsOptionText.ColorStatus(current.CurrentMode, current.Message,
+                current.AdvancedColor?.HighDynamicRangeUserEnabled == true,
+                current.AdvancedColor?.WideColorUserEnabled == true));
         });
     }
 

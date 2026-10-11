@@ -105,6 +105,11 @@ foreach (var (mode, label) in new[]
     Check(SettingsOptionText.ColorLabel(mode, 80) == label + "[80]", "Color label includes factory brightness");
 }
 Check(SettingsOptionText.ColorLabel("Custom") == "Custom", "Unknown color profiles keep original names");
+foreach (var (hdr, acm) in new[] { (true, false), (false, true), (true, true) })
+    Check(SettingsOptionText.ColorStatus("Native", "旧提示", hdr, acm) ==
+        "当前颜色配置：不适用。HDR或者ACM已开启。", "Advanced color status replaces inactive ICC name and old hint");
+Check(SettingsOptionText.ColorStatus("Native", "校色文件状态", false, false) ==
+    "当前颜色配置：鲜艳（Native）。校色文件状态", "SDR status retains profile name and relevant messages");
 Check(SettingsOptionText.MicrophoneDescription("environmental").Contains("所有"), "Off microphone description");
 Check(SettingsOptionText.MicrophoneDescription("voiceid").Contains("学习"), "Voice ID microphone description");
 Check(SettingsOptionText.MicrophoneDescription("special").Contains("空间"), "Position microphone description");
