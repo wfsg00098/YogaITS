@@ -7,7 +7,7 @@ namespace YogaITS.Tray.UI;
 internal sealed class FeatureCard : IDisposable
 {
     public Border View { get; } = new();
-    public StackPanel Footer { get; } = new() { Spacing = 6, Visibility = Visibility.Collapsed };
+    public StackPanel Footer { get; } = new() { Spacing = 8, Visibility = Visibility.Collapsed };
     private readonly StackPanel _body = new() { Spacing = 8 };
     private readonly TextBlock _status = new()
     {
