@@ -122,6 +122,8 @@ public sealed class TrayMenuWindow : Window
             flipToStartSnapshot,
             nvidiaGpuSupported);
         ConfigureWindow();
+        if (_fullWindow && _contentRoot is not null)
+            _contentRoot.ActualThemeChanged += ContentRoot_ActualThemeChanged;
         SystemBackdrop = new MicaBackdrop();
         Activated += TrayMenuWindow_Activated;
         _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
@@ -241,7 +243,7 @@ public sealed class TrayMenuWindow : Window
         var outer = new Grid
         {
             Style = GetSettingsStyle("SettingsWindowRootStyle"),
-            Padding = new Thickness(_fullWindow ? 20 : 9, _fullWindow ? 16 : 8, _fullWindow ? 20 : 9, 8)
+            Padding = _fullWindow ? new Thickness(0, 0, 0, 8) : new Thickness(9, 8, 9, 8)
         };
         _coreStack = new StackPanel { Spacing = _fullWindow ? 12 : 8 };
         PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
@@ -251,11 +253,16 @@ public sealed class TrayMenuWindow : Window
             outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             _windowHeader = CreateWindowHeader(modelName);
-            _windowHeader.Loaded += (_, _) => UpdateHeaderInsets();
+            _windowHeader.Loaded += (_, _) =>
+            {
+                UpdateHeaderInsets();
+                ApplySystemControlButtonTheme();
+            };
             _windowHeader.SizeChanged += (_, _) => UpdateHeaderInsets();
             outer.Children.Add(_windowHeader);
             var scroll = new ScrollViewer
             {
+                Margin = new Thickness(20, 0, 20, 0),
                 Content = _coreStack,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
@@ -419,8 +426,9 @@ public sealed class TrayMenuWindow : Window
     {
         var header = new Grid
         {
-            Margin = new Thickness(5, 2, 5, _fullWindow ? 12 : 5),
-            MinHeight = _fullWindow ? 56 : 0
+            Margin = _fullWindow ? new Thickness(0, 0, 0, 12) : new Thickness(5, 2, 5, 5),
+            MinHeight = _fullWindow ? 74 : 0,
+            Background = TransparentBrush()
         };
         var text = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Left };
         text.Children.Add(new TextBlock
@@ -447,13 +455,31 @@ public sealed class TrayMenuWindow : Window
     {
         if (!_fullWindow || _windowHeader?.XamlRoot is not { } root || _closed) return;
         double scale = root.RasterizationScale;
-        var padding = new Thickness(AppWindow.TitleBar.LeftInset / scale, 0, AppWindow.TitleBar.RightInset / scale, 0);
+        // Padding belongs inside the drag element: its bounds now start at y=0,
+        // while the heading keeps its existing position and avoids caption buttons.
+        var padding = new Thickness(25 + AppWindow.TitleBar.LeftInset / scale, 18,
+            25 + AppWindow.TitleBar.RightInset / scale, 0);
         if (!_windowHeader.Padding.Equals(padding)) _windowHeader.Padding = padding;
     }
 
     private void ControlCenterWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
     {
         UpdateHeaderInsets();
+    }
+
+    private void ContentRoot_ActualThemeChanged(FrameworkElement sender, object args) => ApplySystemControlButtonTheme();
+
+    private void ApplySystemControlButtonTheme()
+    {
+        if (!_fullWindow || _closed || !AppWindowTitleBar.IsCustomizationSupported()) return;
+        bool dark = _contentRoot?.ActualTheme == ElementTheme.Dark;
+        Color foreground = dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0);
+        var titleBar = AppWindow.TitleBar;
+        titleBar.ButtonForegroundColor = titleBar.ButtonHoverForegroundColor = titleBar.ButtonPressedForegroundColor = foreground;
+        titleBar.ButtonInactiveForegroundColor = dark ? Color.FromArgb(255, 153, 153, 153) : Color.FromArgb(255, 102, 102, 102);
+        titleBar.ButtonBackgroundColor = titleBar.ButtonInactiveBackgroundColor = Color.FromArgb(0, 0, 0, 0);
+        titleBar.ButtonHoverBackgroundColor = Color.FromArgb(dark ? (byte)24 : (byte)16, foreground.R, foreground.G, foreground.B);
+        titleBar.ButtonPressedBackgroundColor = Color.FromArgb(dark ? (byte)16 : (byte)10, foreground.R, foreground.G, foreground.B);
     }
 
     private static Grid CreateSectionHeader(string title)
@@ -885,6 +911,7 @@ public sealed class TrayMenuWindow : Window
             if (File.Exists(fullIcon))
                 AppWindow.SetIcon(fullIcon);
             SetTitleBar(_windowHeader);
+            ApplySystemControlButtonTheme();
             AppWindow.Changed += ControlCenterWindow_Changed;
             return;
         }
@@ -943,6 +970,7 @@ public sealed class TrayMenuWindow : Window
         {
             if (_closed) return;
             ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
+            ApplySystemControlButtonTheme();
         });
     }
 
@@ -1045,6 +1073,8 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+        if (_fullWindow && _contentRoot is not null)
+            _contentRoot.ActualThemeChanged -= ContentRoot_ActualThemeChanged;
         if (_fullWindow) AppWindow.Changed -= ControlCenterWindow_Changed;
         Activated -= TrayMenuWindow_Activated;
         SystemBackdrop = null;
