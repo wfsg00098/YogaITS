@@ -70,6 +70,7 @@ public sealed class TrayMenuWindow : Window
     private sealed class OptionTileState
     {
         public required TextBlock Label { get; init; }
+        public bool AccentBorder { get; set; }
     }
 
     public TrayMenuWindow(
@@ -252,6 +253,8 @@ public sealed class TrayMenuWindow : Window
             Padding = _fullWindow ? new Thickness(8) : new Thickness(9, 8, 9, 8)
         };
         _coreStack = new StackPanel { Spacing = 8 };
+        SettingsMotion.Reposition(_coreStack);
+        SettingsMotion.Reposition(AdditionalSections);
         PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
             batterySnapshot, nightChargeSnapshot, flipToStartSnapshot, nvidiaGpuSupported);
         if (_fullWindow)
@@ -356,6 +359,7 @@ public sealed class TrayMenuWindow : Window
                 }
             }
             var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
+            SettingsMotion.Reposition(section);
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
             section.Children.Add(CreateTileGrid(items, columns, height));
             TextBlock? note = null;
@@ -445,6 +449,8 @@ public sealed class TrayMenuWindow : Window
     {
         if (_closed)
             return;
+        if (_coreStack is not null) SettingsMotion.Reposition(_coreStack);
+        SettingsMotion.Reposition(AdditionalSections);
 
         var capabilities = (state.ItsCapabilities.Supported, state.ItsCapabilities.GeekModeSupported,
             state.BatteryCharge.Supported, state.NightCharge.Supported, state.FlipToStart.Supported, state.NvidiaGpuSupported);
@@ -462,10 +468,11 @@ public sealed class TrayMenuWindow : Window
             RefreshModeTiles();
         }
 
+        bool chargeChanged = false;
         if (!_updatingChargeMode && state.BatteryCharge.Supported)
         {
             _currentChargeMode = state.BatteryCharge.Mode;
-            RefreshChargeModeTiles();
+            chargeChanged = true;
         }
 
         if (!_updatingNightCharge &&
@@ -473,8 +480,9 @@ public sealed class TrayMenuWindow : Window
             state.NightCharge.Supported)
         {
             _nightChargeEnabled = state.NightCharge.Enabled;
-            RefreshChargeModeTiles();
+            chargeChanged = true;
         }
+        if (chargeChanged) RefreshChargeModeTiles();
 
         if (!_updatingFlipToStart &&
             _flipToStartVisual is not null &&
@@ -769,7 +777,7 @@ public sealed class TrayMenuWindow : Window
             Margin = new Thickness(0),
             Tag = new OptionTileState
             {
-                Label = label
+                Label = label, AccentBorder = selected
             }
         };
 
@@ -936,12 +944,23 @@ public sealed class TrayMenuWindow : Window
             return;
 
         bool accentBorder = selected || pending;
-        button.Style = GetSettingsStyle(accentBorder ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle");
-        SetTileStateResources(button, accentBorder);
+        if (state.AccentBorder != accentBorder)
+        {
+            state.AccentBorder = accentBorder;
+            button.Style = GetSettingsStyle(accentBorder ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle");
+            SetTileStateResources(button, accentBorder);
+        }
 
         state.Label.FontWeight = selected
             ? Microsoft.UI.Text.FontWeights.SemiBold
             : Microsoft.UI.Text.FontWeights.Normal;
+    }
+
+    internal static void UpdateOptionLabel(Button target, Button source)
+    {
+        if (target.Tag is OptionTileState retained && source.Tag is OptionTileState candidate &&
+            retained.Label.Text != candidate.Label.Text)
+            retained.Label.Text = candidate.Label.Text;
     }
 
     private static void SetTileStateResources(Button button, bool selected)

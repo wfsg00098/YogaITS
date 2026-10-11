@@ -30,6 +30,8 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 功能卡片没有状态文字时折叠状态行，底部没有可见操作时折叠 Footer，避免唤醒/睡眠及播放/暂停说明下方出现空白行。错误提示仍可显示；声纹注册时取消按钮及其 Footer 同步显示，录制结束后同步折叠。
 
+功能卡片更新复用既有按钮、选项网格与说明容器，不再清空整组内容，也不再在操作时将整组变暗再恢复。复用按钮同步最新操作回调，避免捕获旧状态；仅结构变化时替换对应行。说明内容实际变化时使用零偏移 ContentThemeTransition；大小窗口分组和卡片内部通过 RepositionThemeTransition 平滑移动，关闭交错效果，避免整页依次闪动。SettingsMotion 在刷新时检查系统动画设置。充电模式与夜间优化快照合并后一次刷新。需实机验证不同说明长度、麦克风附加选项显隐、停止录音及关闭系统动画后的行为。参考 [WinUI 原生动画](https://learn.microsoft.com/en-us/windows/apps/develop/motion/xaml-animation)。
+
 ## 能力与状态源
 
 大窗口滚动条打开时短暂提示约 1 秒，滚动中显示，最终 ViewChanged（含触屏惯性结束）后 180 ms 开始隐藏；鼠标悬停、直接拖动时保持可见。使用原生 ScrollBar 的 NoIndicator/TouchIndicator/MouseIndicator 状态，复用原生淡出，并添加匹配模板 83 ms 时长的生成式淡入过渡；遵循 Windows 动画效果设置，关闭动画时立即完成状态切换。原生 ScrollViewer 更新指示模式后重新协调显示状态，避免其默认隐藏延迟覆盖上述时机。不自行接管触屏手势或指针捕获；保持右侧 8 DIP 范围及原生滚轮、键盘、触屏惯性滚动。明确启用纵向滚动、纵向轨道及惯性，关闭横向滚动和缩放；关闭窗口时释放计时器、属性回调及事件订阅。依据 [原生滚动控件的输入与触屏行为](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/scroll-controls)。
