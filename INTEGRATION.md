@@ -32,7 +32,7 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 ## 能力与状态源
 
-大窗口滚动条打开时短暂提示约 1 秒，滚动中显示，最终 ViewChanged（含触屏惯性结束）后 180 ms 隐藏；鼠标悬停、直接拖动时保持可见。仅控制原生滚动条透明度和指示状态，不切换 Visibility、不自行接管触屏手势或指针捕获；保持右侧 8 DIP 范围及原生滚轮、键盘、触屏惯性滚动。明确启用纵向滚动、纵向轨道及惯性，关闭横向滚动和缩放；关闭窗口时释放计时器及事件订阅。依据 [原生滚动控件的输入与触屏行为](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/scroll-controls)。
+大窗口滚动条打开时短暂提示约 1 秒，滚动中显示，最终 ViewChanged（含触屏惯性结束）后 180 ms 开始隐藏；鼠标悬停、直接拖动时保持可见。使用原生 ScrollBar 的 NoIndicator/TouchIndicator/MouseIndicator 状态，复用原生淡出，并添加匹配模板 83 ms 时长的生成式淡入过渡；遵循 Windows 动画效果设置，关闭动画时立即完成状态切换。原生 ScrollViewer 更新指示模式后重新协调显示状态，避免其默认隐藏延迟覆盖上述时机。不自行接管触屏手势或指针捕获；保持右侧 8 DIP 范围及原生滚轮、键盘、触屏惯性滚动。明确启用纵向滚动、纵向轨道及惯性，关闭横向滚动和缩放；关闭窗口时释放计时器、属性回调及事件订阅。依据 [原生滚动控件的输入与触屏行为](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/scroll-controls)。
 
 图标源仍保留在工程 `Assets/YogaITS.ico`，由 `ApplicationIcon` 编译进 EXE 的原生图标资源，不作为 Content 复制。托盘、大小窗口与信息窗口统一从当前 EXE 提取内置图标，不写临时 ICO；图标句柄使用 SafeHandle，按托盘/窗口生命周期释放。发布目录不再需要 `Assets` 文件夹。依据 [ExtractIconEx](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-extracticonexw) 和 [AppWindow.SetIcon(IconId)](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.windowing.appwindow.seticon)。
 
