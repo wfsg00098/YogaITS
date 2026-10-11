@@ -420,12 +420,11 @@ public sealed class TrayMenuWindow : Window
                 Section("开盖开机", new UIElement[] { _flipToStartVisual.Button }, 1, OptionTileHeightDip,
                     "开启后，当您打开笔记本盖子时，系统将自动开机。（设置改变后，重启电脑方可生效）");
             }
+            _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
+            Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
+                OptionTileHeightDip, divider: false);
         }
-        // Both windows share the startup/exit group; lid-open startup remains
-        // exclusive to the full control center and is not part of miscellaneous.
-        _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
-        Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
-            _fullWindow ? OptionTileHeightDip : 56, divider: false);
+        else stack.Children.Add(CreateExitButton());
     }
 
     public void ApplyRefreshedState(AppRuntimeSnapshot state)
@@ -817,8 +816,9 @@ public sealed class TrayMenuWindow : Window
     private Button CreateExitButton()
     {
         var button = CreateOptionTile("退出", false, true,
-            _fullWindow ? OptionTileHeightDip : 56,
+            _fullWindow ? OptionTileHeightDip : 28,
             _fullWindow ? ControlCenterButtonFontSize : null);
+        if (!_fullWindow) button.Padding = new Thickness(6, 4, 6, 4);
 
         button.Click += (_, _) =>
         {
