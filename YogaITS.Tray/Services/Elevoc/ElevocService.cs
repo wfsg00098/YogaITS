@@ -87,18 +87,27 @@ internal sealed class ElevocService : SerializedFeatureService
             throw new InvalidOperationException("当前麦克风没有可用的声纹能力。");
     }
 
-    public Task SetMicrophoneAsync(string mode) => RunAsync(() =>
+    public Task SetMicrophoneAsync(string mode) => RunAsync(async () =>
     {
         Read();
         if (!Snapshot.Uplink || _client is null ||
             (mode == "special" && !Snapshot.Special) ||
             (mode == "voiceid" && (!Snapshot.VoiceId || !Snapshot.VoiceIdRegistered)))
             throw new InvalidOperationException("当前麦克风不支持该降噪模式。");
-        try { RequireOk(_client.SetMicrophoneMode(mode)); }
+        try
+        {
+            RequireOk(_client.SetMicrophoneMode(mode));
+            // Match the final probe: allow the backend to apply the mode before verification.
+            await Task.Delay(150).ConfigureAwait(false);
+        }
         finally { Read(); }
+        System.Diagnostics.Debug.WriteLine(
+            $"Elevoc uplink verify: expected={mode}, actual={Snapshot.MicrophoneMode ?? "<unknown>"}, capture={Snapshot.CaptureName}");
         if (Snapshot.MicrophoneMode != mode || (mode == "voiceid" && !Snapshot.VoiceIdRegistered))
-            throw new InvalidOperationException("模式设置已发送，但服务回读未确认生效。");
-        return Task.CompletedTask;
+            throw new InvalidOperationException(
+                $"模式设置已发送，但服务回读未确认生效。请求模式：{mode}；实际模式：{Snapshot.MicrophoneMode ?? "未知"}。" +
+                $"当前麦克风设备：{Snapshot.CaptureName}。" +
+                (mode == "voiceid" && !Snapshot.VoiceIdRegistered ? "服务未确认已注册声纹。" : ""));
     });
 
     public Task SetSpeakerAsync(bool enabled) => RunAsync(() =>
