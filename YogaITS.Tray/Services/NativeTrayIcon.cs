@@ -32,10 +32,6 @@ public sealed class NativeTrayIcon : IDisposable
     private const uint NIN_SELECT = WM_USER + 0;
     private const uint NIN_KEYSELECT = WM_USER + 1;
 
-    private const uint IMAGE_ICON = 1;
-    private const uint LR_LOADFROMFILE = 0x0010;
-    private const uint LR_DEFAULTSIZE = 0x0040;
-
     private const uint IconId = 1;
     private const nuint SubclassId = 0x594F4741; // "YOGA"
 
@@ -43,6 +39,7 @@ public sealed class NativeTrayIcon : IDisposable
     private readonly SUBCLASSPROC _subclassProc;
     private readonly uint _taskbarCreatedMessage;
     private nint _hIcon;
+    private ApplicationIcon? _icon;
     private string _tooltip;
     private bool _added;
     private bool _version4;
@@ -52,7 +49,7 @@ public sealed class NativeTrayIcon : IDisposable
     public event Action? LeftClick;
     public event Action? RightClick;
 
-    public NativeTrayIcon(nint hwnd, string iconPath, string tooltip)
+    public NativeTrayIcon(nint hwnd, string tooltip)
     {
         if (hwnd == 0)
             throw new ArgumentException("A valid HWND is required.", nameof(hwnd));
@@ -69,26 +66,20 @@ public sealed class NativeTrayIcon : IDisposable
             throw new InvalidOperationException(
                 $"无法注册 TaskbarCreated 消息。Win32 error={Marshal.GetLastWin32Error()}");
 
-        _hIcon = LoadImage(
-            0,
-            iconPath,
-            IMAGE_ICON,
-            0,
-            0,
-            LR_LOADFROMFILE | LR_DEFAULTSIZE);
-
-        if (_hIcon == 0)
-            throw new InvalidOperationException(
-                $"无法加载托盘图标：{iconPath}。Win32 error={Marshal.GetLastWin32Error()}");
+        _icon = ApplicationIcon.Load(small: true);
+        _hIcon = _icon.DangerousGetHandle();
 
         if (!SetWindowSubclass(_hwnd, _subclassProc, SubclassId, 0))
+        {
+            _icon.Dispose();
             throw new InvalidOperationException(
                 $"无法挂接托盘消息处理器。Win32 error={Marshal.GetLastWin32Error()}");
+        }
 
         if (!AddIconToShell())
         {
             RemoveWindowSubclass(_hwnd, _subclassProc, SubclassId);
-            DestroyIcon(_hIcon);
+            _icon.Dispose();
             _hIcon = 0;
             throw new InvalidOperationException(
                 $"Shell_NotifyIcon(NIM_ADD) 失败。Win32 error={Marshal.GetLastWin32Error()}");
@@ -254,7 +245,8 @@ public sealed class NativeTrayIcon : IDisposable
 
         if (_hIcon != 0)
         {
-            DestroyIcon(_hIcon);
+            _icon?.Dispose();
+            _icon = null;
             _hIcon = 0;
         }
 
@@ -307,19 +299,6 @@ public sealed class NativeTrayIcon : IDisposable
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint RegisterWindowMessageW(string lpString);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern nint LoadImage(
-        nint hInst,
-        string name,
-        uint type,
-        int cx,
-        int cy,
-        uint fuLoad);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DestroyIcon(nint hIcon);
 
     [DllImport("comctl32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -59,6 +59,16 @@ var failed = HpdFeatureProfile.Create(0x40, Hpd(1, 3), -1);
 Check(!failed.WakeSleepSection && !failed.AutoVideoPause && !failed.CameraAssist, "Failed HPD read hides features");
 
 Check(AppLaunchPolicy.ShouldOpenControlCenter([]), "Argument-free launch opens the control center");
+if (args.Length == 2 && args[0] == "--icon-executable")
+{
+    foreach (bool small in new[] { false, true })
+    {
+        using var icon = ApplicationIcon.Load(small, args[1]);
+        Check(!icon.IsInvalid && !icon.IsClosed, "Published executable supplies a valid embedded icon handle");
+        icon.Dispose();
+        Check(icon.IsClosed, "Extracted icon ownership is released safely");
+    }
+}
 foreach (string[] arguments in new[] { new[] { "--startup" }, new[] { "--STARTUP" }, new[] { "other", "--startup" } })
     Check(!AppLaunchPolicy.ShouldOpenControlCenter(arguments), "Startup launch never opens or signals the control center");
 foreach (string[] arguments in new[] { new[] { "--startup-other" }, new[] { "--startup=true" }, new[] { "other" } })
