@@ -244,7 +244,7 @@ public sealed class TrayMenuWindow : Window
         var outer = new Grid
         {
             Style = GetSettingsStyle("SettingsWindowRootStyle"),
-            Padding = _fullWindow ? new Thickness(0, 0, 0, 8) : new Thickness(9, 8, 9, 8)
+            Padding = _fullWindow ? new Thickness(8) : new Thickness(9, 8, 9, 8)
         };
         _coreStack = new StackPanel { Spacing = _fullWindow ? 12 : 8 };
         PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
@@ -263,7 +263,6 @@ public sealed class TrayMenuWindow : Window
             outer.Children.Add(_windowHeader);
             var scroll = new ScrollViewer
             {
-                Margin = new Thickness(20, 0, 20, 0),
                 Content = _coreStack,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto
@@ -296,7 +295,7 @@ public sealed class TrayMenuWindow : Window
         else stack.Children.Add(CreateWindowHeader(modelName));
 
         void Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
-            string? description = null, bool divider = true)
+            string? description = null, bool divider = true, StackPanel? host = null)
         {
             if (_fullWindow)
             {
@@ -318,8 +317,12 @@ public sealed class TrayMenuWindow : Window
                 Child = section,
                 Padding = new Thickness(_fullWindow ? 12 : 4)
             };
-            if (!divider) container.BorderThickness = new Thickness(0);
-            stack.Children.Add(container);
+            if (!divider)
+            {
+                container.BorderThickness = new Thickness(0);
+                container.Padding = new Thickness(12, 12, 12, 0);
+            }
+            (host ?? stack).Children.Add(container);
         }
 
         if (its.Supported)
@@ -372,9 +375,12 @@ public sealed class TrayMenuWindow : Window
             }
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
             items.Add(_startupVisual.Button);
-            Section("杂项", items, items.Count, 56, divider: false);
+            var footer = new StackPanel { Spacing = 4 };
+            Section("杂项", items, items.Count, 56, divider: false, host: footer);
+            footer.Children.Add(CreateExitButton());
+            stack.Children.Add(footer);
         }
-        stack.Children.Add(CreateExitButton());
+        else stack.Children.Add(CreateExitButton());
     }
 
     public void ApplyRefreshedState(AppRuntimeSnapshot state)
@@ -431,8 +437,9 @@ public sealed class TrayMenuWindow : Window
     {
         var header = new Grid
         {
-            Margin = _fullWindow ? new Thickness(0, 0, 0, 12) : new Thickness(5, 2, 5, 5),
-            MinHeight = _fullWindow ? 74 : 0,
+            // Extend only the drag surface through the 8-DIP page padding.
+            Margin = _fullWindow ? new Thickness(-8, -8, -8, 12) : new Thickness(5, 2, 5, 5),
+            MinHeight = _fullWindow ? 64 : 0,
             Background = TransparentBrush()
         };
         var text = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Left };
@@ -462,8 +469,8 @@ public sealed class TrayMenuWindow : Window
         double scale = root.RasterizationScale;
         // Padding belongs inside the drag element: its bounds now start at y=0,
         // while the heading keeps its existing position and avoids caption buttons.
-        var padding = new Thickness(25 + AppWindow.TitleBar.LeftInset / scale, 18,
-            25 + AppWindow.TitleBar.RightInset / scale, 0);
+        var padding = new Thickness(13 + AppWindow.TitleBar.LeftInset / scale, 8,
+            13 + AppWindow.TitleBar.RightInset / scale, 0);
         if (!_windowHeader.Padding.Equals(padding)) _windowHeader.Padding = padding;
     }
 
