@@ -17,6 +17,16 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+foreach (bool success in new[] { false, true })
+foreach (uint current in new uint[] { 0, 1, 0x2300, 0x2301 })
+    Check(ItsCapabilityPolicy.SupportsIts(success, current) == (success && (current & 1) != 0),
+        "ITS requires a successful current-mode query and the command-valid bit");
+foreach (bool success in new[] { false, true })
+foreach (uint capability in new uint[] { 0, 1, 0x20000, 0x20001, 0x60001 })
+foreach (object? state in new object?[] { null, "4", new byte[] { 4 }, 4L, 0, 1, 3, 4 })
+    Check(ItsCapabilityPolicy.SupportsFourthMode(success, capability, state) ==
+        (success && (capability & 0x20001) == 0x20001 && state is int),
+        "Fourth ITS mode requires both advertised bits and a readable versioned DWORD, not active mode 4");
 Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x8013, acDcSetting) == SystemStateChange.Power,
     "AC/DC notifications refresh GPU state without a visible or active window");
 Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x8013, Guid.Empty) == SystemStateChange.None,

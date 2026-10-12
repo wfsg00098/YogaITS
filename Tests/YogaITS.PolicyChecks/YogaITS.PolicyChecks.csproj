@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../YogaITS.Tray/Services/ItsCapabilityPolicy.cs" Link="ItsCapabilityPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuAutoPolicy.cs" Link="GpuAutoPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AppLaunchPolicy.cs" Link="AppLaunchPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ApplicationIcon.cs" Link="ApplicationIcon.cs" />

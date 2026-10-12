@@ -39,8 +39,6 @@ public static class LenovoItsHelper
     // Matches current LLT ITSModeFeature.
     private const int DispatcherVersion3 = 8192; // 0x2000
     private const uint IoctlEnergySmartPower = 0x8310213C;
-    private const uint GeekModeCapabilityQuery = 10;
-    private const uint GeekModeCapabilityMask = 0x00020001;
 
     private const uint FileReadData = 0x00000001;
     private const uint FileWriteData = 0x00000002;
@@ -80,14 +78,22 @@ public static class LenovoItsHelper
             int fnCapability = ReadRegistryInt(key, "ITS_FN_Capability", 0);
             bool showGeekAsCreator = (fnCapability & 0x20) != 0;
 
+            bool currentModeRead = QueryEnergySmartPower(ItsCapabilityPolicy.CurrentModeQuery, out uint currentMode);
+            if (!ItsCapabilityPolicy.SupportsIts(currentModeRead, currentMode))
+                return new(false, false, showGeekAsCreator, version, fnCapability);
+
             bool geekSupported;
             try
             {
-                geekSupported = QueryGeekModeCapability();
+                bool capabilityRead = QueryEnergySmartPower(ItsCapabilityPolicy.ExtendedCapabilitiesQuery, out uint capability);
+                // LLT requires a readable DWORD, not an active fourth mode.
+                // Do not fall back to ITS_CurrentSetting for this capability check.
+                geekSupported = ItsCapabilityPolicy.SupportsFourthMode(
+                    capabilityRead, capability, key.GetValue("ITS_CurrentSettingV"));
             }
             catch
             {
-                // Same behavior as LLT: failure to query the fourth-mode
+                // Failure to query the fourth-mode
                 // capability removes only Geek/Creator, not the three basic ITS modes.
                 geekSupported = false;
             }
@@ -223,11 +229,9 @@ public static class LenovoItsHelper
             || model.Contains("YOGA", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool QueryGeekModeCapability()
+    private static bool QueryEnergySmartPower(uint input, out uint output)
     {
         using SafeFileHandle handle = OpenEnergyDriver();
-        uint input = GeekModeCapabilityQuery;
-        uint output = 0;
 
         bool ok = DeviceIoControl(
             handle,
@@ -236,10 +240,10 @@ public static class LenovoItsHelper
             sizeof(uint),
             out output,
             sizeof(uint),
-            out _,
+            out uint bytesReturned,
             IntPtr.Zero);
 
-        return ok && (output & GeekModeCapabilityMask) == GeekModeCapabilityMask;
+        return ok && bytesReturned == sizeof(uint);
     }
 
     private static SafeFileHandle OpenEnergyDriver()
