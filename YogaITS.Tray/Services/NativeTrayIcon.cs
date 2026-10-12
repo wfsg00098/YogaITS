@@ -91,14 +91,21 @@ public sealed class NativeTrayIcon : IDisposable
         if (_disposed)
             return;
 
-        _tooltip = TruncateTooltip(text);
+        string tooltip = TruncateTooltip(text);
+        // Repeated NIM_MODIFY calls on mouse movement can interrupt the shell's
+        // hover timing. The fixed tooltip needs no update when text is unchanged.
+        if (tooltip == _tooltip) return;
 
         if (!_added)
+        {
+            _tooltip = tooltip;
             return;
+        }
 
-        NOTIFYICONDATA data = CreateData(_tooltip);
-        data.uFlags = NIF_TIP;
-        Shell_NotifyIcon(NIM_MODIFY, ref data);
+        NOTIFYICONDATA data = CreateData(tooltip);
+        // Version 4 suppresses standard tooltips unless SHOWTIP is retained.
+        data.uFlags = NIF_TIP | NIF_SHOWTIP;
+        if (Shell_NotifyIcon(NIM_MODIFY, ref data)) _tooltip = tooltip;
     }
 
     private nint WindowSubclassProc(
