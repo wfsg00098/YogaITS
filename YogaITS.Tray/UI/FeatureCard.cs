@@ -95,6 +95,8 @@ internal sealed class FeatureCard : IDisposable
         Button button = TrayMenuWindow.CreateOptionTile(label, selected, isAction, TrayMenuWindow.OptionTileHeightDip,
             TrayMenuWindow.ControlCenterButtonFontSize);
         button.IsEnabled = enabled;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button,
+            UiAccessibility.GroupedName(_title.Text, label));
         _bindings.Add(button, new OptionBinding(action, keepInteractive, selected));
         button.Click += async (_, _) =>
         {
@@ -176,7 +178,6 @@ internal sealed class FeatureCard : IDisposable
         if (_busy || _closed)
             return;
         _busy = true;
-        _body.IsHitTestVisible = false;
         _lastError = null;
         // Keep the current device/status row while awaiting hardware I/O.
         // Collapsing it here would shrink the group, then grow it on readback.
@@ -188,7 +189,6 @@ internal sealed class FeatureCard : IDisposable
             _busy = false;
             if (!_closed)
             {
-                _body.IsHitTestVisible = true;
                 if (_render is not null)
                     Update(_visible, _render);
                 if (_lastError is not null)

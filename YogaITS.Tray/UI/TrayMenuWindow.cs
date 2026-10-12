@@ -375,6 +375,9 @@ public sealed class TrayMenuWindow : Window
         TextBlock? Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
             string? description = null, bool divider = true, StackPanel? host = null)
         {
+            foreach (var button in items.OfType<Button>())
+                if (button.Tag is OptionTileState option)
+                    AutomationProperties.SetName(button, UiAccessibility.GroupedName(title, option.Label.Text));
             if (_fullWindow)
             {
                 height = OptionTileHeightDip;
@@ -695,8 +698,6 @@ public sealed class TrayMenuWindow : Window
             return;
 
         _updatingChargeMode = _updatingNightCharge = true;
-        foreach (var button in _chargeModeTiles.Values) button.IsEnabled = false;
-        if (_nightChargeVisual is not null) _nightChargeVisual.Button.IsEnabled = false;
         RefreshChargeModeTiles(requested, night);
 
         try
@@ -712,8 +713,6 @@ public sealed class TrayMenuWindow : Window
             _updatingChargeMode = _updatingNightCharge = false;
             if (!_closed)
             {
-                foreach (var button in _chargeModeTiles.Values) button.IsEnabled = true;
-                if (_nightChargeVisual is not null) _nightChargeVisual.Button.IsEnabled = true;
                 RefreshChargeModeTiles();
             }
         }
@@ -725,7 +724,7 @@ public sealed class TrayMenuWindow : Window
         foreach ((ItsMode mode, Button button) in _modeTiles)
         {
             bool available = mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource);
-            button.IsEnabled = !_updatingItsMode && available;
+            button.IsEnabled = available;
             RefreshOptionTile(
                 button,
                 selected: available && _currentItsMode == mode,
@@ -911,6 +910,7 @@ public sealed class TrayMenuWindow : Window
             _fullWindow ? OptionTileHeightDip : 28,
             _fullWindow ? ControlCenterButtonFontSize : null);
         if (!_fullWindow) button.Padding = new Thickness(6, 4, 6, 4);
+        AutomationProperties.SetName(button, UiAccessibility.GroupedName("Yoga控制中心", "退出"));
 
         button.Click += (_, _) =>
         {
@@ -934,7 +934,6 @@ public sealed class TrayMenuWindow : Window
 
         bool requested = !_flipToStartEnabled;
         _updatingFlipToStart = true;
-        _flipToStartVisual.Button.IsEnabled = false;
         _flipToStartEnabled = requested;
         RefreshToggleVisual(_flipToStartVisual, _flipToStartEnabled);
 
@@ -963,7 +962,6 @@ public sealed class TrayMenuWindow : Window
         }
         finally
         {
-            _flipToStartVisual.Button.IsEnabled = true;
             _updatingFlipToStart = false;
         }
     }
@@ -975,7 +973,6 @@ public sealed class TrayMenuWindow : Window
 
         bool requested = !_startupEnabled;
         _updatingStartup = true;
-        _startupVisual.Button.IsEnabled = false;
         _startupEnabled = requested;
         RefreshToggleVisual(_startupVisual, _startupEnabled);
 
@@ -997,7 +994,6 @@ public sealed class TrayMenuWindow : Window
         }
         finally
         {
-            _startupVisual.Button.IsEnabled = true;
             _updatingStartup = false;
         }
     }

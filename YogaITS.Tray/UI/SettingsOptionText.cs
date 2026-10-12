@@ -3,6 +3,9 @@ namespace YogaITS.Tray.UI;
 // Display text stays separate from RPC/profile identifiers.
 internal static class SettingsOptionText
 {
+    public static string GroupedName(string group, string label) =>
+        $"{group}中的{label.Replace("\r", "").Replace("\n", "")}";
+
     public static string ColorStatus(string mode, string message, bool hdr, bool acm) => hdr || acm
         ? "当前颜色配置：不适用。HDR或者ACM已开启。"
         : $"当前颜色配置：{ColorLabel(mode)}。{message}";

@@ -12,6 +12,8 @@ internal static class UiAccessibility
 {
     private static readonly AccessibilitySettings Contrast = new();
     public static bool HighContrast => Contrast.HighContrast;
+    public static string GroupedName(string group, string label) =>
+        SettingsOptionText.GroupedName(group, label);
 
     public static Color SystemColor(int index)
     {

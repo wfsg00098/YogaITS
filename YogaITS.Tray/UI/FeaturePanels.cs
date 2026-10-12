@@ -199,8 +199,9 @@ internal sealed class FeaturePanels : IDisposable
                 if (current.Modes.Count > 0)
                     _colorCard.Options(body, 2, true, current.Modes.Select(mode =>
                         _colorCard.Option(SettingsOptionText.ColorLabel(mode.Name, mode.Brightness),
-                            current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
-                            !current.Blocked && current.CurrentMode != mode.Name)).ToArray());
+                            current.CurrentMode == mode.Name,
+                            () => current.CurrentMode == mode.Name ? Task.CompletedTask : _color.ApplyAsync(mode.Name),
+                            !current.Blocked)).ToArray());
                 _colorCard.Options(body,
                     _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
                         () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),

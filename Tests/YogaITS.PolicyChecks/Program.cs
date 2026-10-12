@@ -17,6 +17,9 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
+Check(SettingsOptionText.GroupedName("充电选项", "养护模式") == "充电选项中的养护模式", "Narrator name distinguishes charging group");
+Check(SettingsOptionText.GroupedName("独显休眠", "结束独显\r\n占用进程") == "独显休眠中的结束独显占用进程", "Narrator names remove visual line breaks");
 Check(SystemEventMonitor.ClassifyMessage(0x001A, 0) == SystemStateChange.Appearance,
     "Desktop setting changes refresh appearance without triggering hardware policies");
 Check(SystemEventMonitor.ClassifyMessage(0x031A, 0) == SystemStateChange.Appearance,
