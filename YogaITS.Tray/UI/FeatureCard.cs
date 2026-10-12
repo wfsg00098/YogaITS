@@ -107,9 +107,12 @@ internal sealed class FeatureCard : IDisposable
         return button;
     }
 
-    public void Options(StackPanel body, params Button[] buttons)
+    public void Options(StackPanel body, params Button[] buttons) =>
+        Options(body, Math.Min(3, buttons.Length), false, buttons);
+
+    public void Options(StackPanel body, int columns, bool stretchLastRow, params Button[] buttons)
     {
-        int columns = Math.Min(3, buttons.Length);
+        columns = Math.Max(1, columns);
         if (_nextChild < body.Children.Count && body.Children[_nextChild] is Grid grid &&
             grid.ColumnDefinitions.Count == columns && grid.Children.Count == buttons.Length &&
             grid.Children.All(child => child is Border { Child: Button }))
@@ -125,10 +128,20 @@ internal sealed class FeatureCard : IDisposable
                 TrayMenuWindow.RefreshOptionTile(retained, binding.Selected);
                 retained.IsEnabled = candidate.IsEnabled;
             }
+            StretchLastRow(grid, columns, stretchLastRow);
             _nextChild++;
             return;
         }
-        PutChild(body, TrayMenuWindow.CreateTileGrid(buttons, columns, TrayMenuWindow.OptionTileHeightDip));
+        var replacement = TrayMenuWindow.CreateTileGrid(buttons, columns, TrayMenuWindow.OptionTileHeightDip);
+        StretchLastRow(replacement, columns, stretchLastRow);
+        PutChild(body, replacement);
+    }
+
+    private static void StretchLastRow(Grid grid, int columns, bool stretch)
+    {
+        if (grid.Children.Count == 0) return;
+        Grid.SetColumnSpan((FrameworkElement)grid.Children[grid.Children.Count - 1],
+            stretch && grid.Children.Count % columns == 1 ? columns : 1);
     }
 
     public void Note(StackPanel body, string text)
