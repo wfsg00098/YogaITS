@@ -4,6 +4,8 @@
 
 仅在 Yoga Pro 16 IPH11 上进行了完善测试，其他机型未经测试。
 
+已知 色彩管理 与 ThinkBook 14 G6+ AHP 不兼容
+
 ## 开始使用
 
 运行环境：Windows 11 x64、.NET 10 Desktop Runtime、兼容的 Windows App Runtime，以及对应的联想硬件驱动和服务。程序需要管理员权限，启动时请允许 UAC 提示。
