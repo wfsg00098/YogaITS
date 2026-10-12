@@ -21,7 +21,7 @@ public sealed class InfoWindow : Window
         var heading = new TextBlock
         {
             Text = title,
-            Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"],
+            Style = TrayMenuWindow.GetSettingsStyle("SettingsInfoTitleStyle"),
             TextWrapping = TextWrapping.Wrap
         };
 

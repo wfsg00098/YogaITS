@@ -17,17 +17,13 @@ internal static class SettingsMotion
         var hover = new SolidColorBrush();
         var pressed = new SolidColorBrush();
         var hoverText = new SolidColorBrush();
-        var contrast = new AccessibilitySettings();
         button.Resources["ButtonBackgroundPointerOver"] = hover;
         button.Resources["ButtonBackgroundPressed"] = pressed;
         button.Resources["ButtonForegroundPointerOver"] = hoverText;
         button.Resources["ButtonForegroundPressed"] = hoverText;
         void UpdateColors()
         {
-            byte channel = button.ActualTheme == ElementTheme.Dark ? (byte)255 : (byte)0;
-            hover.Color = UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(10, channel, channel, channel);
-            pressed.Color = UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(16, channel, channel, channel);
-            hoverText.Color = UiAccessibility.HighContrast ? UiAccessibility.SystemColor(14) : Color.FromArgb(255, channel, channel, channel);
+            RefreshHoverColors(button);
         }
         void UpdateTransition()
         {
@@ -40,20 +36,25 @@ internal static class SettingsMotion
                 };
         }
         button.ActualThemeChanged += (_, _) => UpdateColors();
-        void ContrastChanged(AccessibilitySettings sender, object args) => button.DispatcherQueue.TryEnqueue(() =>
-        {
-            if (button.IsLoaded) UpdateColors();
-        });
         button.Loaded += (_, _) =>
         {
-            contrast.HighContrastChanged += ContrastChanged;
             UpdateColors();
             UpdateTransition();
         };
-        button.Unloaded += (_, _) => contrast.HighContrastChanged -= ContrastChanged;
         button.PointerEntered += (_, _) => UpdateTransition();
         button.PointerExited += (_, _) => UpdateTransition();
         UpdateColors();
+    }
+
+    public static void RefreshHoverColors(Button button)
+    {
+        byte channel = button.ActualTheme == ElementTheme.Dark ? (byte)255 : (byte)0;
+        ((SolidColorBrush)button.Resources["ButtonBackgroundPointerOver"]).Color =
+            UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(10, channel, channel, channel);
+        ((SolidColorBrush)button.Resources["ButtonBackgroundPressed"]).Color =
+            UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(16, channel, channel, channel);
+        ((SolidColorBrush)button.Resources["ButtonForegroundPointerOver"]).Color =
+            UiAccessibility.HighContrast ? UiAccessibility.SystemColor(14) : Color.FromArgb(255, channel, channel, channel);
     }
 
     public static void Reposition(Panel panel)

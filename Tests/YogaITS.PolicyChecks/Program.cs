@@ -17,6 +17,10 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+Check(SystemEventMonitor.ClassifyMessage(0x001A, 0) == SystemStateChange.Appearance,
+    "Desktop setting changes refresh appearance without triggering hardware policies");
+Check(SystemEventMonitor.ClassifyMessage(0x031A, 0) == SystemStateChange.Appearance,
+    "Desktop theme changes refresh appearance without a CoreWindow event subscription");
 Check(WindowSizing.Fit(500, 96, 1920) == 500, "Window width uses DIP at 100 percent DPI");
 Check(WindowSizing.Fit(500, 192, 1920) == 1000, "Window width scales at 200 percent DPI");
 Check(WindowSizing.Fit(500, 0, 1920) == 500, "Unavailable DPI defaults to 96");

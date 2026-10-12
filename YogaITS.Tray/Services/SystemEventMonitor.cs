@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 namespace YogaITS.Tray.Services;
 
 [Flags]
-internal enum SystemStateChange { None = 0, Power = 1, Display = 2 }
+internal enum SystemStateChange { None = 0, Power = 1, Display = 2, Appearance = 4 }
 
 internal sealed class SystemEventMonitor : IDisposable
 {
@@ -16,6 +16,7 @@ internal sealed class SystemEventMonitor : IDisposable
     private bool _disposed;
     public event Action? PowerChanged;
     public event Action? DisplayChanged;
+    public event Action? AppearanceChanged;
 
     public SystemEventMonitor(nint hwnd)
     {
@@ -45,6 +46,7 @@ internal sealed class SystemEventMonitor : IDisposable
                 ? Marshal.PtrToStructure<Guid>(lParam) : null;
             var change = ClassifyMessage(message, wParam, setting);
             if ((change & SystemStateChange.Power) != 0) PowerChanged?.Invoke();
+            if ((change & SystemStateChange.Appearance) != 0) AppearanceChanged?.Invoke();
             if ((change & SystemStateChange.Display) != 0)
             {
                 _displayDebounce?.Cancel();
@@ -59,6 +61,8 @@ internal sealed class SystemEventMonitor : IDisposable
 
     internal static SystemStateChange ClassifyMessage(uint message, nint wParam, Guid? setting = null)
     {
+        if (message is 0x001A or 0x031A) // WM_SETTINGCHANGE / WM_THEMECHANGED
+            return SystemStateChange.Appearance;
         if (message == 0x0218) // WM_POWERBROADCAST
         {
             if (wParam == 0x8013 && setting == AcDcSource || wParam == 0x000A)

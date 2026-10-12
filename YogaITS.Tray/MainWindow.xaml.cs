@@ -61,6 +61,11 @@ public sealed partial class MainWindow : Window
                 _controlCenterWindow?.RefreshPowerSource();
             });
             _systemEvents.DisplayChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
+            _systemEvents.AppearanceChanged += () => DispatcherQueue.TryEnqueue(() =>
+            {
+                _trayMenuWindow?.RefreshAppearance();
+                _controlCenterWindow?.RefreshAppearance();
+            });
         }
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
         {
@@ -240,6 +245,7 @@ public sealed partial class MainWindow : Window
         {
             // Also cover TrayMenuWindow construction itself. A visual/control
             // creation failure must not terminate the resident tray process.
+            UiErrorLog.Write("ShowSettingsWindow", ex);
             ShowChild(new InfoWindow("托盘菜单显示失败", ex.ToString()));
         }
     }

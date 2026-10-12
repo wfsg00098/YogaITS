@@ -44,7 +44,6 @@ public sealed class TrayMenuWindow : Window
     private TransientScrollBar? _transientScrollBar;
     private Action? _updateScrollWidth;
     private TextBlock? _modelLabel;
-    private readonly Windows.UI.ViewManagement.AccessibilitySettings _contrastSettings = new();
     private ContentControl? _titleFocusTarget;
     private TextBlock? _performanceDescription;
     private TextBlock? _chargeDescription;
@@ -136,8 +135,6 @@ public sealed class TrayMenuWindow : Window
         SystemBackdrop = new MicaBackdrop();
         Activated += TrayMenuWindow_Activated;
         _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
-        _contrastSettings.HighContrastChanged += ContrastSettings_Changed;
-        _appearanceSettings.AutoHideScrollBarsChanged += ScrollSettings_Changed;
         Closed += TrayMenuWindow_Closed;
     }
 
@@ -1125,26 +1122,23 @@ public sealed class TrayMenuWindow : Window
         });
     }
 
-    private void ContrastSettings_Changed(Windows.UI.ViewManagement.AccessibilitySettings sender, object args) =>
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (_closed) return;
-            ApplySystemControlButtonTheme();
-            RefreshContrastOutlines(_contentRoot);
-        });
-
-    private void ScrollSettings_Changed(Windows.UI.ViewManagement.UISettings sender,
-        Windows.UI.ViewManagement.UISettingsAutoHideScrollBarsChangedEventArgs args) =>
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (!_closed) _updateScrollWidth?.Invoke();
-        });
+    public void RefreshAppearance()
+    {
+        if (_closed) return;
+        ApplySystemControlButtonTheme();
+        RefreshContrastOutlines(_contentRoot);
+        _updateScrollWidth?.Invoke();
+        _transientScrollBar?.RefreshPreferences();
+    }
 
     private static void RefreshContrastOutlines(DependencyObject? element)
     {
         if (element is null) return;
         if (element is Button { Tag: OptionTileState state })
+        {
             state.Outline.Color = GetTileOutlineColor(state.Accent);
+            SettingsMotion.RefreshHoverColors((Button)element);
+        }
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
             RefreshContrastOutlines(VisualTreeHelper.GetChild(element, i));
     }
@@ -1255,8 +1249,6 @@ public sealed class TrayMenuWindow : Window
         Activated -= TrayMenuWindow_Activated;
         SystemBackdrop = null;
         _appearanceSettings.ColorValuesChanged -= AppearanceSettings_ColorValuesChanged;
-        _contrastSettings.HighContrastChanged -= ContrastSettings_Changed;
-        _appearanceSettings.AutoHideScrollBarsChanged -= ScrollSettings_Changed;
         UninstallOutsideClickHook();
     }
 

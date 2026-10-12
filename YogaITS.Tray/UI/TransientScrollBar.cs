@@ -68,7 +68,6 @@ internal sealed class TransientScrollBar : IDisposable
         VisualStateManager.GoToState(_bar, "NoIndicator", false);
         _indicatorStates?.CurrentState?.Storyboard?.SkipToFill();
         _hideTimer.Tick += HideTimer_Tick;
-        _uiSettings.AutoHideScrollBarsChanged += AutoHideChanged;
         _scroll.ViewChanging += Scroll_ViewChanging;
         _scroll.ViewChanged += Scroll_ViewChanged;
         _bar.PointerEntered += Bar_PointerEntered;
@@ -168,13 +167,12 @@ internal sealed class TransientScrollBar : IDisposable
         if (!_scrolling) HideAfter();
     }
 
-    private void AutoHideChanged(UISettings sender, UISettingsAutoHideScrollBarsChangedEventArgs args) =>
-        _bar.DispatcherQueue.TryEnqueue(() =>
-        {
-            if (_disposed) return;
-            Show();
-            if (_uiSettings.AutoHideScrollBars) HideAfter();
-        });
+    public void RefreshPreferences()
+    {
+        if (_disposed) return;
+        Show();
+        if (_uiSettings.AutoHideScrollBars) HideAfter();
+    }
 
     public void Dispose()
     {
@@ -182,7 +180,6 @@ internal sealed class TransientScrollBar : IDisposable
         _disposed = true;
         _hideTimer.Stop();
         _hideTimer.Tick -= HideTimer_Tick;
-        _uiSettings.AutoHideScrollBarsChanged -= AutoHideChanged;
         _bar.UnregisterPropertyChangedCallback(ScrollBar.IndicatorModeProperty, _indicatorModeCallback);
         if (_indicatorStates != null)
             foreach (var transition in _fadeInTransitions)
