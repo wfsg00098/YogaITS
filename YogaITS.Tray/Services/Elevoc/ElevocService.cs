@@ -8,14 +8,6 @@ internal sealed class ElevocService : SerializedFeatureService
     private CancellationTokenSource? _registration;
     private readonly object _registrationSync = new();
     private long _endpointGeneration;
-    private readonly SpeakerOperations _speakerOperations = new();
-    private readonly object _snapshotSync = new();
-    private long _speakerRevision;
-    private volatile bool _closed;
-    private sealed class SpeakerOperations : SerializedFeatureService
-    {
-        public Task ExecuteAsync(Func<Task> operation) => RunAsync(operation);
-    }
     public ElevocSnapshot Snapshot { get; private set; } = ElevocSnapshot.Unavailable;
     public bool IsRegistering => _registration is not null;
     public bool IsRecording { get; private set; }
@@ -30,8 +22,6 @@ internal sealed class ElevocService : SerializedFeatureService
 
     private void Read()
     {
-        long speakerRevision;
-        lock (_snapshotSync) speakerRevision = _speakerRevision;
         try
         {
             if (_audio is null)
@@ -51,28 +41,22 @@ internal sealed class ElevocService : SerializedFeatureService
             string voice = Safe(_client.IsVoiceIdSet);
             string headset = Safe(_client.IsVoiceIdEnabledInHeadset);
             bool uplink = _capture is not null && captureFunctions.Contains("uplink") && Ok(mic);
-            PublishSnapshot(new(uplink,
+            Snapshot = new(uplink,
                 render is not null && renderFunctions.Contains("downlink") && Ok(speaker),
                 uplink && captureFunctions.Contains("special"),
                 uplink && captureFunctions.Contains("speaker_extraction") && Ok(voice),
                 Ok(voice) && ElevocJson.Bool(voice, "is_voiceid_setted") == true,
                 Ok(headset) ? ElevocJson.Bool(headset, "is_voiceid_enabled_in_headset") : null,
                 Ok(mic) ? ElevocJson.Mode(mic) : null, Ok(speaker) ? ElevocJson.Mode(speaker) : null,
-                _capture?.FriendlyName ?? "", render?.FriendlyName ?? "", _capture?.IsInternalMicrophone == true), speakerRevision);
+                _capture?.FriendlyName ?? "", render?.FriendlyName ?? "", _capture?.IsInternalMicrophone == true);
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("Elevoc initialization failed: " + ex.Message);
             _client?.Dispose();
             _client = null;
-            PublishSnapshot(ElevocSnapshot.Unavailable, speakerRevision);
+            Snapshot = ElevocSnapshot.Unavailable;
         }
-    }
-
-    private void PublishSnapshot(ElevocSnapshot snapshot, long speakerRevision)
-    {
-        lock (_snapshotSync)
-            Snapshot = snapshot.MergeSpeaker(Snapshot, speakerRevision != _speakerRevision);
     }
 
     private void EndpointChanged(object? sender, EventArgs args)
@@ -127,31 +111,14 @@ internal sealed class ElevocService : SerializedFeatureService
                 (mode == "voiceid" && !Snapshot.VoiceIdRegistered ? "服务未确认已注册声纹。" : ""));
     }
 
-    public Task SetSpeakerAsync(bool enabled) => _speakerOperations.ExecuteAsync(() =>
+    public Task SetSpeakerAsync(bool enabled) => RunAsync(() =>
     {
-        if (_closed) return Task.CompletedTask;
-        // Downlink has its own client/lane: a 20-second uplink recording must not block it.
-        using var client = new ElevocRpcClient();
-        using var audio = new CoreAudioEndpointMonitor();
-        var render = audio.GetDefault(AudioDataFlow.Render);
-        string functions = render is null ? "" : client.GetFunctionsByEndpoint(render.Id);
-        string before = client.GetSpeakerMode();
-        if (render is null || !Ok(functions) || !ElevocJson.SupportedFunctions(functions).Contains("downlink") || !Ok(before))
+        Read();
+        if (!Snapshot.Downlink || _client is null)
             throw new InvalidOperationException("当前扬声器不支持降噪。");
-        string? mode = null;
-        try { RequireOk(client.SetSpeakerNoiseCancellation(enabled)); }
-        finally
-        {
-            string response = Safe(client.GetSpeakerMode);
-            if (Ok(response)) mode = ElevocJson.Mode(response);
-            lock (_snapshotSync)
-            {
-                _speakerRevision++;
-                Snapshot = Snapshot with { Downlink = mode is not null, SpeakerMode = mode, RenderName = render.FriendlyName };
-            }
-            NotifyChanged();
-        }
-        if (mode != (enabled ? "enable" : "disable"))
+        try { RequireOk(_client.SetSpeakerNoiseCancellation(enabled)); }
+        finally { Read(); }
+        if (Snapshot.SpeakerMode != (enabled ? "enable" : "disable"))
             throw new InvalidOperationException("扬声器降噪设置未通过回读验证。");
         return Task.CompletedTask;
     });
@@ -312,14 +279,7 @@ internal sealed class ElevocService : SerializedFeatureService
 
     protected override void Close()
     {
-        _closed = true;
         _audio?.Dispose();
         _client?.Dispose();
-    }
-
-    public override async ValueTask DisposeAsync()
-    {
-        await base.DisposeAsync();
-        await _speakerOperations.DisposeAsync();
     }
 }

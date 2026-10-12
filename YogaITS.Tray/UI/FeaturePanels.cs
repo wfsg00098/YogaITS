@@ -23,6 +23,7 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _voiceCard = new("声纹管理");
     private bool _voiceStartPending;
     private bool _voiceWasRegistering;
+    private int _voiceRemainingSeconds;
     private const string VoiceReadingExample = "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。";
     private bool _closed;
 
@@ -115,7 +116,7 @@ internal sealed class FeaturePanels : IDisposable
             var current = _audio.Snapshot;
             _speakerCard.Options(body,
                 _speakerCard.Option("仅保留人声", current.SpeakerMode == "enable",
-                    () => _audio.SetSpeakerAsync(current.SpeakerMode != "enable")));
+                    () => _audio.SetSpeakerAsync(current.SpeakerMode != "enable"), !_audio.IsRegistering));
             _speakerCard.Note(body, current.SpeakerMode switch
             {
                 "enable" => "电脑扬声器将仅播放人声，并过滤其他声音。",
@@ -126,6 +127,7 @@ internal sealed class FeaturePanels : IDisposable
         });
         bool voiceCompleted = _voiceWasRegistering && !_audio.IsRegistering;
         _voiceWasRegistering = _audio.IsRegistering;
+        if (!_audio.IsRecording) _voiceRemainingSeconds = 0;
         _voiceCard.Update(audio.InternalMicrophone && audio.VoiceId, body =>
         {
             var current = _audio.Snapshot;
@@ -140,10 +142,15 @@ internal sealed class FeaturePanels : IDisposable
                     try
                     {
                         if (!await ConfirmAsync("录制声纹", "将使用当前默认麦克风录制 20 秒。已有声纹会被新的注册结果替换；完成后启用仅听机主。", "开始录制")) return;
+                        _voiceRemainingSeconds = 0;
                         var progress = new Progress<int>(seconds =>
                         {
                             if (_audio.IsRecording && seconds > 0)
-                                _voiceCard.SetStatus($"正在录音，剩余 {seconds} 秒。请连续朗读下方文字。", VoiceReadingExample);
+                            {
+                                _voiceRemainingSeconds = seconds;
+                                _voiceCard.SetStatus(SettingsOptionText.VoiceRegistrationStatus(
+                                    _audio.RegistrationStatus, true, seconds), VoiceReadingExample);
+                            }
                         });
                         await _audio.RegisterVoiceAsync(progress);
                     }
@@ -156,7 +163,9 @@ internal sealed class FeaturePanels : IDisposable
                     if (await ConfirmAsync("删除声纹", "确定删除当前声纹？将先关闭仅听机主，再删除声纹。删除后需要重新录制才能使用仅听机主。", "删除"))
                         await _audio.RemoveVoiceAsync();
                 }, current.VoiceIdRegistered && !_audio.IsRegistering, isAction: true));
-            _voiceCard.SetStatus(_audio.RegistrationStatus, _audio.IsRecording ? VoiceReadingExample : null,
+            _voiceCard.SetStatus(SettingsOptionText.VoiceRegistrationStatus(
+                    _audio.RegistrationStatus, _audio.IsRecording, _voiceRemainingSeconds),
+                _audio.IsRecording ? VoiceReadingExample : null,
                 announce: voiceCompleted);
         });
     }

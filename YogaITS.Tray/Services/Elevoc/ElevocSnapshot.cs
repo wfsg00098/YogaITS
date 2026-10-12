@@ -6,9 +6,4 @@ internal sealed record ElevocSnapshot(
     string CaptureName, string RenderName, bool InternalMicrophone = false)
 {
     public static ElevocSnapshot Unavailable { get; } = new(false, false, false, false, false, null, null, null, "", "");
-
-    // An older full read must not undo an independently confirmed downlink operation.
-    public ElevocSnapshot MergeSpeaker(ElevocSnapshot latest, bool speakerChanged) => speakerChanged
-        ? this with { Downlink = latest.Downlink, SpeakerMode = latest.SpeakerMode, RenderName = latest.RenderName }
-        : this;
 }

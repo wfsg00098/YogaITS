@@ -25,7 +25,7 @@ internal abstract class SerializedFeatureService : IAsyncDisposable
 
     protected virtual void Close() { }
 
-    public virtual async ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _gate.WaitAsync().ConfigureAwait(false);
         try

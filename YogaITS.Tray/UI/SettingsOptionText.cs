@@ -3,6 +3,11 @@ namespace YogaITS.Tray.UI;
 // Display text stays separate from RPC/profile identifiers.
 internal static class SettingsOptionText
 {
+    public static string VoiceRegistrationStatus(string status, bool recording, int remainingSeconds) =>
+        recording && remainingSeconds > 0
+            ? $"正在录音，剩余 {remainingSeconds} 秒。请连续朗读下方文字。"
+            : status;
+
     public static string FlipToStartDescription(bool operated) =>
         "开启后，当您打开笔记本盖子时，系统将自动开机。" +
         (operated ? "（设置改变后，重启电脑方可生效）" : "");
