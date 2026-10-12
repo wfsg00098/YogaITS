@@ -774,6 +774,9 @@ public sealed class TrayMenuWindow : Window
         {
             Content = content,
             HorizontalAlignment = HorizontalAlignment.Stretch,
+            // DefaultButtonStyle uses Center. Fill the shared Auto row instead
+            // so wrapped labels cannot leave neighboring tiles shorter.
+            VerticalAlignment = VerticalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = fontSize is null ? new Thickness(6, 8, 6, 8) : new Thickness(8),
