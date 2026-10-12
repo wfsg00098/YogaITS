@@ -47,6 +47,8 @@ public sealed class TrayMenuWindow : Window
     private ContentControl? _titleFocusTarget;
     private TextBlock? _performanceDescription;
     private TextBlock? _chargeDescription;
+    private TextBlock? _flipToStartDescription;
+    private bool _flipToStartOperated;
     private bool _closed;
     private bool _shown;
     private bool _isActive;
@@ -460,8 +462,8 @@ public sealed class TrayMenuWindow : Window
             if (flip.Supported)
             {
                 _flipToStartVisual = CreateToggleTile("开盖开机", flip.Enabled, FlipToStartButton_Click, "开盖开机");
-                Section("开盖开机", new UIElement[] { _flipToStartVisual.Button }, 1, OptionTileHeightDip,
-                    "开启后，当您打开笔记本盖子时，系统将自动开机。（设置改变后，重启电脑方可生效）");
+                _flipToStartDescription = Section("开盖开机", new UIElement[] { _flipToStartVisual.Button }, 1, OptionTileHeightDip,
+                    SettingsOptionText.FlipToStartDescription(_flipToStartOperated));
             }
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
             Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
@@ -934,8 +936,11 @@ public sealed class TrayMenuWindow : Window
 
         bool requested = !_flipToStartEnabled;
         _updatingFlipToStart = true;
+        _flipToStartOperated = true;
+        if (_flipToStartDescription is not null)
+            _flipToStartDescription.Text = SettingsOptionText.FlipToStartDescription(true);
+        RefreshOptionTile(_flipToStartVisual.Button, _flipToStartEnabled, pending: true);
         _flipToStartEnabled = requested;
-        RefreshToggleVisual(_flipToStartVisual, _flipToStartEnabled);
 
         try
         {
@@ -963,6 +968,7 @@ public sealed class TrayMenuWindow : Window
         finally
         {
             _updatingFlipToStart = false;
+            if (!_closed) RefreshToggleVisual(_flipToStartVisual, _flipToStartEnabled);
         }
     }
 
@@ -973,8 +979,8 @@ public sealed class TrayMenuWindow : Window
 
         bool requested = !_startupEnabled;
         _updatingStartup = true;
+        RefreshOptionTile(_startupVisual.Button, _startupEnabled, pending: true);
         _startupEnabled = requested;
-        RefreshToggleVisual(_startupVisual, _startupEnabled);
 
         try
         {
@@ -995,6 +1001,7 @@ public sealed class TrayMenuWindow : Window
         finally
         {
             _updatingStartup = false;
+            if (!_closed) RefreshToggleVisual(_startupVisual, _startupEnabled);
         }
     }
 
@@ -1015,7 +1022,7 @@ public sealed class TrayMenuWindow : Window
         Color outlineColor = GetTileOutlineColor(selected || pending);
         state.Accent = selected || pending;
         if (state.Outline.Color != outlineColor) state.Outline.Color = outlineColor;
-        UiAccessibility.SetState(button, state.IsAction ? "" : pending ? "正在设置" : selected ? "已选中" : "未选中");
+        UiAccessibility.SetState(button, pending ? "正在设置" : state.IsAction ? "" : selected ? "已选中" : "未选中");
 
         state.Label.FontWeight = selected
             ? Microsoft.UI.Text.FontWeights.SemiBold

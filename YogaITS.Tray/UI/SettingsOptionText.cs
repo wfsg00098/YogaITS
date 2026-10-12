@@ -3,6 +3,10 @@ namespace YogaITS.Tray.UI;
 // Display text stays separate from RPC/profile identifiers.
 internal static class SettingsOptionText
 {
+    public static string FlipToStartDescription(bool operated) =>
+        "开启后，当您打开笔记本盖子时，系统将自动开机。" +
+        (operated ? "（设置改变后，重启电脑方可生效）" : "");
+
     public static string GroupedName(string group, string label) =>
         $"{group}中的{label.Replace("\r", "").Replace("\n", "")}";
 

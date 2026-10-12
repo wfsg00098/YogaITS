@@ -102,7 +102,7 @@ internal sealed class FeatureCard : IDisposable
         {
             // Retained controls always invoke the newest snapshot's action.
             var binding = _bindings.GetValue(button, _ => throw new InvalidOperationException());
-            if (!binding.KeepInteractive) { await RunAsync(binding.Action); return; }
+            if (!binding.KeepInteractive) { await RunAsync(button, binding); return; }
             if (_closed) return;
             _lastError = null;
             // Long-running recording uses service state for its start/stop button.
@@ -173,15 +173,17 @@ internal sealed class FeatureCard : IDisposable
         body.Children.Insert(_nextChild++, child);
     }
 
-    private async Task RunAsync(Func<Task> action)
+    private async Task RunAsync(Button button, OptionBinding binding)
     {
         if (_busy || _closed)
             return;
         _busy = true;
         _lastError = null;
+        // Preserve the confirmed selection and accent the requested option until readback.
+        TrayMenuWindow.RefreshOptionTile(button, binding.Selected, pending: true);
         // Keep the current device/status row while awaiting hardware I/O.
         // Collapsing it here would shrink the group, then grow it on readback.
-        try { await action(); }
+        try { await binding.Action(); }
         catch (OperationCanceledException) { _lastError = "操作已取消，状态已重新读取。"; }
         catch (Exception ex) { _lastError = ex.Message; }
         finally
@@ -189,6 +191,7 @@ internal sealed class FeatureCard : IDisposable
             _busy = false;
             if (!_closed)
             {
+                TrayMenuWindow.RefreshOptionTile(button, binding.Selected);
                 if (_render is not null)
                     Update(_visible, _render);
                 if (_lastError is not null)
