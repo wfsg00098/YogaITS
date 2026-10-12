@@ -89,7 +89,7 @@ public sealed partial class MainWindow : Window
             BuildTooltip(state));
 
         _trayIcon.MouseMove += TrayIcon_MouseMove;
-        _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ShowControlCenter);
+        _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ToggleControlCenter);
         _trayIcon.RightClick += TrayIcon_Click;
 
         // Keep the HWND/message pump alive, but never present this host
@@ -137,6 +137,15 @@ public sealed partial class MainWindow : Window
             return;
         }
         ShowSettingsWindow(true);
+    }
+
+    private void ToggleControlCenter()
+    {
+        if (_exiting) return;
+        if (_controlCenterWindow is { } window)
+            window.Close(); // Closed releases panels and clears the window reference.
+        else
+            ShowControlCenter();
     }
 
     internal void RequestOpenControlCenter() => DispatcherQueue.TryEnqueue(() =>
