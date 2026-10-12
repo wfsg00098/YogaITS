@@ -181,10 +181,12 @@ internal sealed class FeaturePanels : IDisposable
                 if (switches.Count > 0)
                     _colorCard.Options(body, switches.ToArray());
             }
+            bool advancedColorActive = current.AdvancedColor?.HdrActive == true ||
+                current.AdvancedColor?.AcmActive == true;
             if (current.Modes.Count > 0)
-                _colorCard.Options(body, current.Modes.Select(mode =>
+                _colorCard.Options(body, 2, true, current.Modes.Select(mode =>
                     _colorCard.Option(SettingsOptionText.ColorLabel(mode.Name, mode.Brightness),
-                        current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
+                        !advancedColorActive && current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
                         !current.Blocked && current.CurrentMode != mode.Name)).ToArray());
             _colorCard.Options(body,
                 _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
