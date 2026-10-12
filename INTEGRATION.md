@@ -12,7 +12,7 @@
 
 显卡刷新独立于窗口焦点：常驻隐藏消息窗口监听 AC/DC、电源状态、显示拓扑事件；设备节点变化也走 750 ms 显示防抖，覆盖外接屏/扩展坞插拔但分辨率未改变的情况。睡眠恢复同时刷新电源与屏幕状态。所有模式均读取实际 GPU、外接独显路径及 NVIDIA 存在性，只有逻辑 Auto 应用切换策略。GPU 完成读取或重试后直接更新 NVIDIA 存在性缓存并刷新界面，事件处理完成后还刷新两种菜单的核心状态，不因大窗口的整批刷新、失焦、最小化或关闭而跳过；无常态轮询。事件依据 [电源通知](https://learn.microsoft.com/en-us/windows/win32/power/power-management-events)及[设备变化通知](https://learn.microsoft.com/en-us/windows/win32/devio/wm-devicechange)。
 
-大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。窗口激活时根背景透明以露出 Mica，失活时通过 ThemeResource 还原纯色基础背景。分组无背景或外围框，仅底部灰色分割线；按钮复用 WinUI 默认模板，无填充，灰色/强调色边线分别表示未选中/选中，悬停及按下不增加背景填充。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
+大小窗口均采用 `Window.SystemBackdrop = new MicaBackdrop()`，不再叠加 DWM Acrylic。根背景始终透明，获焦/失焦时由系统 Mica 控制器处理材质与纯色回退及过渡，不再突然覆盖不透明页面背景；系统仍决定透明效果、高对比度及节能回退。分组无背景或外围框，仅底部灰色分割线；按钮复用 WinUI 默认模板，静止无填充，灰色/强调色边线分别表示未选中/选中。所有卡片悬停/按下增加轻微高光：暗色白色、亮色黑色低透明度填充，原生 BrushTransition 100 ms 过渡，不缩放、不改变布局；遵循系统动画设置，禁用时取消高光。小窗口移除 WS_EX_NOACTIVATE，第一次显示才激活；能力重建只调整尺寸，不重复抢焦点。保留 TOOLWINDOW、外部点击关闭及原有无滚动菜单。参考 [Mica 材质](https://learn.microsoft.com/en-us/windows/apps/design/style/mica)及[系统背景接口](https://learn.microsoft.com/en-us/windows/apps/develop/ui/system-backdrops)。
 
 大窗口所有分组标题共用 SettingsSectionTitleStyle（14 DIP、SemiBold、主题主文本色、22 DIP 最小高度），标题与选项间隔 8 DIP。大窗口所有选项及退出按钮统一使用 48 DIP 最小高度，文字统一为 12.5 DIP（原为 10.5/11 DIP），长标签仍允许换行并自然增高，不设置裁切用的固定高度；退出按钮复用无填充边线卡片，并与组内选项对齐。小窗口保留原字号、紧凑标题与退出布局。
 

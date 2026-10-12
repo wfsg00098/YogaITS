@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media;
+using Windows.UI;
 using Windows.UI.ViewManagement;
 
 namespace YogaITS.Tray.UI;
@@ -9,6 +11,39 @@ namespace YogaITS.Tray.UI;
 internal static class SettingsMotion
 {
     private static readonly UISettings Settings = new();
+
+    public static void AttachHover(Button button)
+    {
+        var hover = new SolidColorBrush();
+        var pressed = new SolidColorBrush();
+        button.Resources["ButtonBackgroundPointerOver"] = hover;
+        button.Resources["ButtonBackgroundPressed"] = pressed;
+        void UpdateColors()
+        {
+            byte channel = button.ActualTheme == ElementTheme.Dark ? (byte)255 : (byte)0;
+            hover.Color = Color.FromArgb(10, channel, channel, channel);
+            pressed.Color = Color.FromArgb(16, channel, channel, channel);
+        }
+        void UpdateTransition()
+        {
+            button.ApplyTemplate();
+            if (VisualTreeHelper.GetChildrenCount(button) > 0 &&
+                VisualTreeHelper.GetChild(button, 0) is ContentPresenter presenter)
+                presenter.BackgroundTransition = new BrushTransition
+                {
+                    Duration = Settings.AnimationsEnabled ? TimeSpan.FromMilliseconds(100) : TimeSpan.Zero
+                };
+        }
+        button.ActualThemeChanged += (_, _) => UpdateColors();
+        button.Loaded += (_, _) =>
+        {
+            UpdateColors();
+            UpdateTransition();
+        };
+        button.PointerEntered += (_, _) => UpdateTransition();
+        button.PointerExited += (_, _) => UpdateTransition();
+        UpdateColors();
+    }
 
     public static void Reposition(Panel panel)
     {

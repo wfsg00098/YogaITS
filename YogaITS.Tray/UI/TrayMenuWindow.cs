@@ -237,11 +237,8 @@ public sealed class TrayMenuWindow : Window
         _isActive = args.WindowActivationState != WindowActivationState.Deactivated;
         if (_fullWindow)
             ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
-        if (_contentRoot is not Grid root) return;
-        if (!_isActive)
-            root.ClearValue(Grid.BackgroundProperty); // Theme-aware opaque fallback from the root style.
-        else
-            root.Background = TransparentBrush(); // Expose native Mica; system policy still controls fallback.
+        // MicaBackdrop owns the native active/fallback crossfade. An opaque
+        // root on deactivation would cover that transition with an instant fill.
     }
 
     private StackPanel? _coreStack;
@@ -824,6 +821,7 @@ public sealed class TrayMenuWindow : Window
         };
 
         SetTileStateResources(button, outline);
+        SettingsMotion.AttachHover(button);
         return button;
     }
 
@@ -1008,8 +1006,8 @@ public sealed class TrayMenuWindow : Window
 
     private static void SetTileStateResources(Button button, SolidColorBrush outline)
     {
-        // Keep the native button template and focus/disabled feedback, but never
-        // let its pointer states replace the outline-only appearance with a fill.
+        // Keep a stable outline in every native state. Backgrounds start clear;
+        // SettingsMotion supplies the subtle hover/pressed highlights separately.
         foreach (string state in new[] { "", "PointerOver", "Pressed", "Disabled" })
         {
             button.Resources["ButtonBackground" + state] = TransparentBrush();

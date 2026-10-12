@@ -8,7 +8,7 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
             <Style x:Key="SettingsWindowRootStyle" TargetType="Grid">
-                <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
+                <Setter Property="Background" Value="Transparent" />
             </Style>
             <Style x:Key="SettingsCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="Transparent" />

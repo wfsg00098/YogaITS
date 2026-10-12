@@ -57,7 +57,13 @@ internal sealed class FeaturePanels : IDisposable
                     () => _gpu.SelectAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
                 _gpuCard.Option("双显模式", current.LogicalMode == GpuWorkingMode.Default,
                     () => _gpu.SelectAsync(GpuWorkingMode.Default)));
-            _gpuCard.Note(body, "智能模式：插电时双显，使用电池时自动尝试集显。外接独显显示器使用中时保留实际状态。");
+            _gpuCard.Note(body, current.LogicalMode switch
+            {
+                GpuWorkingMode.IGPUOnly => "提供更佳的续航和更长的电池使用时间。",
+                GpuWorkingMode.Default => "提供更佳的性能。",
+                GpuWorkingMode.Auto => "智能模式：插电时双显，使用电池时自动尝试集显。外接独显显示器使用中时保留实际状态。",
+                _ => ""
+            });
             string effective = current.EffectiveMode switch { 0 => "双显", 1 => "集显", _ => "未知" };
             _gpuCard.SetStatus($"当前实际状态：{effective}。{current.Message}");
         });
