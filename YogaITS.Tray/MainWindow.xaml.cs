@@ -352,9 +352,7 @@ public sealed partial class MainWindow : Window
 
     private static string BuildTooltip(AppRuntimeSnapshot state)
     {
-        return state.ItsCapabilities.Supported
-            ? $"Yoga ITS - {state.ItsMode.DisplayName}"
-            : $"Yoga ITS - {state.MachineInfo.DisplayModel}";
+        return "Yoga控制中心";
     }
 
     private async Task<ItsSetResult> SetModeAsync(ItsMode mode)
