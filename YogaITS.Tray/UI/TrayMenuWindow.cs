@@ -43,6 +43,7 @@ public sealed class TrayMenuWindow : Window
     private Grid? _windowHeader;
     private TransientScrollBar? _transientScrollBar;
     private TextBlock? _modelLabel;
+    private ContentControl? _titleFocusTarget;
     private TextBlock? _performanceDescription;
     private TextBlock? _chargeDescription;
     private bool _closed;
@@ -183,14 +184,12 @@ public sealed class TrayMenuWindow : Window
             area.X + (area.Width - width) / 2,
             area.Y + (area.Height - height) / 2, width, height));
         ShowInForeground();
-        // Native initial focus can inherit the launcher's keyboard focus state.
-        // Keep focus, but treat only this initial activation as pointer input;
-        // subsequent Tab navigation still gets the system focus visuals.
+        // Start on the title rather than a function tile. Tab then advances to
+        // the first available button while retaining normal keyboard visuals.
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
-            if (_closed || !_isActive || _contentRoot?.XamlRoot is not { } root) return;
-            if (Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root) is Control control)
-                control.Focus(FocusState.Pointer);
+            if (_closed || !_isActive) return;
+            _titleFocusTarget?.Focus(FocusState.Programmatic);
         });
         ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
@@ -540,7 +539,19 @@ public sealed class TrayMenuWindow : Window
             };
             text.Children.Add(_modelLabel);
         }
-        header.Children.Add(text);
+        if (_fullWindow)
+        {
+            _titleFocusTarget = new ContentControl
+            {
+                Content = text,
+                IsTabStop = true,
+                UseSystemFocusVisuals = false,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                VerticalContentAlignment = VerticalAlignment.Top
+            };
+            header.Children.Add(_titleFocusTarget);
+        }
+        else header.Children.Add(text);
         return header;
     }
 
