@@ -170,7 +170,7 @@ internal sealed class FeaturePanels : IDisposable
             if (current.AdvancedColor is { } advanced)
             {
                 var switches = new List<Button>();
-                if (advanced.HighDynamicRangeSupported || advanced.HighDynamicRangeUserEnabled)
+                if (advanced.HighDynamicRangeSupported)
                     switches.Add(_colorCard.Option("HDR", advanced.HdrActive,
                         () => _color.SetAdvancedColorAsync(true, !advanced.HighDynamicRangeUserEnabled),
                         advanced.HighDynamicRangeUserEnabled || advanced.HighDynamicRangeSupported));
@@ -183,16 +183,23 @@ internal sealed class FeaturePanels : IDisposable
             }
             bool advancedColorActive = current.AdvancedColor?.HdrActive == true ||
                 current.AdvancedColor?.AcmActive == true;
-            if (current.Modes.Count > 0)
-                _colorCard.Options(body, 2, true, current.Modes.Select(mode =>
-                    _colorCard.Option(SettingsOptionText.ColorLabel(mode.Name, mode.Brightness),
-                        !advancedColorActive && current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
-                        !current.Blocked && current.CurrentMode != mode.Name)).ToArray());
-            _colorCard.Options(body,
-                _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
-                    () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
-                _colorCard.Option("在线恢复校色文件", false, _color.RecoverAsync));
-            _colorCard.Note(body, "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。");
+            if (!advancedColorActive)
+            {
+                if (current.Modes.Count > 0)
+                    _colorCard.Options(body, 2, true, current.Modes.Select(mode =>
+                        _colorCard.Option(SettingsOptionText.ColorLabel(mode.Name, mode.Brightness),
+                            current.CurrentMode == mode.Name, () => _color.ApplyAsync(mode.Name),
+                            !current.Blocked && current.CurrentMode != mode.Name)).ToArray());
+                _colorCard.Options(body,
+                    _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
+                        () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
+                    _colorCard.Option("在线恢复校色文件", false, async () =>
+                    {
+                        if (await ConfirmAsync("在线恢复校色文件",
+                            "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。是否继续？", "开始恢复"))
+                            await _color.RecoverAsync();
+                    }));
+            }
             _colorCard.SetStatus(SettingsOptionText.ColorStatus(current.CurrentMode, current.Message,
                 current.AdvancedColor?.HdrActive == true,
                 current.AdvancedColor?.AcmActive == true));

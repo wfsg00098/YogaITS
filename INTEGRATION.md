@@ -38,6 +38,8 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 所有选项卡片在普通、悬停、按下及禁用状态下引用同一个实例级边框 SolidColorBrush，切换选中/待确认状态时只修改 Color，不替换 Style 或资源对象。这样当前原生指针状态无需重新进入，边框即可更新；大小窗口共用此路径，保留原生交互与布局动画。需实机验证鼠标不移出按钮时连续切换自动睡眠、扬声器、HDR/ACM、充电和性能选项，以及禁用/恢复后的边框状态。
 
+色彩管理只在 HighDynamicRangeSupported 为真时显示 HDR 卡片；ACM 仍按其能力/启用偏好显示。实际 HdrActive 或 AcmActive 时隐藏整个色域网格、亮度联动与在线恢复操作行，保留高级颜色开关和当前配置提示；恢复实际 SDR 后重新显示。在线恢复不再常驻显示说明，点击后复用声纹确认的 ContentDialog，告知序列号发送至 Lenovo 校色服务，默认选中取消，确认“开始恢复”后才执行下载。此次验证不执行真实下载或硬件切换。
+
 ## 能力与状态源
 
 大窗口滚动条打开时短暂提示约 1 秒，滚动中显示，最终 ViewChanged（含触屏惯性结束）后 180 ms 开始隐藏；鼠标悬停、直接拖动时保持可见。使用原生 ScrollBar 的 NoIndicator/TouchIndicator/MouseIndicator 状态，复用原生淡出，并添加匹配模板 83 ms 时长的生成式淡入过渡；遵循 Windows 动画效果设置，关闭动画时立即完成状态切换。原生 ScrollViewer 更新指示模式后重新协调显示状态，避免其默认隐藏延迟覆盖上述时机。不自行接管触屏手势或指针捕获；保持右侧 8 DIP 范围及原生滚轮、键盘、触屏惯性滚动。明确启用纵向滚动、纵向轨道及惯性，关闭横向滚动和缩放；关闭窗口时释放计时器、属性回调及事件订阅。依据 [原生滚动控件的输入与触屏行为](https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/scroll-controls)。
