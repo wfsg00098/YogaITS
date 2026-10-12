@@ -70,7 +70,7 @@ public sealed class TrayMenuWindow : Window
     private sealed class OptionTileState
     {
         public required TextBlock Label { get; init; }
-        public bool AccentBorder { get; set; }
+        public required SolidColorBrush Outline { get; init; }
     }
 
     public TrayMenuWindow(
@@ -769,6 +769,7 @@ public sealed class TrayMenuWindow : Window
         var content = new Grid();
         content.Children.Add(label);
 
+        var outline = new SolidColorBrush(GetTileOutlineColor(selected));
         var button = new Button
         {
             Content = content,
@@ -777,15 +778,16 @@ public sealed class TrayMenuWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = fontSize is null ? new Thickness(6, 8, 6, 8) : new Thickness(8),
             MinHeight = minHeight,
-            Style = GetSettingsStyle(selected ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle"),
+            Style = GetSettingsStyle("SettingsOptionTileStyle"),
+            BorderBrush = outline,
             Margin = new Thickness(0),
             Tag = new OptionTileState
             {
-                Label = label, AccentBorder = selected
+                Label = label, Outline = outline
             }
         };
 
-        SetTileStateResources(button, selected);
+        SetTileStateResources(button, outline);
         return button;
     }
 
@@ -947,13 +949,11 @@ public sealed class TrayMenuWindow : Window
         if (button.Tag is not OptionTileState state)
             return;
 
-        bool accentBorder = selected || pending;
-        if (state.AccentBorder != accentBorder)
-        {
-            state.AccentBorder = accentBorder;
-            button.Style = GetSettingsStyle(accentBorder ? "SettingsSelectedTileStyle" : "SettingsOptionTileStyle");
-            SetTileStateResources(button, accentBorder);
-        }
+        // Native pointer states may already hold their resolved resource brush.
+        // Mutate that shared instance instead of replacing resources/styles:
+        // normal, hovered and pressed borders update without pointer movement.
+        Color outlineColor = GetTileOutlineColor(selected || pending);
+        if (state.Outline.Color != outlineColor) state.Outline.Color = outlineColor;
 
         state.Label.FontWeight = selected
             ? Microsoft.UI.Text.FontWeights.SemiBold
@@ -967,15 +967,18 @@ public sealed class TrayMenuWindow : Window
             retained.Label.Text = candidate.Label.Text;
     }
 
-    private static void SetTileStateResources(Button button, bool selected)
+    private static Color GetTileOutlineColor(bool selected) =>
+        selected ? GetSystemAccentColor() : Color.FromArgb(110, 170, 170, 170);
+
+    private static void SetTileStateResources(Button button, SolidColorBrush outline)
     {
         // Keep the native button template and focus/disabled feedback, but never
         // let its pointer states replace the outline-only appearance with a fill.
         foreach (string state in new[] { "", "PointerOver", "Pressed", "Disabled" })
+        {
             button.Resources["ButtonBackground" + state] = TransparentBrush();
-        var outline = new SolidColorBrush(selected ? GetSystemAccentColor() : Color.FromArgb(110, 170, 170, 170));
-        button.Resources["ButtonBorderBrushPointerOver"] = outline;
-        button.Resources["ButtonBorderBrushPressed"] = outline;
+            button.Resources["ButtonBorderBrush" + state] = outline;
+        }
     }
 
     internal static Style GetSettingsStyle(string key) => (Style)Application.Current.Resources[key];
