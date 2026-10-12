@@ -55,6 +55,11 @@ public sealed partial class MainWindow : Window
             _systemEvents.PowerChanged += () => _ = RefreshGpuForSystemChangeAsync("电源事件");
             _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件");
             _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
+            _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(() =>
+            {
+                _trayMenuWindow?.RefreshPowerSource();
+                _controlCenterWindow?.RefreshPowerSource();
+            });
             _systemEvents.DisplayChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
         }
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>

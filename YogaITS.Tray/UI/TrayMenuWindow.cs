@@ -48,6 +48,7 @@ public sealed class TrayMenuWindow : Window
     private bool _closed;
     private bool _shown;
     private bool _isActive;
+    private int _powerSource = SystemEventMonitor.ReadPowerSource();
 
     private ItsMode? _currentItsMode;
     private BatteryChargeMode? _currentChargeMode;
@@ -450,6 +451,7 @@ public sealed class TrayMenuWindow : Window
     {
         if (_closed)
             return;
+        _powerSource = SystemEventMonitor.ReadPowerSource();
         if (_coreStack is not null) SettingsMotion.Reposition(_coreStack);
         if (_coreStack is not null)
             foreach (var group in _coreStack.Children.OfType<Border>())
@@ -603,6 +605,8 @@ public sealed class TrayMenuWindow : Window
         Button button = CreateOptionTile(text, selected, isAction: false, minHeight: 54);
         _modeTiles[mode] = button;
         button.Click += async (_, _) => await SetItsModeFromTileAsync(mode);
+        button.IsEnabled = mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource);
+        if (!button.IsEnabled) RefreshOptionTile(button, false);
         return button;
     }
 
@@ -674,11 +678,20 @@ public sealed class TrayMenuWindow : Window
         RefreshPerformanceDescription(pending ?? _currentItsMode);
         foreach ((ItsMode mode, Button button) in _modeTiles)
         {
+            bool available = mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource);
+            button.IsEnabled = !_updatingItsMode && available;
             RefreshOptionTile(
                 button,
-                selected: _currentItsMode == mode,
-                pending: pending == mode);
+                selected: available && _currentItsMode == mode,
+                pending: available && pending == mode);
         }
+    }
+
+    public void RefreshPowerSource()
+    {
+        if (_closed) return;
+        _powerSource = SystemEventMonitor.ReadPowerSource();
+        if (!_updatingItsMode) RefreshModeTiles();
     }
 
     private void RefreshChargeModeTiles(BatteryChargeMode? pending = null, bool pendingNight = false)

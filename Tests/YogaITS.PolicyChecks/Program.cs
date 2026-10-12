@@ -17,6 +17,9 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+foreach (int source in new[] { -1, 0, 1, 255 })
+    Check(ItsCapabilityPolicy.CanSelectFourthMode(source) == (source == 0),
+        "Fourth ITS mode requires confirmed AC power; battery and unknown stay disabled");
 foreach (bool success in new[] { false, true })
 foreach (uint current in new uint[] { 0, 1, 0x2300, 0x2301 })
     Check(ItsCapabilityPolicy.SupportsIts(success, current) == (success && (current & 1) != 0),

@@ -5,6 +5,8 @@ internal static class ItsCapabilityPolicy
 {
     public const uint CurrentModeQuery = 2;
     public const uint ExtendedCapabilitiesQuery = 10;
+    // SystemEventMonitor uses 0 = AC, 1 = battery, -1 = unknown.
+    public static bool CanSelectFourthMode(int powerSource) => powerSource == 0;
 
     public static bool SupportsIts(bool querySucceeded, uint currentMode) =>
         querySucceeded && (currentMode & 0x1) != 0;

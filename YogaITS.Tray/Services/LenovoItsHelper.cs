@@ -176,6 +176,9 @@ public static class LenovoItsHelper
 
         await Task.Run(() =>
         {
+            if (mode == ItsMode.Creator &&
+                !ItsCapabilityPolicy.CanSelectFourthMode(SystemEventMonitor.ReadPowerSource()))
+                throw new InvalidOperationException("极客/创作模式需要连接电源适配器。");
             using var service = new ServiceController(ServiceName);
             service.Refresh();
 
