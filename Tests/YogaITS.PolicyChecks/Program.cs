@@ -18,6 +18,12 @@ void Check(bool condition, string name)
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
 Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
+var oldAudioRead = ElevocSnapshot.Unavailable with { Uplink = true, MicrophoneMode = "voiceid", VoiceIdRegistered = true, SpeakerMode = "disable" };
+var newerSpeaker = ElevocSnapshot.Unavailable with { Downlink = true, SpeakerMode = "enable", RenderName = "Current speaker" };
+var mergedAudio = oldAudioRead.MergeSpeaker(newerSpeaker, true);
+Check(mergedAudio.SpeakerMode == "enable" && mergedAudio.Downlink && mergedAudio.RenderName == "Current speaker", "Older audio refresh preserves independently confirmed speaker state");
+Check(mergedAudio.MicrophoneMode == "voiceid" && mergedAudio.VoiceIdRegistered && mergedAudio.Uplink, "Speaker merge preserves new microphone and voice registration readback");
+Check(oldAudioRead.MergeSpeaker(newerSpeaker, false) == oldAudioRead, "Uncontended full audio read remains authoritative");
 Check(SettingsOptionText.FlipToStartDescription(false) == "开启后，当您打开笔记本盖子时，系统将自动开机。", "Lid-open description initially omits restart advice");
 Check(SettingsOptionText.FlipToStartDescription(true).EndsWith("（设置改变后，重启电脑方可生效）"), "Lid-open operation adds restart advice");
 Check(SettingsOptionText.GroupedName("充电选项", "养护模式") == "充电选项中的养护模式", "Narrator name distinguishes charging group");

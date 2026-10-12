@@ -194,8 +194,8 @@ public sealed partial class MainWindow : Window
                 setMode: SetModeAsync,
                 setChargeOption: SetChargeOptionAsync,
                 setFlipToStart: SetFlipToStartAsync,
-                killGpuApps: KillGpuAppsDirect,
-                restartGpu: RestartGpuDirect,
+                killGpuApps: KillGpuAppsDirectAsync,
+                restartGpu: RestartGpuDirectAsync,
                 setStartup: SetStartupAsync,
                 showInfo: (title, message) =>
                     ShowChild(new InfoWindow(title, message)),
@@ -430,11 +430,6 @@ public sealed partial class MainWindow : Window
         return result;
     }
 
-    private void KillGpuAppsDirect()
-    {
-        _ = KillGpuAppsDirectAsync();
-    }
-
     private async Task KillGpuAppsDirectAsync()
     {
         try
@@ -465,11 +460,6 @@ public sealed partial class MainWindow : Window
                 "结束独显占用进程失败",
                 ex.Message));
         }
-    }
-
-    private void RestartGpuDirect()
-    {
-        _ = RestartGpuDirectAsync();
     }
 
     private async Task RestartGpuDirectAsync()

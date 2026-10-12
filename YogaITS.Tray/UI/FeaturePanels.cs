@@ -115,7 +115,7 @@ internal sealed class FeaturePanels : IDisposable
             var current = _audio.Snapshot;
             _speakerCard.Options(body,
                 _speakerCard.Option("仅保留人声", current.SpeakerMode == "enable",
-                    () => _audio.SetSpeakerAsync(current.SpeakerMode != "enable"), !_audio.IsRegistering));
+                    () => _audio.SetSpeakerAsync(current.SpeakerMode != "enable")));
             _speakerCard.Note(body, current.SpeakerMode switch
             {
                 "enable" => "电脑扬声器将仅播放人声，并过滤其他声音。",

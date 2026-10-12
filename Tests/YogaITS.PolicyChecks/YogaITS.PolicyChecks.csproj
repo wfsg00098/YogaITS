@@ -18,6 +18,7 @@
     <Compile Include="../../YogaITS.Tray/Services/Hpd/HpdState.cs" Link="HpdState.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/HpdFeatureProfile.cs" Link="HpdFeatureProfile.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocJson.cs" Link="ElevocJson.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocSnapshot.cs" Link="ElevocSnapshot.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocMicrophonePolicy.cs" Link="ElevocMicrophonePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/CoreAudioEndpointMonitor.cs" Link="CoreAudioEndpointMonitor.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/VoiceRegistrationRecorder.cs" Link="VoiceRegistrationRecorder.cs" />

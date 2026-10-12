@@ -23,8 +23,9 @@ public sealed class TrayMenuWindow : Window
     private readonly Func<ItsMode, Task<ItsSetResult>> _setMode;
     private readonly Func<BatteryChargeMode, bool, Task<BatterySelectionResult>> _setChargeOption;
     private readonly Func<bool, Task<FlipToStartResult>> _setFlipToStart;
-    private readonly Action _killGpuApps;
-    private readonly Action _restartGpu;
+    private readonly Func<Task> _killGpuApps;
+    private readonly Func<Task> _restartGpu;
+    private bool _updatingGpuAction;
     private readonly Func<bool, Task<StartupTaskResult>> _setStartup;
     private readonly Action<string, string> _showInfo;
     private readonly Action _exitApp;
@@ -93,8 +94,8 @@ public sealed class TrayMenuWindow : Window
         Func<ItsMode, Task<ItsSetResult>> setMode,
         Func<BatteryChargeMode, bool, Task<BatterySelectionResult>> setChargeOption,
         Func<bool, Task<FlipToStartResult>> setFlipToStart,
-        Action killGpuApps,
-        Action restartGpu,
+        Func<Task> killGpuApps,
+        Func<Task> restartGpu,
         Func<bool, Task<StartupTaskResult>> setStartup,
         Action<string, string> showInfo,
         Action exitApp,
@@ -454,7 +455,7 @@ public sealed class TrayMenuWindow : Window
                 CreateActionTile(_fullWindow ? "结束独显占用进程" : "结束独显\n占用进程", _killGpuApps),
                 CreateActionTile("重启独显设备", _restartGpu)
             }, 2, 62,
-                "结束占用独显的可处理进程，或重启独显设备以尝试恢复休眠。结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁；实际休眠还取决于外接显示器及其他占用。");
+                "结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁；实际休眠还取决于外接显示器及其他占用。");
 
         if (_fullWindow)
         {
@@ -722,7 +723,7 @@ public sealed class TrayMenuWindow : Window
 
     private void RefreshModeTiles(ItsMode? pending = null)
     {
-        RefreshPerformanceDescription(pending ?? _currentItsMode);
+        RefreshPerformanceDescription(_currentItsMode);
         foreach ((ItsMode mode, Button button) in _modeTiles)
         {
             bool available = mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource);
@@ -743,7 +744,7 @@ public sealed class TrayMenuWindow : Window
 
     private void RefreshChargeModeTiles(BatteryChargeMode? pending = null, bool pendingNight = false)
     {
-        RefreshChargeDescription(pending, pendingNight);
+        RefreshChargeDescription();
         foreach ((BatteryChargeMode mode, Button button) in _chargeModeTiles)
         {
             RefreshOptionTile(
@@ -770,11 +771,11 @@ public sealed class TrayMenuWindow : Window
         _performanceDescription.Visibility = description.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void RefreshChargeDescription(BatteryChargeMode? pending = null, bool pendingNight = false)
+    private void RefreshChargeDescription()
     {
         if (_chargeDescription is null) return;
         _chargeDescription.Text = SettingsOptionText.ChargeDescription(
-            (pending ?? _currentChargeMode)?.ToString(), pending is not null ? pendingNight : _nightChargeSupported && _nightChargeEnabled);
+            _currentChargeMode?.ToString(), _nightChargeSupported && _nightChargeEnabled);
     }
 
     private TileVisual CreateToggleTile(
@@ -796,12 +797,24 @@ public sealed class TrayMenuWindow : Window
         return visual;
     }
 
-    private static Button CreateActionTile(
+    private Button CreateActionTile(
         string text,
-        Action action)
+        Func<Task> action)
     {
         Button button = CreateOptionTile(text, false, isAction: true, minHeight: 62);
-        button.Click += (_, _) => action();
+        button.Click += async (_, _) =>
+        {
+            if (_updatingGpuAction || _closed) return;
+            _updatingGpuAction = true;
+            RefreshOptionTile(button, false, pending: true);
+            try { await action(); }
+            catch (Exception ex) { if (!_closed) _showInfo("独显休眠操作失败", ex.Message); }
+            finally
+            {
+                _updatingGpuAction = false;
+                if (!_closed) RefreshOptionTile(button, false);
+            }
+        };
         return button;
     }
 
