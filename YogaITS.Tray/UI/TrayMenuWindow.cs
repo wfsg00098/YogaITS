@@ -176,7 +176,7 @@ public sealed class TrayMenuWindow : Window
     {
         uint dpi = GetWindowDpi();
         RectInt32 area = GetWorkArea(GetCursorPos(out POINT cursor) ? cursor : default);
-        int width = Math.Min(ScaleDip(460, dpi), area.Width - ScaleDip(24, dpi));
+        int width = Math.Min(ScaleDip(492, dpi), area.Width - ScaleDip(24, dpi));
         int height = Math.Min(ScaleDip(820, dpi), area.Height - ScaleDip(24, dpi));
         AppWindow.MoveAndResize(new RectInt32(
             area.X + (area.Width - width) / 2,
