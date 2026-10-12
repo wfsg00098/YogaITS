@@ -111,8 +111,8 @@ internal sealed class FeaturePanels : IDisposable
                     () => _audio.SetSpeakerAsync(current.SpeakerMode != "enable"), !_audio.IsRegistering));
             _speakerCard.Note(body, current.SpeakerMode switch
             {
-                "enable" => "开启后，电脑扬声器将仅播放人声，并过滤其他声音。",
-                "disable" => "关闭后，电脑扬声器将播放所有声音。",
+                "enable" => "电脑扬声器将仅播放人声，并过滤其他声音。",
+                "disable" => "电脑扬声器将播放所有声音。",
                 _ => ""
             });
             _speakerCard.SetStatus($"当前扬声器设备：{current.RenderName}");
@@ -221,9 +221,9 @@ internal sealed class FeaturePanels : IDisposable
             }
             _wakeCard.Note(body, string.Join("\n", new[]
             {
-                state.ApproachEnabled ? "检测到人员靠近时自动唤醒电脑。" : "自动唤醒已关闭。",
-                state.LeaveEnabled ? "检测到人员离开后，按所选速度自动进入睡眠。" : "自动睡眠已关闭。"
-            }));
+                state.ApproachEnabled ? "检测到人员靠近时自动唤醒电脑。" : "",
+                state.LeaveEnabled ? "检测到人员离开后，按所选速度自动进入睡眠。" : ""
+            }.Where(text => text.Length > 0)));
             _wakeCard.SetStatus("");
         });
         _videoCard.Update(snapshot.Features.AutoVideoPause, body =>
@@ -233,7 +233,7 @@ internal sealed class FeaturePanels : IDisposable
                 () => _hpd.SetAsync(HpdSetting.VideoPause, state.VideoPause ? 0 : 1)));
             _videoCard.Note(body, state.VideoPause
                 ? "检测到人员离开时暂停播放，返回时恢复播放。"
-                : "人走暂停 / 人回播放已关闭。");
+                : "");
             _videoCard.SetStatus("");
         });
     }
