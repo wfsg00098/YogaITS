@@ -183,6 +183,15 @@ public sealed class TrayMenuWindow : Window
             area.X + (area.Width - width) / 2,
             area.Y + (area.Height - height) / 2, width, height));
         ShowInForeground();
+        // Native initial focus can inherit the launcher's keyboard focus state.
+        // Keep focus, but treat only this initial activation as pointer input;
+        // subsequent Tab navigation still gets the system focus visuals.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (_closed || !_isActive || _contentRoot?.XamlRoot is not { } root) return;
+            if (Microsoft.UI.Xaml.Input.FocusManager.GetFocusedElement(root) is Control control)
+                control.Focus(FocusState.Pointer);
+        });
         ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
 
