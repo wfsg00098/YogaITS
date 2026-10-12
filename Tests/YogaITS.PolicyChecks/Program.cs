@@ -17,6 +17,12 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+Check(WindowSizing.Fit(500, 96, 1920) == 500, "Window width uses DIP at 100 percent DPI");
+Check(WindowSizing.Fit(500, 192, 1920) == 1000, "Window width scales at 200 percent DPI");
+Check(WindowSizing.Fit(500, 0, 1920) == 500, "Unavailable DPI defaults to 96");
+Check(WindowSizing.Fit(500, 192, 800) == 752, "Window fits work area with a scaled margin");
+Check(WindowSizing.Fit(280, 144, 1000) == 420, "Window height scales at 150 percent DPI");
+Check(WindowSizing.Fit(280, 192, 10) == 1, "Tiny work area never produces a negative size");
 foreach (int source in new[] { -1, 0, 1, 255 })
     Check(ItsCapabilityPolicy.CanSelectFourthMode(source) == (source == 0),
         "Fourth ITS mode requires confirmed AC power; battery and unknown stay disabled");

@@ -27,6 +27,9 @@
                 <Setter Property="MinHeight" Value="22" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <Style x:Key="SettingsSecondaryTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
             <Style x:Key="SettingsOptionTileStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />

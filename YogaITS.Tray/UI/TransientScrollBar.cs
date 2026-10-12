@@ -68,6 +68,7 @@ internal sealed class TransientScrollBar : IDisposable
         VisualStateManager.GoToState(_bar, "NoIndicator", false);
         _indicatorStates?.CurrentState?.Storyboard?.SkipToFill();
         _hideTimer.Tick += HideTimer_Tick;
+        _uiSettings.AutoHideScrollBarsChanged += AutoHideChanged;
         _scroll.ViewChanging += Scroll_ViewChanging;
         _scroll.ViewChanged += Scroll_ViewChanged;
         _bar.PointerEntered += Bar_PointerEntered;
@@ -94,8 +95,9 @@ internal sealed class TransientScrollBar : IDisposable
     {
         if (_disposed) return;
         bool animate = _uiSettings.AnimationsEnabled;
+        if (!_uiSettings.AutoHideScrollBars) _visible = _scroll.ScrollableHeight > 0;
         string state = !_visible ? "NoIndicator" :
-            _hovering || _dragging ? "MouseIndicator" : "TouchIndicator";
+            !_uiSettings.AutoHideScrollBars || _hovering || _dragging ? "MouseIndicator" : "TouchIndicator";
         VisualStateManager.GoToState(_bar, state, animate);
         // useTransitions=false skips generated transitions, not the native
         // state's storyboard. Complete that too when system animations are off.
@@ -107,13 +109,14 @@ internal sealed class TransientScrollBar : IDisposable
         if (_disposed) return;
         _hideTimer.Stop();
         _hideTimer.Interval = TimeSpan.FromMilliseconds(milliseconds);
+        if (!_uiSettings.AutoHideScrollBars) return;
         _hideTimer.Start();
     }
 
     private void HideTimer_Tick(object? sender, object args)
     {
         _hideTimer.Stop();
-        if (_disposed || _scrolling || _hovering || _dragging) return;
+        if (_disposed || !_uiSettings.AutoHideScrollBars || _scrolling || _hovering || _dragging) return;
         _visible = false;
         ApplyIndicatorState();
     }
@@ -131,7 +134,11 @@ internal sealed class TransientScrollBar : IDisposable
         _lastOffset = _scroll.VerticalOffset;
         // Capability/layout refreshes also raise ViewChanged. They must not
         // shorten the opening hint or flash the bar when content has not moved.
-        if (!moved && !_scrolling) return;
+        if (!moved && !_scrolling)
+        {
+            if (!_uiSettings.AutoHideScrollBars) Show();
+            return;
+        }
         _scrolling = args.IsIntermediate;
         Show();
         if (!_scrolling) HideAfter();
@@ -161,12 +168,21 @@ internal sealed class TransientScrollBar : IDisposable
         if (!_scrolling) HideAfter();
     }
 
+    private void AutoHideChanged(UISettings sender, UISettingsAutoHideScrollBarsChangedEventArgs args) =>
+        _bar.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_disposed) return;
+            Show();
+            if (_uiSettings.AutoHideScrollBars) HideAfter();
+        });
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         _hideTimer.Stop();
         _hideTimer.Tick -= HideTimer_Tick;
+        _uiSettings.AutoHideScrollBarsChanged -= AutoHideChanged;
         _bar.UnregisterPropertyChangedCallback(ScrollBar.IndicatorModeProperty, _indicatorModeCallback);
         if (_indicatorStates != null)
             foreach (var transition in _fadeInTransitions)

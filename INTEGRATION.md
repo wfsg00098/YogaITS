@@ -32,7 +32,7 @@ HDR/ACM 卡片选中状态、颜色提示和色域写入判断使用 `activeColo
 
 功能卡片更新复用既有按钮、选项网格与说明容器，不再清空整组内容，也不再在操作时将整组变暗再恢复。复用按钮同步最新操作回调，避免捕获旧状态；仅结构变化时替换对应行。说明内容实际变化时使用零偏移 ContentThemeTransition；大小窗口分组和卡片内部通过 RepositionThemeTransition 平滑移动，关闭交错效果，避免整页依次闪动。SettingsMotion 在刷新时检查系统动画设置。充电模式与夜间优化快照合并后一次刷新。需实机验证不同说明长度、麦克风附加选项显隐、停止录音及关闭系统动画后的行为。参考 [WinUI 原生动画](https://learn.microsoft.com/en-us/windows/apps/develop/motion/xaml-animation)。
 
-动态说明的 0.7 透明度放在稳定的说明容器上，参与 ContentThemeTransition 的内层文字保持 Opacity=1，避免原生过渡结束时文字从完全不透明跳回灰度；静态说明样式不变。需在亮、暗主题中验收文字显现到动画结束的亮度连续性。
+说明、型号及设备/状态文字共用基于 CaptionTextBlockStyle 的主题次要文本画刷，不再通过元素 Opacity 人为降低对比度；说明容器和参与 ContentThemeTransition 的内层文字保持 Opacity=1，避免原生过渡结束时亮度跳变，并让系统高对比度资源生效。需在亮、暗及对比度主题中验收文字显现到动画结束的亮度连续性。
 
 普通功能操作等待硬件回读时保留现有设备/状态行，不再调用 SetStatus("")，避免状态文字临时折叠导致等高内容先收缩再展开。大小窗口有分割线的分组改用独立 1 DIP 分割线元素，内容保留原有内边距、末尾无分割线的组保持不变；分割线位置变化参与原生 RepositionThemeTransition，主题画刷与总高度不变。需实机验收扬声器开关等高切换及长短说明变化时的分割线运动。
 

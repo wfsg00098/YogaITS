@@ -11,14 +11,15 @@ internal sealed class FeatureCard : IDisposable
     public StackPanel Footer { get; } = new() { Spacing = 8, Visibility = Visibility.Collapsed };
     private readonly StackPanel _body = new() { Spacing = 8 };
     private readonly StackPanel _content = new() { Spacing = 8 };
+    private readonly TextBlock _title;
     private readonly TextBlock _status = new()
     {
-        TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.75, Visibility = Visibility.Collapsed
+        TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed
     };
     private Action<StackPanel>? _render;
     private readonly TextBlock _statusDetail = new()
     {
-        TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7, Visibility = Visibility.Collapsed
+        TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed
     };
     private bool _busy;
     private bool _visible;
@@ -31,8 +32,10 @@ internal sealed class FeatureCard : IDisposable
     public FeatureCard(string title)
     {
         View.Style = TrayMenuWindow.GetSettingsStyle("SettingsCardStyle");
+        _status.Style = _statusDetail.Style = TrayMenuWindow.GetSettingsStyle("SettingsSecondaryTextStyle");
         SettingsMotion.Reposition(_content);
-        _content.Children.Add(TrayMenuWindow.CreateGroupTitle(title));
+        _title = TrayMenuWindow.CreateGroupTitle(title);
+        _content.Children.Add(_title);
         _content.Children.Add(_body);
         _content.Children.Add(_status);
         _content.Children.Add(_statusDetail);
@@ -61,7 +64,7 @@ internal sealed class FeatureCard : IDisposable
             SetStatus(_lastError);
     }
 
-    public void SetStatus(string message, string? detail = null)
+    public void SetStatus(string message, string? detail = null, bool announce = false)
     {
         if (_closed) return;
         SettingsMotion.Reposition(_content);
@@ -70,6 +73,7 @@ internal sealed class FeatureCard : IDisposable
         _status.Visibility = string.IsNullOrWhiteSpace(message) ? Visibility.Collapsed : Visibility.Visible;
         _statusDetail.Text = detail ?? "";
         _statusDetail.Visibility = string.IsNullOrWhiteSpace(detail) ? Visibility.Collapsed : Visibility.Visible;
+        if (announce) UiAccessibility.Announce(_title, message);
     }
 
     public void RefreshFooterVisibility()
@@ -85,9 +89,10 @@ internal sealed class FeatureCard : IDisposable
         _render = null;
     }
 
-    public Button Option(string label, bool selected, Func<Task> action, bool enabled = true, bool keepInteractive = false)
+    public Button Option(string label, bool selected, Func<Task> action, bool enabled = true,
+        bool keepInteractive = false, bool isAction = false)
     {
-        Button button = TrayMenuWindow.CreateOptionTile(label, selected, false, TrayMenuWindow.OptionTileHeightDip,
+        Button button = TrayMenuWindow.CreateOptionTile(label, selected, isAction, TrayMenuWindow.OptionTileHeightDip,
             TrayMenuWindow.ControlCenterButtonFontSize);
         button.IsEnabled = enabled;
         _bindings.Add(button, new OptionBinding(action, keepInteractive, selected));
@@ -101,8 +106,8 @@ internal sealed class FeatureCard : IDisposable
             // Long-running recording uses service state for its start/stop button.
             // It must remain renderable and clickable while awaiting completion.
             try { await binding.Action(); }
-            catch (OperationCanceledException) { SetStatus("操作已取消，状态已重新读取。"); }
-            catch (Exception ex) { SetStatus(ex.Message); }
+            catch (OperationCanceledException) { SetStatus("操作已取消，状态已重新读取。", announce: true); }
+            catch (Exception ex) { SetStatus(ex.Message, announce: true); }
         };
         return button;
     }
@@ -187,7 +192,8 @@ internal sealed class FeatureCard : IDisposable
                 if (_render is not null)
                     Update(_visible, _render);
                 if (_lastError is not null)
-                    SetStatus(_lastError);
+                    SetStatus(_lastError, announce: true);
+                else UiAccessibility.Announce(_title, "操作完成。" + _status.Text);
             }
         }
     }

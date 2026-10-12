@@ -8,10 +8,17 @@ internal static class WindowHelpers
 {
     public static void Configure(Window window, int width, int height)
     {
-        window.AppWindow.Resize(new SizeInt32(width, height));
+        uint dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(window));
+        var area = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(window.AppWindow.Id,
+            Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
+        window.AppWindow.Resize(new SizeInt32(
+            WindowSizing.Fit(width, dpi, area.Width), WindowSizing.Fit(height, dpi, area.Height)));
 
         SetAppIcon(window);
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint hwnd);
 
     public static void SetAppIcon(Window window)
     {

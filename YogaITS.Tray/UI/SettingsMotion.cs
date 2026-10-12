@@ -16,13 +16,18 @@ internal static class SettingsMotion
     {
         var hover = new SolidColorBrush();
         var pressed = new SolidColorBrush();
+        var hoverText = new SolidColorBrush();
+        var contrast = new AccessibilitySettings();
         button.Resources["ButtonBackgroundPointerOver"] = hover;
         button.Resources["ButtonBackgroundPressed"] = pressed;
+        button.Resources["ButtonForegroundPointerOver"] = hoverText;
+        button.Resources["ButtonForegroundPressed"] = hoverText;
         void UpdateColors()
         {
             byte channel = button.ActualTheme == ElementTheme.Dark ? (byte)255 : (byte)0;
-            hover.Color = Color.FromArgb(10, channel, channel, channel);
-            pressed.Color = Color.FromArgb(16, channel, channel, channel);
+            hover.Color = UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(10, channel, channel, channel);
+            pressed.Color = UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(16, channel, channel, channel);
+            hoverText.Color = UiAccessibility.HighContrast ? UiAccessibility.SystemColor(14) : Color.FromArgb(255, channel, channel, channel);
         }
         void UpdateTransition()
         {
@@ -35,11 +40,17 @@ internal static class SettingsMotion
                 };
         }
         button.ActualThemeChanged += (_, _) => UpdateColors();
+        void ContrastChanged(AccessibilitySettings sender, object args) => button.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (button.IsLoaded) UpdateColors();
+        });
         button.Loaded += (_, _) =>
         {
+            contrast.HighContrastChanged += ContrastChanged;
             UpdateColors();
             UpdateTransition();
         };
+        button.Unloaded += (_, _) => contrast.HighContrastChanged -= ContrastChanged;
         button.PointerEntered += (_, _) => UpdateTransition();
         button.PointerExited += (_, _) => UpdateTransition();
         UpdateColors();
@@ -86,10 +97,9 @@ internal static class SettingsMotion
             {
                 HorizontalOffset = 0, VerticalOffset = 0
             });
-        // ContentThemeTransition animates the content's opacity toward 1.
-        // Keep the secondary-text dimming on the stable parent, so completing
-        // the transition cannot jump from opaque text back to 70% opacity.
-        control.Opacity = 0.7;
+        // Fade only element opacity. Secondary text uses the theme brush's
+        // color/alpha, so completing a fade cannot change its final contrast.
+        control.Opacity = 1;
         var description = TrayMenuWindow.CreateDescription(text);
         description.Opacity = 1;
         control.Content = description;

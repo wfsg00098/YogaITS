@@ -22,6 +22,7 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _speakerCard = new("扬声器降噪");
     private readonly FeatureCard _voiceCard = new("声纹管理");
     private bool _voiceStartPending;
+    private bool _voiceWasRegistering;
     private const string VoiceReadingExample = "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。";
     private bool _closed;
 
@@ -123,6 +124,8 @@ internal sealed class FeaturePanels : IDisposable
             });
             _speakerCard.SetStatus($"当前扬声器设备：{current.RenderName}");
         });
+        bool voiceCompleted = _voiceWasRegistering && !_audio.IsRegistering;
+        _voiceWasRegistering = _audio.IsRegistering;
         _voiceCard.Update(audio.InternalMicrophone && audio.VoiceId, body =>
         {
             var current = _audio.Snapshot;
@@ -145,14 +148,16 @@ internal sealed class FeaturePanels : IDisposable
                         await _audio.RegisterVoiceAsync(progress);
                     }
                     finally { _voiceStartPending = false; }
-                }, !_audio.IsRegistering || _audio.IsRecording, keepInteractive: true),
-                _voiceCard.Option("读取声纹状态", false, _audio.InspectVoiceAsync, current.VoiceIdRegistered && !_audio.IsRegistering),
+                }, !_audio.IsRegistering || _audio.IsRecording, keepInteractive: true, isAction: true),
+                _voiceCard.Option("读取声纹状态", false, _audio.InspectVoiceAsync,
+                    current.VoiceIdRegistered && !_audio.IsRegistering, isAction: true),
                 _voiceCard.Option("删除声纹", false, async () =>
                 {
                     if (await ConfirmAsync("删除声纹", "确定删除当前声纹？将先关闭仅听机主，再删除声纹。删除后需要重新录制才能使用仅听机主。", "删除"))
                         await _audio.RemoveVoiceAsync();
-                }, current.VoiceIdRegistered && !_audio.IsRegistering));
-            _voiceCard.SetStatus(_audio.RegistrationStatus, _audio.IsRecording ? VoiceReadingExample : null);
+                }, current.VoiceIdRegistered && !_audio.IsRegistering, isAction: true));
+            _voiceCard.SetStatus(_audio.RegistrationStatus, _audio.IsRecording ? VoiceReadingExample : null,
+                announce: voiceCompleted);
         });
     }
 
@@ -204,7 +209,7 @@ internal sealed class FeaturePanels : IDisposable
                         if (await ConfirmAsync("在线恢复校色文件",
                             "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。是否继续？", "开始恢复"))
                             await _color.RecoverAsync();
-                    }));
+                    }, isAction: true));
             }
             _colorCard.SetStatus(SettingsOptionText.ColorStatus(current.CurrentMode, current.Message,
                 current.AdvancedColor?.HdrActive == true,

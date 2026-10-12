@@ -21,17 +21,25 @@ public sealed class InfoWindow : Window
         var heading = new TextBlock
         {
             Text = title,
-            FontSize = 22,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"],
+            TextWrapping = TextWrapping.Wrap
         };
 
         var body = new TextBlock
         {
             Text = message,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 16, 0, 16)
+            IsTextSelectionEnabled = true
         };
-        Grid.SetRow(body, 1);
+        var scroll = new ScrollViewer
+        {
+            Content = body,
+            Margin = new Thickness(0, 16, 0, 16),
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        };
+        Grid.SetRow(scroll, 1);
 
         var ok = new Button
         {
@@ -43,11 +51,15 @@ public sealed class InfoWindow : Window
         Grid.SetRow(ok, 2);
 
         root.Children.Add(heading);
-        root.Children.Add(body);
+        root.Children.Add(scroll);
         root.Children.Add(ok);
 
         Content = root;
         Activated += (_, _) => ConfigureOnce(500, 280);
+        root.KeyDown += (_, args) =>
+        {
+            if (args.Key == Windows.System.VirtualKey.Escape) { args.Handled = true; Close(); }
+        };
     }
 
     private void ConfigureOnce(int width, int height)

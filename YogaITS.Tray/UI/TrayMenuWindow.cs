@@ -42,7 +42,9 @@ public sealed class TrayMenuWindow : Window
     private FrameworkElement? _contentRoot;
     private Grid? _windowHeader;
     private TransientScrollBar? _transientScrollBar;
+    private Action? _updateScrollWidth;
     private TextBlock? _modelLabel;
+    private readonly Windows.UI.ViewManagement.AccessibilitySettings _contrastSettings = new();
     private ContentControl? _titleFocusTarget;
     private TextBlock? _performanceDescription;
     private TextBlock? _chargeDescription;
@@ -73,6 +75,8 @@ public sealed class TrayMenuWindow : Window
     {
         public required TextBlock Label { get; init; }
         public required SolidColorBrush Outline { get; init; }
+        public bool Accent { get; set; }
+        public bool IsAction { get; set; }
     }
 
     public TrayMenuWindow(
@@ -132,6 +136,8 @@ public sealed class TrayMenuWindow : Window
         SystemBackdrop = new MicaBackdrop();
         Activated += TrayMenuWindow_Activated;
         _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
+        _contrastSettings.HighContrastChanged += ContrastSettings_Changed;
+        _appearanceSettings.AutoHideScrollBarsChanged += ScrollSettings_Changed;
         Closed += TrayMenuWindow_Closed;
     }
 
@@ -189,7 +195,11 @@ public sealed class TrayMenuWindow : Window
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             if (_closed || !_isActive) return;
-            _titleFocusTarget?.Focus(FocusState.Programmatic);
+            if (_titleFocusTarget is { } title)
+            {
+                title.IsTabStop = true;
+                title.Focus(FocusState.Programmatic);
+            }
         });
         ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
@@ -297,6 +307,14 @@ public sealed class TrayMenuWindow : Window
         }
         else outer.Children.Add(_coreStack);
         _contentRoot = outer;
+        outer.KeyDown += (_, args) =>
+        {
+            if (!_fullWindow && args.Key == Windows.System.VirtualKey.Escape)
+            {
+                args.Handled = true;
+                Close();
+            }
+        };
         return outer;
     }
 
@@ -311,8 +329,14 @@ public sealed class TrayMenuWindow : Window
         var scale = new ScaleTransform();
         bar.RenderTransformOrigin = new Windows.Foundation.Point(1, 0);
         bar.RenderTransform = scale;
-        void UpdateWidth() => scale.ScaleX = bar.ActualWidth > 0
-            ? Math.Min(1, 8 / bar.ActualWidth) : 1;
+        void UpdateWidth()
+        {
+            bool compact = _appearanceSettings.AutoHideScrollBars;
+            scale.ScaleX = compact && bar.ActualWidth > 0 ? Math.Min(1, 8 / bar.ActualWidth) : 1;
+            double padding = compact ? 8 : Math.Max(8, bar.ActualWidth + 8);
+            if (scroll.Padding.Right != padding) scroll.Padding = new Thickness(0, 0, padding, 0);
+        }
+        _updateScrollWidth = UpdateWidth;
         bar.SizeChanged += (_, _) => UpdateWidth();
         UpdateWidth();
         _transientScrollBar?.Dispose();
@@ -529,7 +553,7 @@ public sealed class TrayMenuWindow : Window
         {
             _modelLabel = new TextBlock
             {
-                Text = modelName, FontSize = 12, Opacity = 0.7,
+                Text = modelName, Style = GetSettingsStyle("SettingsSecondaryTextStyle"),
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 TextWrapping = TextWrapping.NoWrap,
                 HorizontalAlignment = HorizontalAlignment.Left
@@ -547,6 +571,7 @@ public sealed class TrayMenuWindow : Window
                 VerticalContentAlignment = VerticalAlignment.Top
             };
             header.Children.Add(_titleFocusTarget);
+            _titleFocusTarget.LostFocus += (_, _) => _titleFocusTarget.IsTabStop = false;
         }
         else header.Children.Add(text);
         return header;
@@ -575,12 +600,19 @@ public sealed class TrayMenuWindow : Window
         if (!_fullWindow || _closed || !AppWindowTitleBar.IsCustomizationSupported()) return;
         bool dark = _contentRoot?.ActualTheme == ElementTheme.Dark;
         Color foreground = dark ? Color.FromArgb(255, 255, 255, 255) : Color.FromArgb(255, 0, 0, 0);
+        if (UiAccessibility.HighContrast) foreground = UiAccessibility.SystemColor(8);
         var titleBar = AppWindow.TitleBar;
         titleBar.ButtonForegroundColor = titleBar.ButtonHoverForegroundColor = titleBar.ButtonPressedForegroundColor = foreground;
-        titleBar.ButtonInactiveForegroundColor = dark ? Color.FromArgb(255, 153, 153, 153) : Color.FromArgb(255, 102, 102, 102);
+        titleBar.ButtonInactiveForegroundColor = UiAccessibility.HighContrast ? foreground :
+            dark ? Color.FromArgb(255, 153, 153, 153) : Color.FromArgb(255, 102, 102, 102);
         titleBar.ButtonBackgroundColor = titleBar.ButtonInactiveBackgroundColor = Color.FromArgb(0, 0, 0, 0);
         titleBar.ButtonHoverBackgroundColor = Color.FromArgb(dark ? (byte)24 : (byte)16, foreground.R, foreground.G, foreground.B);
         titleBar.ButtonPressedBackgroundColor = Color.FromArgb(dark ? (byte)16 : (byte)10, foreground.R, foreground.G, foreground.B);
+        if (UiAccessibility.HighContrast)
+        {
+            titleBar.ButtonHoverBackgroundColor = titleBar.ButtonPressedBackgroundColor = UiAccessibility.SystemColor(13);
+            titleBar.ButtonHoverForegroundColor = titleBar.ButtonPressedForegroundColor = UiAccessibility.SystemColor(14);
+        }
     }
 
     private static Grid CreateSectionHeader(string title)
@@ -594,9 +626,9 @@ public sealed class TrayMenuWindow : Window
         header.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 10.5,
+            FontSize = 14,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Opacity = 0.62,
+            Style = GetSettingsStyle("SettingsSecondaryTextStyle"),
             VerticalAlignment = VerticalAlignment.Center
         });
 
@@ -611,7 +643,7 @@ public sealed class TrayMenuWindow : Window
 
     internal static TextBlock CreateDescription(string text) => new()
     {
-        Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12, Opacity = 0.7
+        Text = text, TextWrapping = TextWrapping.Wrap, Style = GetSettingsStyle("SettingsSecondaryTextStyle")
     };
 
     private Button CreateModeTile(
@@ -791,7 +823,6 @@ public sealed class TrayMenuWindow : Window
                 : Microsoft.UI.Text.FontWeights.Normal,
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
-            MaxLines = 3,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -816,12 +847,14 @@ public sealed class TrayMenuWindow : Window
             Margin = new Thickness(0),
             Tag = new OptionTileState
             {
-                Label = label, Outline = outline
+                Label = label, Outline = outline, Accent = selected, IsAction = isAction
             }
         };
 
         SetTileStateResources(button, outline);
         SettingsMotion.AttachHover(button);
+        AutomationProperties.SetName(button, text.Replace("\n", ""));
+        if (!isAction) UiAccessibility.SetState(button, selected ? "已选中" : "未选中");
         return button;
     }
 
@@ -987,7 +1020,9 @@ public sealed class TrayMenuWindow : Window
         // Mutate that shared instance instead of replacing resources/styles:
         // normal, hovered and pressed borders update without pointer movement.
         Color outlineColor = GetTileOutlineColor(selected || pending);
+        state.Accent = selected || pending;
         if (state.Outline.Color != outlineColor) state.Outline.Color = outlineColor;
+        UiAccessibility.SetState(button, state.IsAction ? "" : pending ? "正在设置" : selected ? "已选中" : "未选中");
 
         state.Label.FontWeight = selected
             ? Microsoft.UI.Text.FontWeights.SemiBold
@@ -999,10 +1034,14 @@ public sealed class TrayMenuWindow : Window
         if (target.Tag is OptionTileState retained && source.Tag is OptionTileState candidate &&
             retained.Label.Text != candidate.Label.Text)
             retained.Label.Text = candidate.Label.Text;
+        if (target.Tag is OptionTileState targetState && source.Tag is OptionTileState sourceState)
+            targetState.IsAction = sourceState.IsAction;
+        AutomationProperties.SetName(target, AutomationProperties.GetName(source));
     }
 
     private static Color GetTileOutlineColor(bool selected) =>
-        selected ? GetSystemAccentColor() : Color.FromArgb(110, 170, 170, 170);
+        UiAccessibility.HighContrast ? UiAccessibility.SystemColor(selected ? 13 : 8) :
+            selected ? GetSystemAccentColor() : Color.FromArgb(110, 170, 170, 170);
 
     private static void SetTileStateResources(Button button, SolidColorBrush outline)
     {
@@ -1082,7 +1121,32 @@ public sealed class TrayMenuWindow : Window
             if (_closed) return;
             ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
             ApplySystemControlButtonTheme();
+            RefreshContrastOutlines(_contentRoot);
         });
+    }
+
+    private void ContrastSettings_Changed(Windows.UI.ViewManagement.AccessibilitySettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_closed) return;
+            ApplySystemControlButtonTheme();
+            RefreshContrastOutlines(_contentRoot);
+        });
+
+    private void ScrollSettings_Changed(Windows.UI.ViewManagement.UISettings sender,
+        Windows.UI.ViewManagement.UISettingsAutoHideScrollBarsChangedEventArgs args) =>
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_closed) _updateScrollWidth?.Invoke();
+        });
+
+    private static void RefreshContrastOutlines(DependencyObject? element)
+    {
+        if (element is null) return;
+        if (element is Button { Tag: OptionTileState state })
+            state.Outline.Color = GetTileOutlineColor(state.Accent);
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+            RefreshContrastOutlines(VisualTreeHelper.GetChild(element, i));
     }
 
     private nint _mouseHook;
@@ -1191,6 +1255,8 @@ public sealed class TrayMenuWindow : Window
         Activated -= TrayMenuWindow_Activated;
         SystemBackdrop = null;
         _appearanceSettings.ColorValuesChanged -= AppearanceSettings_ColorValuesChanged;
+        _contrastSettings.HighContrastChanged -= ContrastSettings_Changed;
+        _appearanceSettings.AutoHideScrollBarsChanged -= ScrollSettings_Changed;
         UninstallOutsideClickHook();
     }
 
