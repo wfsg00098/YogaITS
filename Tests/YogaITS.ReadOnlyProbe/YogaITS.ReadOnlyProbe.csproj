@@ -16,7 +16,7 @@
     <Compile Include="../../YogaITS.Tray/Services/LenovoGpuWorkingModeService.cs" Link="Services/LenovoGpuWorkingModeService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/NvidiaGpuHelper.cs" Link="Services/NvidiaGpuHelper.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/*.cs" Link="Services/Hpd/%(Filename)%(Extension)" />
-    <Compile Include="../../YogaITS.Tray/Services/Color/*.cs" Link="Services/Color/%(Filename)%(Extension)" />
+    <Compile Include="../../YogaITS.Tray/Services/Color/**/*.cs" Link="Services/Color/%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/*.cs" Link="Services/Elevoc/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

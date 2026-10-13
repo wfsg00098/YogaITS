@@ -43,8 +43,9 @@ if (!gpu.Snapshot.Supported && gpu.Snapshot.Message.Length > 0)
     Console.WriteLine("GPU read diagnostic: " + gpu.Snapshot.Message);
 Console.WriteLine($"HPD: wakeSleep={hpd.Snapshot.Features.WakeSleepSection}, cameraAssist={hpd.Snapshot.Features.CameraAssist}, videoPause={hpd.Snapshot.Features.AutoVideoPause}");
 Console.WriteLine($"Color: supported={color.Snapshot.Supported}, blocked={color.Snapshot.Blocked}, factoryValid={color.Snapshot.FactoryValid}, modeCount={color.Snapshot.Modes.Count}");
+Console.WriteLine($"Color backend: {color.Snapshot.Backend}");
 var internalDisplay = DisplayService.FindInternal(DisplayService.EnumerateActive());
 if (internalDisplay is not null)
     Console.WriteLine($"Color flags: error={internalDisplay.AdvancedColorError}, raw=0x{internalDisplay.AdvancedColor?.value:X8}, mode={internalDisplay.AdvancedColor?.activeColorMode}, HDR={internalDisplay.HdrEnabled}, ACM={internalDisplay.AcmEnabled}");
 Console.WriteLine($"Audio: uplink={audio.Snapshot.Uplink}, downlink={audio.Snapshot.Downlink}, special={audio.Snapshot.Special}, voiceId={audio.Snapshot.VoiceId}, registered={audio.Snapshot.VoiceIdRegistered}");
-Console.WriteLine("No setters, recording, downloads, or system configuration writes were invoked.");
+Console.WriteLine("No color/audio mode writes, recording, downloads, or persistent configuration writes were invoked. TCON capability reads may temporarily gate an SPB session.");

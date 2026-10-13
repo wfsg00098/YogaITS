@@ -7,6 +7,7 @@
 - `YogaITS.Tray/`：应用入口、XAML、项目及管理员运行清单。
 - `YogaITS.Tray/Services/`：ITS、充电、独显、状态缓存、启动任务、系统事件及串行操作基类。
 - `Services/Color/`、`Services/Elevoc/`、`Services/Hpd/`：色彩、音频、人员感知服务及协议实现。
+- `Services/Color/LenovoTcon/`：最终 TCON 探针的 native WMI、SPB session 和色域回读路径。
 - `YogaITS.Tray/UI/`：完整/迷你窗口、信息窗口、功能卡片、原生动画、滚动条和辅助功能。
 - `YogaITS.Tray/Assets/YogaITS.ico`：编译进 EXE 的图标源，不单独复制到发布目录。
 - `Tests/YogaITS.PolicyChecks/`：不操作硬件的逻辑检查。
@@ -85,6 +86,16 @@ ITS 校验参考 [LLT ITSModeFeatureDriver](https://github.com/LenovoLegionToolk
 
 HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回读；不暴露距离或 YogaMode。自动睡眠关闭时隐藏速度与人员辅助判定。自动唤醒/睡眠、播放/暂停仅开启时显示对应说明。
 
+## TCON 与 ICC 自动选择
+
+`ColorGamutService` 统一选择 backend；不按 ThinkBook/Yoga 名称或代际硬编码。内屏存在后先执行 TCON native WMI preflight，只有 `LENOVO_TCON_DATA`、`SetTconSwitch`、实例、live `F3 00` 总能力/模式位和 `F0 1D` GET 均通过才选择 TCON。类不存在立即返回，不打开 SPB。已验证的 ICC 文件仍可作为非 TCON 路径；TCON 检测不确定且没有有效 ICC 时，不提供盲目的 ICC 在线恢复。
+
+TCON 模式位为 `0x0100=P3`、`0x0200=sRGB`、`0x0400=Adobe RGB`，必须同时有总能力 `0x0008`。raw 为 `0x04/0x06/0x08`，其他值保持未知。UI 仅按能力显示对应按钮；TCON 不提供 ICC 亮度联动或恢复，HDR/ACM 状态判断与原 ICC 路径共用。TCON 模式 ID 与 ICC ID 分离，旧 UI 回调不能跨 backend 写入。
+
+每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。生产版枚举与 mutex 等待上限 5 秒；初始化/gate 失败、短读/短写均拒绝继续，清理仍释放 handle 和 mutex。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
+
+独立探针在 ThinkBook 14 G6+ AHP、G7+ IAH 上验证 P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。集成版需对应 ThinkBook 再验收，不将原先 Yoga UI 全通过记录当作新增 TCON 写入已通过。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
+
 ## 音频与声纹安全
 
 Elevoc 使用自建 Direct RPC：RPCRT4、`ncalrpc:ElevocRpcEndpoint`、NDR32，启动执行只读 ABI 自检。不加载 ElevocUAPO.dll，不依赖版本、SHA256 或 RVA。Core Audio 使用完整 x64 PROPVARIANT（24 字节，指针偏移 8），内置阵列按 JackSubType 的 MIC_ARRAY/PROCESSING_MIC_ARRAY 判断，不靠设备名猜测。
@@ -129,7 +140,9 @@ dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executabl
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 
-最近一轮带图标验证的 PolicyChecks 为 **449 项通过**。覆盖 ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
+最近一轮带图标验证的 PolicyChecks 为 **520 项通过**。覆盖 TCON 目标能力位/未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
+
+2026-10-13 TCON 集成后，本机只读诊断确认选择 `Icc`，7 个有效工厂模式及 HDR 实际状态读取正常；未执行 TCON/ICC 色域写入、HDR 切换、音频设置、录音或在线下载。非管理员 GPU 探测仍为拒绝访问，不能据此判定能力不存在。
 
 ReadOnlyProbe 并行读取四组能力与状态，不调用 setter、不录音、不下载。故意不调用 GPU InitializeAsync，避免保存的 Auto 策略触发写入；建议管理员运行，拒绝访问不能据此判定能力不存在。
 

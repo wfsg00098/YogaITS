@@ -23,6 +23,9 @@ internal static class SettingsOptionText
     {
         string label = mode switch
         {
+            "TconP3" => "P3",
+            "TconSrgb" => "sRGB",
+            "TconAdobeRgb" => "Adobe RGB",
             "Default" => "出厂默认（D65）",
             "Native" => "鲜艳（Native）",
             "sRGB" => "网页办公（sRGB-D65）",

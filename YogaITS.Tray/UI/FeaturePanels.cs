@@ -211,15 +211,18 @@ internal sealed class FeaturePanels : IDisposable
                             current.CurrentMode == mode.Name,
                             () => current.CurrentMode == mode.Name ? Task.CompletedTask : _color.ApplyAsync(mode.Name),
                             !current.Blocked)).ToArray());
-                _colorCard.Options(body,
-                    _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
-                        () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
-                    _colorCard.Option("在线恢复校色文件", false, async () =>
-                    {
-                        if (await ConfirmAsync("在线恢复校色文件",
-                            "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。是否继续？", "开始恢复"))
-                            await _color.RecoverAsync();
-                    }, isAction: true));
+                if (current.Backend == ColorGamutBackend.Icc)
+                {
+                    _colorCard.Options(body,
+                        _colorCard.Option("切换色域时同时改变亮度", current.ApplyBrightness,
+                            () => _color.SetBrightnessPreferenceAsync(!current.ApplyBrightness)),
+                        _colorCard.Option("在线恢复校色文件", false, async () =>
+                        {
+                            if (await ConfirmAsync("在线恢复校色文件",
+                                "在线恢复会将本机序列号发送至 Lenovo 校色服务，用于下载与验证本机内屏的工厂校色文件。是否继续？", "开始恢复"))
+                                await _color.RecoverAsync();
+                        }, isAction: true));
+                }
             }
             _colorCard.SetStatus(SettingsOptionText.ColorStatus(current.CurrentMode, current.Message,
                 current.AdvancedColor?.HdrActive == true,

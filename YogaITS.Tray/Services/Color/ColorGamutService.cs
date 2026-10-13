@@ -1,12 +1,15 @@
+using YogaITS.Tray.Services.Color.LenovoTcon;
+
 namespace YogaITS.Tray.Services.Color;
 
 internal sealed record ColorMode(string Name, int? Brightness);
 internal sealed record ColorGamutSnapshot(
     bool Supported, bool Blocked, bool FactoryValid, bool ApplyBrightness,
     string CurrentMode, IReadOnlyList<ColorMode> Modes, string Message,
-    NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2? AdvancedColor = null)
+    NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2? AdvancedColor = null,
+    ColorGamutBackend Backend = ColorGamutBackend.Icc)
 {
-    public static ColorGamutSnapshot Unavailable { get; } = new(false, true, false, true, "", [], "");
+    public static ColorGamutSnapshot Unavailable { get; } = new(false, true, false, true, "", [], "", Backend: ColorGamutBackend.None);
 }
 
 internal sealed class ColorGamutService : SerializedFeatureService
@@ -21,16 +24,38 @@ internal sealed class ColorGamutService : SerializedFeatureService
     {
         try
         {
-            _machine = MachineIdentityService.Read();
+            _machine = null;
+            _factory = null;
             _display = DisplayService.FindInternal(DisplayService.EnumerateActive());
-            if (_display is null || string.IsNullOrWhiteSpace(_display.WcsDeviceId) ||
-                !LcdBrightnessService.Query().Ok)
+            if (_display is null)
             {
                 Snapshot = ColorGamutSnapshot.Unavailable;
                 return;
             }
-            _factory = FactoryRecoveryService.ValidateCurrent(_machine, _display);
-            var modes = _factory.Ok ? _factory.Profiles.Select(profile =>
+            var tcon = TconGamutBackend.Probe();
+            if (tcon.Supported)
+            {
+                Snapshot = new(true, _display.IsBlocked, false, false, tcon.CurrentMode, tcon.Modes,
+                    _display.IsBlocked ? _display.ColorBlockReason : "", _display.AdvancedColor, ColorGamutBackend.Tcon);
+                return;
+            }
+            bool iccEligible = !string.IsNullOrWhiteSpace(_display.WcsDeviceId) && LcdBrightnessService.Query().Ok;
+            if (iccEligible)
+            {
+                _machine = MachineIdentityService.Read();
+                _factory = FactoryRecoveryService.ValidateCurrent(_machine, _display);
+            }
+            var backend = ColorBackendPolicy.Select(false, _factory?.Ok == true, tcon.Absent, iccEligible);
+            if (backend == ColorGamutBackend.None)
+            {
+                var advanced = _display.AdvancedColor;
+                bool supported = advanced is { } state && (state.HighDynamicRangeSupported ||
+                    state.WideColorSupported || state.WideColorUserEnabled);
+                Snapshot = new(supported, true, false, false, "未知", [], "当前没有可用的色域控制能力。",
+                    advanced, ColorGamutBackend.None);
+                return;
+            }
+            var modes = _factory!.Ok ? _factory.Profiles.Select(profile =>
             {
                 var brightness = IccMetaBrightness.Read(profile.Path);
                 return new ColorMode(profile.Mode, brightness.Ok ? brightness.Brightness : null);
@@ -86,6 +111,9 @@ internal sealed class ColorGamutService : SerializedFeatureService
 
     public Task SetBrightnessPreferenceAsync(bool enabled) => RunAsync(() =>
     {
+        Read();
+        if (Snapshot.Backend != ColorGamutBackend.Icc)
+            throw new InvalidOperationException("当前色域控制不支持 ICC 亮度联动。");
         UserSettingsStore.Set("GamutApplyBrightness", enabled);
         _applyBrightness = enabled;
         Read();
@@ -95,7 +123,7 @@ internal sealed class ColorGamutService : SerializedFeatureService
     public Task RecoverAsync() => RunAsync(async () =>
     {
         Read();
-        if (!Snapshot.Supported || _machine is null || _display is null)
+        if (!Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || _machine is null || _display is null)
             throw new InvalidOperationException("无法确定本机和内屏身份，不能恢复校色文件。");
         var machine = _machine;
         var result = await FactoryRecoveryService.RecoverAsync(machine, _display).ConfigureAwait(false);
@@ -107,7 +135,16 @@ internal sealed class ColorGamutService : SerializedFeatureService
     public Task ApplyAsync(string mode) => RunAsync(() =>
     {
         Read();
-        if (!Snapshot.Supported || Snapshot.Blocked || _machine is null || _display is null || _factory?.Ok != true)
+        if (Snapshot.Backend == ColorGamutBackend.Tcon)
+        {
+            if (Snapshot.Blocked || !Snapshot.Modes.Any(item => item.Name == mode))
+                throw new InvalidOperationException("当前系统状态或内屏能力不允许切换该 TCON 色域。");
+            try { TconGamutBackend.Apply(mode); }
+            finally { Read(); }
+            return Task.CompletedTask;
+        }
+        if (!Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || Snapshot.Blocked ||
+            _machine is null || _display is null || _factory?.Ok != true)
             throw new InvalidOperationException("色域切换不可用。请检查 HDR / ACM 和本机校色文件。");
         var profile = _factory.Profiles.SingleOrDefault(p => p.Mode == mode)
             ?? throw new InvalidOperationException("该色域没有经过本机校色文件验证。");

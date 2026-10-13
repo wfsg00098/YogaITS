@@ -18,6 +18,25 @@ void Check(bool condition, string name)
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
 Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
+foreach (int ability in new[] { 0, 8, 0x100, 0x200, 0x400, 0x108, 0x208, 0x408, 0x308, 0x708 })
+foreach (byte mode in new byte[] { 0, 4, 6, 8, 255 })
+{
+    int bit = mode switch { 4 => 0x100, 6 => 0x200, 8 => 0x400, _ => 0 };
+    Check(ColorBackendPolicy.SupportsTconMode(ability, mode) == ((ability & 8) != 0 && bit != 0 && (ability & bit) != 0),
+        "TCON requires gamut and target-specific capability bits; unknown modes fail closed");
+}
+foreach (bool tcon in new[] { false, true })
+foreach (bool icc in new[] { false, true })
+foreach (bool absent in new[] { false, true })
+foreach (bool eligible in new[] { false, true })
+    Check(ColorBackendPolicy.Select(tcon, icc, absent, eligible) == (tcon ? ColorGamutBackend.Tcon :
+        eligible && (icc || absent) ? ColorGamutBackend.Icc : ColorGamutBackend.None),
+        "Live TCON takes priority, validated ICC remains available, uncertain TCON never offers blind ICC recovery");
+foreach (byte raw in new byte[] { 4, 6, 8 })
+    Check(ColorBackendPolicy.ModeRaw(ColorBackendPolicy.ModeId(raw)) == raw, "TCON IDs roundtrip without ICC ambiguity");
+Check(ColorBackendPolicy.ModeId(255) == "未知", "Unknown TCON raw value remains unknown");
+Check(SettingsOptionText.ColorLabel("TconP3") == "P3" && SettingsOptionText.ColorLabel("TconSrgb") == "sRGB" &&
+    SettingsOptionText.ColorLabel("TconAdobeRgb") == "Adobe RGB", "TCON labels do not imply ICC white points or brightness");
 Check(SettingsOptionText.VoiceRegistrationStatus("正在录制声纹", true, 12) == "正在录音，剩余 12 秒。请连续朗读下方文字。", "Panel refresh preserves the current recording countdown");
 Check(SettingsOptionText.VoiceRegistrationStatus("正在注册并验证声纹……", false, 12) == "正在注册并验证声纹……", "Registration phase does not retain an old recording countdown");
 Check(SettingsOptionText.VoiceRegistrationStatus("正在录制声纹", true, 0) == "正在录制声纹", "Recording initially uses the service status until progress arrives");
