@@ -4,6 +4,8 @@ internal enum ColorGamutBackend { None, Icc, Tcon }
 
 internal static class ColorBackendPolicy
 {
+    public static bool CanToggleAcm(bool supported, bool userEnabled) => supported || userEnabled;
+
     public static ColorGamutBackend Select(bool tconSupported, bool iccValidated, bool tconAbsent, bool iccEligible) =>
         tconSupported ? ColorGamutBackend.Tcon :
         iccEligible && (iccValidated || tconAbsent) ? ColorGamutBackend.Icc : ColorGamutBackend.None;

@@ -194,10 +194,9 @@ internal sealed class FeaturePanels : IDisposable
                     switches.Add(_colorCard.Option("HDR", advanced.HdrActive,
                         () => _color.SetAdvancedColorAsync(true, !advanced.HighDynamicRangeUserEnabled),
                         advanced.HighDynamicRangeUserEnabled || advanced.HighDynamicRangeSupported));
-                if (advanced.WideColorSupported || advanced.WideColorUserEnabled)
+                if (ColorBackendPolicy.CanToggleAcm(advanced.WideColorSupported, advanced.WideColorUserEnabled))
                     switches.Add(_colorCard.Option("ACM 自动颜色管理", advanced.AcmActive,
-                        () => _color.SetAdvancedColorAsync(false, !advanced.WideColorUserEnabled),
-                        advanced.WideColorUserEnabled || (!advanced.LimitedByPolicy && !advanced.HdrActive)));
+                        () => _color.SetAdvancedColorAsync(false, !advanced.WideColorUserEnabled)));
                 if (switches.Count > 0)
                     _colorCard.Options(body, switches.ToArray());
             }

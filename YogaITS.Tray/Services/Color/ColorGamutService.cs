@@ -86,12 +86,10 @@ internal sealed class ColorGamutService : SerializedFeatureService
         if (_display is null || _display.AdvancedColor is not { } state)
             throw new InvalidOperationException("当前无法读取内屏高级颜色能力，请刷新后重试。");
         bool supported = hdr ? state.HighDynamicRangeSupported : state.WideColorSupported;
-        // HDR writes change the preference only; Windows decides whether it can
-        // become active (including the user's battery policy). Never change policy.
-        if (enabled && (!supported || !hdr && state.LimitedByPolicy))
+        // Both switches request preferences only. HDR/power policy affects the
+        // effective mode, not whether the user may submit an ACM preference.
+        if (enabled && !supported)
             throw new InvalidOperationException("系统当前不允许开启该高级颜色功能。");
-        if (!hdr && enabled && state.HdrActive)
-            throw new InvalidOperationException("请先关闭 HDR，再开启 ACM。");
         var request = DisplayService.CreateColorStateRequest(_display, hdr, enabled);
         bool verified = false;
         try

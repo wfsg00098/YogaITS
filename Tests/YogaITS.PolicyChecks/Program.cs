@@ -18,6 +18,19 @@ void Check(bool condition, string name)
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
 Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
+foreach (bool supported in new[] { false, true })
+foreach (bool preference in new[] { false, true })
+foreach (bool limited in new[] { false, true })
+foreach (int active in new[] { 0, 1, 2 })
+{
+    var state = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2
+    {
+        value = (supported ? 1u << 6 : 0) | (preference ? 1u << 7 : 0) | (limited ? 1u << 3 : 0),
+        activeColorMode = active
+    };
+    Check(ColorBackendPolicy.CanToggleAcm(state.WideColorSupported, state.WideColorUserEnabled) == (supported || preference),
+        "ACM remains operable independently of actual HDR/WCG mode and power-policy restrictions");
+}
 foreach (int ability in new[] { 0, 8, 0x100, 0x200, 0x400, 0x108, 0x208, 0x408, 0x308, 0x708 })
 foreach (byte mode in new byte[] { 0, 4, 6, 8, 255 })
 {
