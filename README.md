@@ -4,7 +4,7 @@
 
 仅在 Yoga Pro 16 IPH11 上进行了完善测试，其他机型未经测试。
 
-色彩管理已加入 TCON 路径，与原有 Yoga ICC 路径按实际能力自动选择。独立 TCON 探针已在 ThinkBook 14 G6+ AHP、ThinkBook 14 G7+ IAH 上验证 P3/sRGB；集成版在这些机型上仍需实测。Adobe RGB 的协议映射已确认，但尚无支持该能力的正样本完成实机验证。
+色彩管理已加入 TCON 路径，与原有 Yoga ICC 路径按实际能力自动选择。已在 ThinkBook 14 G6+ AHP、ThinkBook 14 G7+ IAH 上验证 P3/sRGB。Adobe RGB 的协议映射已确认，但尚无支持该能力的正样本完成实机验证。
 
 ## 开始使用
 
