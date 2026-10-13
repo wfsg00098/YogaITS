@@ -33,11 +33,6 @@ internal sealed class ColorGamutService : SerializedFeatureService
                 return;
             }
             var tcon = TconGamutBackend.Probe();
-            ColorDiagnosticLog.Write("Color backend detection", new[]
-            {
-                $"TCON absent={tcon.Absent}, supported={tcon.Supported}, mode={tcon.CurrentMode}, modes={tcon.Modes.Count}",
-                $"AdvancedColor error={_display.AdvancedColorError}, flags={_display.AdvancedColor?.value}, mode={_display.AdvancedColor?.activeColorMode}"
-            });
             if (tcon.Supported)
             {
                 Snapshot = new(true, _display.IsBlocked, false, false, tcon.CurrentMode, tcon.Modes,

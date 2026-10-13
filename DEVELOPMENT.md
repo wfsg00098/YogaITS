@@ -132,12 +132,11 @@ WinMM 清理按 Stop → Reset → Unprepare → Close → 释放内存；任一
 
 桌面上直接订阅 AccessibilitySettings.HighContrastChanged 曾抛出 `0x80070490`。使用常驻窗口的 WM_SETTINGCHANGE/WM_THEMECHANGED 更新对比度及滚动条偏好，保留已验证的 UISettings.ColorValuesChanged；不要重新引入不兼容的事件订阅。框架主题资源不通过 Application.Resources 索引直接读取。
 
-## 配置、日志与隐私
+## 配置与隐私
 
 - `%LOCALAPPDATA%\YogaITS\settings.json`：显卡逻辑模式及色域亮度偏好。
 - `%LOCALAPPDATA%\YogaITS\ColorCalibration\Factory\`：验证后的工厂 ICC 源文件。
-- 发布目录的 `Logs/ui-errors.log`：窗口构造和未处理 XAML 异常，日志失败不影响主流程。
-- 发布目录的 `Logs/color-diagnostics.log`：TCON WMI、session、IO 返回缓冲区及高级颜色状态诊断；重复检测内容去重，不记录序列号。
+- 程序不创建 `Logs` 目录或写入日志文件；错误仍通过界面提示，原生 TCON 诊断回调采用无输出适配，不改变探针链路行为。
 - 在线恢复弹确认框，默认取消；仅确认后向 Lenovo 发送序列号。下载使用 `Accept: */*`，下载与暂存副本均校验后替换缓存。不能给 ZIP 强制使用 JSON-only Accept。
 - 录音只由明确用户操作触发；不将声纹向量或完整序列号写入常规日志。提交前检查端点身份与取消状态，删除声纹需二次确认。
 

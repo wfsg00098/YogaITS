@@ -245,7 +245,6 @@ public sealed partial class MainWindow : Window
         {
             // Also cover TrayMenuWindow construction itself. A visual/control
             // creation failure must not terminate the resident tray process.
-            UiErrorLog.Write("ShowSettingsWindow", ex);
             ShowChild(new InfoWindow("托盘菜单显示失败", ex.ToString()));
         }
     }

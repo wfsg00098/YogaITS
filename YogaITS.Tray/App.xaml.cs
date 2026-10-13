@@ -12,7 +12,6 @@ public partial class App : Application
 
     public App()
     {
-        UnhandledException += (_, args) => UiErrorLog.Write("Unhandled XAML exception", args.Exception);
         InitializeComponent();
     }
 
