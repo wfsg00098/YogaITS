@@ -92,7 +92,11 @@ HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回
 
 TCON 模式位为 `0x0100=P3`、`0x0200=sRGB`、`0x0400=Adobe RGB`，必须同时有总能力 `0x0008`。raw 为 `0x04/0x06/0x08`，其他值保持未知。UI 仅按能力显示对应按钮；TCON 不提供 ICC 亮度联动或恢复，HDR/ACM 状态判断与原 ICC 路径共用。TCON 模式 ID 与 ICC ID 分离，旧 UI 回调不能跨 backend 写入。
 
-每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。生产版枚举与 mutex 等待上限 5 秒；初始化返回值及 gate OFF 按最终探针语义记录、不另加阻断；实际 gate ON/IO 失败仍拒绝。驱动可能填充缓冲区但返回字节数为零，因此验证实际缓冲区大小及 live 能力，不要求 bytesReturned/bytesWritten 等于请求长度；最终仍必须回读匹配。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
+应用入口先执行最终探针的 `ProcessComSecurity.InitializeEarly()`，以 DEFAULT/IMPERSONATE/EOAC_NONE 配置进程级 COM 安全，再启动 SDK 生成的 WinUI 主循环，退出时平衡主线程 COM。只读诊断入口同样在任何 WMI 之前初始化。不能仅在 TCON worker 中补调：此时 RPC_E_TOO_LATE 只说明进程安全已经固定，不能证明原设置适合实例枚举。
+
+G7+ 的初次集成反馈日志显示类和方法存在，但实例枚举 Next（含 enum blanket 重试）返回 `WBEM_E_ACCESS_DENIED`，尚未访问 SPB；排查发现遗漏了探针入口的早期初始化。补齐后，本机主程序及只读诊断日志均确认进程级 `CoInitializeSecurity=S_OK`，Yoga ICC 检测仍正常；G7+ 修正后需再次实机验收。
+
+每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。按用户要求仅将探针的无限枚举/mutex 等待替换为 30 秒后台等待；其他 native WMI/transport/protocol 代码保持探针原样。初始化结果、gate OFF、bytesReturned/bytesWritten 不额外阻断，仍由原探针的 live capability、GET、WriteFile 成功和最终回读判定。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
 
 独立探针在 ThinkBook 14 G6+ AHP、G7+ IAH 上验证 P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。集成版需对应 ThinkBook 再验收，不将原先 Yoga UI 全通过记录当作新增 TCON 写入已通过。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
 
@@ -141,7 +145,7 @@ dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executabl
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 
-最近一轮带图标验证的 PolicyChecks 为 **544 项通过**。覆盖 TCON 返回缓冲区兼容/目标能力位/未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
+最近一轮带图标验证的 PolicyChecks 为 **520 项通过**。直接复用原探针 SupportsMode 验证目标能力位，并覆盖未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
 
 2026-10-13 TCON 集成后，本机只读诊断确认选择 `Icc`，7 个有效工厂模式及 HDR 实际状态读取正常；未执行 TCON/ICC 色域写入、HDR 切换、音频设置、录音或在线下载。非管理员 GPU 探测仍为拒绝访问，不能据此判定能力不存在。
 

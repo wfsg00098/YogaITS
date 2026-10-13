@@ -18,16 +18,11 @@ void Check(bool condition, string name)
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
 Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
-foreach (bool success in new[] { false, true })
-foreach (int length in new[] { 0, 1, 3, 4 })
-foreach (int expected in new[] { 0, 1, 4 })
-    Check(ColorBackendPolicy.CanReadTconBuffer(success, length, expected) ==
-        (success && expected > 0 && length >= expected), "TCON buffer validation ignores unreliable driver byte counts, not failed IO or insufficient buffers");
 foreach (int ability in new[] { 0, 8, 0x100, 0x200, 0x400, 0x108, 0x208, 0x408, 0x308, 0x708 })
 foreach (byte mode in new byte[] { 0, 4, 6, 8, 255 })
 {
     int bit = mode switch { 4 => 0x100, 6 => 0x200, 8 => 0x400, _ => 0 };
-    Check(ColorBackendPolicy.SupportsTconMode(ability, mode) == ((ability & 8) != 0 && bit != 0 && (ability & bit) != 0),
+    Check(YogaITS.Tray.Services.Color.LenovoTcon.LenovoManagerPath.SupportsMode(ability, mode) == ((ability & 8) != 0 && bit != 0 && (ability & bit) != 0),
         "TCON requires gamut and target-specific capability bits; unknown modes fail closed");
 }
 foreach (bool tcon in new[] { false, true })

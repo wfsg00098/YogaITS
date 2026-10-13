@@ -46,12 +46,6 @@ internal sealed class NativeTconWmi : IDisposable
 
     public NativeTconWmi()
     {
-        try { Initialize(); }
-        catch { Dispose(); throw; }
-    }
-
-    private void Initialize()
-    {
         // Lenovo DLL does CoInitializeEx(NULL, MTA), then CoInitializeSecurity with
         // DEFAULT authn / IMPERSONATE and explicitly accepts RPC_E_TOO_LATE.
         HrCoInitializeEx = WbemNative.CoInitializeEx(IntPtr.Zero, WbemNative.COINIT_MULTITHREADED);
@@ -94,8 +88,7 @@ internal sealed class NativeTconWmi : IDisposable
         if (!WbemNative.Succeeded(HrGetMethod)) return;
 
         // Attempt 1: mirror Lenovo exactly. The vendor DLL calls CreateInstanceEnum(0x30)
-        // and then Next without CoSetProxyBlanket on the enum. Production bounds
-        // enumeration to 5 seconds rather than the probe's infinite wait.
+        // and then Next(WBEM_INFINITE, 1, ...) without CoSetProxyBlanket on the enum.
         if (TryEnumerateExact(out var instance))
         {
             _instanceObject = instance;
@@ -136,7 +129,7 @@ internal sealed class NativeTconWmi : IDisposable
         try
         {
             var one = new WbemNative.IWbemClassObject[1];
-            HrNextExact = enumerator.Next(5000, 1, one, out uint returned);
+            HrNextExact = enumerator.Next(30000, 1, one, out uint returned);
             ReturnedExact = returned;
             if (WbemNative.Succeeded(HrNextExact) && returned >= 1 && one[0] is not null)
             {
@@ -170,7 +163,7 @@ internal sealed class NativeTconWmi : IDisposable
             if (!WbemNative.Succeeded(HrProxyEnumRetry)) return false;
 
             var one = new WbemNative.IWbemClassObject[1];
-            HrNextRetry = enumerator.Next(5000, 1, one, out uint returned);
+            HrNextRetry = enumerator.Next(30000, 1, one, out uint returned);
             ReturnedRetry = returned;
             if (WbemNative.Succeeded(HrNextRetry) && returned >= 1 && one[0] is not null)
             {
@@ -196,7 +189,7 @@ internal sealed class NativeTconWmi : IDisposable
         log($"GetMethod({GateMethod})        : {Fmt(HrGetMethod)}");
         log("[Lenovo-exact enumeration]");
         log($"  CreateInstanceEnum(flags=0x30): {Fmt(HrCreateEnumExact)}");
-        log($"  Next(5000 ms,1)               : {Fmt(HrNextExact)}  returned={ReturnedExact}");
+        log($"  Next(30000 ms,1)              : {Fmt(HrNextExact)}  returned={ReturnedExact}");
 
         if (HrNextExact == WbemNative.WBEM_E_ACCESS_DENIED)
         {
@@ -204,7 +197,7 @@ internal sealed class NativeTconWmi : IDisposable
             log("[diagnostic enum-proxy blanket retry]");
             log($"  CreateInstanceEnum             : {Fmt(HrCreateEnumRetry)}");
             log($"  CoSetProxyBlanket(enum)        : {Fmt(HrProxyEnumRetry)}");
-            log($"  Next(5000 ms,1)               : {Fmt(HrNextRetry)}  returned={ReturnedRetry}");
+            log($"  Next(30000 ms,1)              : {Fmt(HrNextRetry)}  returned={ReturnedRetry}");
         }
 
         log($"instance __PATH Get              : {Fmt(HrGetPath)}");
@@ -282,6 +275,7 @@ internal static class TconTransport
     private const uint WAIT_OBJECT_0 = 0x00000000;
     private const uint WAIT_ABANDONED = 0x00000080;
     private const uint WAIT_FAILED = 0xFFFFFFFF;
+    private const uint INFINITE = 0xFFFFFFFF;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeFileHandle CreateFileW(
@@ -378,13 +372,13 @@ internal static class TconTransport
             return new Session(mutex, false, WAIT_FAILED, new SafeFileHandle(IntPtr.Zero, ownsHandle: true), e);
         }
 
-        uint wr = WaitForSingleObject(mutex, 5000);
+        uint wr = WaitForSingleObject(mutex, 30000);
         bool owned = wr == WAIT_OBJECT_0 || wr == WAIT_ABANDONED;
         log($"parallel mutex      : {ParallelMutexName}");
         log($"WaitForSingleObject : 0x{wr:X8} {(wr == WAIT_OBJECT_0 ? "WAIT_OBJECT_0" : wr == WAIT_ABANDONED ? "WAIT_ABANDONED" : wr == WAIT_FAILED ? "WAIT_FAILED" : "OTHER")}");
         if (!owned)
         {
-            int e = wr == 0x102 ? 1460 : Marshal.GetLastWin32Error();
+            int e = Marshal.GetLastWin32Error();
             return new Session(mutex, false, wr, new SafeFileHandle(IntPtr.Zero, ownsHandle: true), e);
         }
 
@@ -492,7 +486,7 @@ internal static class LenovoManagerPath
             // SPB handle before every real F3/F0/WriteFile operation.
             IoctlResult init = TconTransport.SessionInitOpened(wmi, session.Handle, log);
             if (!init.Success)
-                log("[session-init] warning: matching the verified vendor path, continue to the live capability/GET transaction.");
+                log("[session-init] warning: vendor code does not use this init result as the gamut capability result; continuing to the real transaction.");
 
             bool gateOn = false;
             try
@@ -535,7 +529,7 @@ internal static class LenovoManagerPath
 
             IoctlResult init = TconTransport.SessionInitOpened(wmi, session.Handle, log);
             if (!init.Success)
-                log("[session-init] warning: matching the verified vendor path, write result must still pass live readback.");
+                log("[session-init] warning: vendor code does not use this init result as the gamut capability result; continuing to the real transaction.");
 
             bool gateOn = false;
             try
@@ -569,10 +563,8 @@ internal static class LenovoManagerPath
             var io = ManagerReadIo(wmi, new byte[] { 0xF3, 0x00 }, 4, "F3 00", log);
             if (!io.Success)
                 return new(false, 0, 0, io);
-            if (!ColorBackendPolicy.CanReadTconBuffer(io.Success, io.Output.Length, 4))
-                return new(false, 0, 0, io);
-            if (io.BytesReturned != 4)
-                log($"TCON capability buffer is 4 bytes; driver reports {io.BytesReturned}. Using the verified probe buffer semantics.");
+            if (io.BytesReturned < 4)
+                log($"note: bytesReturned={io.BytesReturned}; Lenovo code still consumes the 4-byte output buffer, but zeros do NOT prove capability.");
 
             ushort raw = (ushort)(io.Output[0] | (io.Output[3] << 8));
             int adjusted = raw;
@@ -592,10 +584,8 @@ internal static class LenovoManagerPath
             if (!io.Success)
                 return new(false, 0xFF, "<unavailable>", io);
 
-            if (!ColorBackendPolicy.CanReadTconBuffer(io.Success, io.Output.Length, 1))
-                return new(false, 0xFF, "<unavailable>", io);
-            if (io.BytesReturned != 1)
-                log($"TCON mode buffer is 1 byte; driver reports {io.BytesReturned}. Using the verified probe buffer semantics.");
+            if (io.BytesReturned < 1)
+                log($"note: bytesReturned={io.BytesReturned}; Lenovo code reads output[0] directly after successful DeviceIoControl.");
 
             byte raw = io.Output[0];
             string name = GamutName(raw);
@@ -669,11 +659,18 @@ internal static class LenovoManagerPath
         return false;
     }
 
-    internal static int ModeAbilityBit(byte raw) => ColorBackendPolicy.ModeBit(raw);
+    internal static int ModeAbilityBit(byte raw) => raw switch
+    {
+        0x04 => P3AbilityBit,
+        0x06 => SrgbAbilityBit,
+        0x08 => AdobeRgbAbilityBit,
+        _ => 0
+    };
 
     internal static bool SupportsMode(int adjustedAbility, byte raw)
     {
-        return ColorBackendPolicy.SupportsTconMode(adjustedAbility, raw);
+        int bit = ModeAbilityBit(raw);
+        return (adjustedAbility & GamutAbilityBit) != 0 && bit != 0 && (adjustedAbility & bit) != 0;
     }
 
     internal static string AvailableModeSummary(int adjustedAbility)

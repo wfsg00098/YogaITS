@@ -25,6 +25,8 @@
     <Compile Include="../../YogaITS.Tray/Services/Color/NativeMethods.cs" Link="NativeMethods.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/DisplayService.cs" Link="DisplayService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/ColorBackendPolicy.cs" Link="ColorBackendPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Color/LenovoTcon/LenovoTconManager.cs" Link="LenovoTconManager.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Color/LenovoTcon/WbemNative.cs" Link="WbemNative.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/ProfileService.cs" Link="ProfileService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/MachineIdentity.cs" Link="MachineIdentity.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/IccInspector.cs" Link="IccInspector.cs" />

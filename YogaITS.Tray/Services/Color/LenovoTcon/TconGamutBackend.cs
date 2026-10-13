@@ -10,6 +10,7 @@ internal static class TconGamutBackend
         void Log(string message) => lines.Add(message);
         try
         {
+            ProcessComSecurity.Log(Log);
             // COM and the mutex must be created, used and disposed on the same worker thread.
             using var wmi = new NativeTconWmi();
             wmi.LogPreflight(Log);
@@ -21,7 +22,7 @@ internal static class TconGamutBackend
             var current = LenovoManagerPath.ReadGamut(wmi, Log);
             if (!current.Success) return new(false, false, "未知", []);
             var modes = new byte[] { 0x06, 0x04, 0x08 }
-                .Where(raw => ColorBackendPolicy.SupportsTconMode(ability.AdjustedAbility, raw))
+                .Where(raw => LenovoManagerPath.SupportsMode(ability.AdjustedAbility, raw))
                 .Select(raw => new ColorMode(ColorBackendPolicy.ModeId(raw), null)).ToArray();
             return new(false, modes.Length > 0, ColorBackendPolicy.ModeId(current.RawMode), modes);
         }
