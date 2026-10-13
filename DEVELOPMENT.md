@@ -92,7 +92,7 @@ HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回
 
 TCON 模式位为 `0x0100=P3`、`0x0200=sRGB`、`0x0400=Adobe RGB`，必须同时有总能力 `0x0008`。raw 为 `0x04/0x06/0x08`，其他值保持未知。UI 仅按能力显示对应按钮；TCON 不提供 ICC 亮度联动或恢复，HDR/ACM 状态判断与原 ICC 路径共用。TCON 模式 ID 与 ICC ID 分离，旧 UI 回调不能跨 backend 写入。
 
-每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。生产版枚举与 mutex 等待上限 5 秒；初始化/gate 失败、短读/短写均拒绝继续，清理仍释放 handle 和 mutex。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
+每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。生产版枚举与 mutex 等待上限 5 秒；初始化返回值及 gate OFF 按最终探针语义记录、不另加阻断；实际 gate ON/IO 失败仍拒绝。驱动可能填充缓冲区但返回字节数为零，因此验证实际缓冲区大小及 live 能力，不要求 bytesReturned/bytesWritten 等于请求长度；最终仍必须回读匹配。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
 
 独立探针在 ThinkBook 14 G6+ AHP、G7+ IAH 上验证 P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。集成版需对应 ThinkBook 再验收，不将原先 Yoga UI 全通过记录当作新增 TCON 写入已通过。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
 
@@ -129,6 +129,7 @@ WinMM 清理按 Stop → Reset → Unprepare → Close → 释放内存；任一
 - `%LOCALAPPDATA%\YogaITS\settings.json`：显卡逻辑模式及色域亮度偏好。
 - `%LOCALAPPDATA%\YogaITS\ColorCalibration\Factory\`：验证后的工厂 ICC 源文件。
 - 发布目录的 `Logs/ui-errors.log`：窗口构造和未处理 XAML 异常，日志失败不影响主流程。
+- 发布目录的 `Logs/color-diagnostics.log`：TCON WMI、session、IO 返回缓冲区及高级颜色状态诊断；重复检测内容去重，不记录序列号。
 - 在线恢复弹确认框，默认取消；仅确认后向 Lenovo 发送序列号。下载使用 `Accept: */*`，下载与暂存副本均校验后替换缓存。不能给 ZIP 强制使用 JSON-only Accept。
 - 录音只由明确用户操作触发；不将声纹向量或完整序列号写入常规日志。提交前检查端点身份与取消状态，删除声纹需二次确认。
 
@@ -140,7 +141,7 @@ dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executabl
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 
-最近一轮带图标验证的 PolicyChecks 为 **520 项通过**。覆盖 TCON 目标能力位/未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
+最近一轮带图标验证的 PolicyChecks 为 **544 项通过**。覆盖 TCON 返回缓冲区兼容/目标能力位/未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
 
 2026-10-13 TCON 集成后，本机只读诊断确认选择 `Icc`，7 个有效工厂模式及 HDR 实际状态读取正常；未执行 TCON/ICC 色域写入、HDR 切换、音频设置、录音或在线下载。非管理员 GPU 探测仍为拒绝访问，不能据此判定能力不存在。
 

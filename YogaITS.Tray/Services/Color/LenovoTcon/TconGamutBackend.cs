@@ -4,14 +4,15 @@ internal sealed record TconGamutSnapshot(bool Absent, bool Supported, string Cur
 
 internal static class TconGamutBackend
 {
-    private static void Log(string message) => System.Diagnostics.Debug.WriteLine("TCON: " + message);
-
     public static TconGamutSnapshot Probe()
     {
+        var lines = new List<string>();
+        void Log(string message) => lines.Add(message);
         try
         {
             // COM and the mutex must be created, used and disposed on the same worker thread.
             using var wmi = new NativeTconWmi();
+            wmi.LogPreflight(Log);
             if (!wmi.Ready)
                 return new(wmi.HrGetClass == WbemNative.WBEM_E_NOT_FOUND, false, "未知", []);
             var ability = LenovoManagerPath.ReadAbility(wmi, Log);
@@ -29,12 +30,18 @@ internal static class TconGamutBackend
             Log(ex.GetType().Name + ": " + ex.Message);
             return new(false, false, "未知", []);
         }
+        finally { ColorDiagnosticLog.Write("TCON capability probe", lines); }
     }
 
     public static void Apply(string mode)
     {
-        // SetGamut repeats live WMI/capability/GET checks and verifies the write up to six times.
-        if (!LenovoManagerPath.SetGamut(ColorBackendPolicy.ModeRaw(mode), Log))
-            throw new InvalidOperationException("TCON 色域切换未通过能力检查或回读验证。");
+        var lines = new List<string>();
+        try
+        {
+            // Repeat live WMI/capability/GET checks and verify the write up to six times.
+            if (!LenovoManagerPath.SetGamut(ColorBackendPolicy.ModeRaw(mode), lines.Add))
+                throw new InvalidOperationException("TCON 色域切换未通过能力检查或回读验证。");
+        }
+        finally { ColorDiagnosticLog.Write("TCON mode change", lines); }
     }
 }

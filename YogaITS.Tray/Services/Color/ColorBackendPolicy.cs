@@ -4,6 +4,11 @@ internal enum ColorGamutBackend { None, Icc, Tcon }
 
 internal static class ColorBackendPolicy
 {
+    // Some Lenovo drivers leave bytesReturned at zero despite filling the buffer.
+    // Caller still proves live capability and verifies the requested mode afterward.
+    public static bool CanReadTconBuffer(bool success, int bufferLength, int expected) =>
+        success && expected > 0 && bufferLength >= expected;
+
     public static ColorGamutBackend Select(bool tconSupported, bool iccValidated, bool tconAbsent, bool iccEligible) =>
         tconSupported ? ColorGamutBackend.Tcon :
         iccEligible && (iccValidated || tconAbsent) ? ColorGamutBackend.Icc : ColorGamutBackend.None;

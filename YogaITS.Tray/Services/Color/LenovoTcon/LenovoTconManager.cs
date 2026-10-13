@@ -427,7 +427,6 @@ internal static class TconTransport
             {
                 int hrOff = wmi.SetGate(false, out string offDetail);
                 log($"[session-init] SetTconSwitch(\"0\") : {WbemNative.Hr(hrOff)}  {offDetail}");
-                Marshal.ThrowExceptionForHR(hrOff);
             }
             PostIoDelay();
         }
@@ -493,7 +492,7 @@ internal static class LenovoManagerPath
             // SPB handle before every real F3/F0/WriteFile operation.
             IoctlResult init = TconTransport.SessionInitOpened(wmi, session.Handle, log);
             if (!init.Success)
-                return new(false, init.Win32Error, 0, Array.Empty<byte>(), "TCON session initialization failed");
+                log("[session-init] warning: matching the verified vendor path, continue to the live capability/GET transaction.");
 
             bool gateOn = false;
             try
@@ -514,7 +513,6 @@ internal static class LenovoManagerPath
                 {
                     int hrOff = wmi.SetGate(false, out string offDetail);
                     log($"SetTconSwitch(\"0\") : {WbemNative.Hr(hrOff)}  {offDetail}");
-                    Marshal.ThrowExceptionForHR(hrOff);
                 }
             }
         }
@@ -537,7 +535,7 @@ internal static class LenovoManagerPath
 
             IoctlResult init = TconTransport.SessionInitOpened(wmi, session.Handle, log);
             if (!init.Success)
-                return new(false, init.Win32Error, 0, "TCON session initialization failed");
+                log("[session-init] warning: matching the verified vendor path, write result must still pass live readback.");
 
             bool gateOn = false;
             try
@@ -556,7 +554,6 @@ internal static class LenovoManagerPath
                 {
                     int hrOff = wmi.SetGate(false, out string offDetail);
                     log($"SetTconSwitch(\"0\") : {WbemNative.Hr(hrOff)}  {offDetail}");
-                    Marshal.ThrowExceptionForHR(hrOff);
                 }
             }
         }
@@ -572,8 +569,10 @@ internal static class LenovoManagerPath
             var io = ManagerReadIo(wmi, new byte[] { 0xF3, 0x00 }, 4, "F3 00", log);
             if (!io.Success)
                 return new(false, 0, 0, io);
-            if (io.BytesReturned != 4)
+            if (!ColorBackendPolicy.CanReadTconBuffer(io.Success, io.Output.Length, 4))
                 return new(false, 0, 0, io);
+            if (io.BytesReturned != 4)
+                log($"TCON capability buffer is 4 bytes; driver reports {io.BytesReturned}. Using the verified probe buffer semantics.");
 
             ushort raw = (ushort)(io.Output[0] | (io.Output[3] << 8));
             int adjusted = raw;
@@ -593,8 +592,10 @@ internal static class LenovoManagerPath
             if (!io.Success)
                 return new(false, 0xFF, "<unavailable>", io);
 
-            if (io.BytesReturned != 1)
+            if (!ColorBackendPolicy.CanReadTconBuffer(io.Success, io.Output.Length, 1))
                 return new(false, 0xFF, "<unavailable>", io);
+            if (io.BytesReturned != 1)
+                log($"TCON mode buffer is 1 byte; driver reports {io.BytesReturned}. Using the verified probe buffer semantics.");
 
             byte raw = io.Output[0];
             string name = GamutName(raw);
@@ -648,7 +649,7 @@ internal static class LenovoManagerPath
         log($"[write] target 0x{target:X2} {GamutName(target)}");
         WriteResult wr = ManagerWriteIo(wmi, new byte[] { 0xF0, 0x1D, target }, log);
         log($"WriteFile F0 1D {target:X2}: {(wr.Success ? "PASS" : "FAIL")} bytesWritten={wr.BytesWritten} win32={wr.Win32Error} detail={wr.Detail}");
-        if (!wr.Success || wr.BytesWritten != 3) return false;
+        if (!wr.Success) return false;
 
         log("");
         log("[verify] manager-style readback, max 6 attempts / 30 ms");
