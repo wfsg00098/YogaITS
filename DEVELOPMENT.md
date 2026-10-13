@@ -39,6 +39,14 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 非打包 WinUI 需要应用 PRI。项目中的 `AddProjectPriToResolvedFileToPublish` 处理发布资源遗漏；交付必须保留整个发布目录。图标通过 `ApplicationIcon` 内置，窗口和托盘从 EXE 提取，句柄按生命周期释放，不生成临时 ICO 或额外 Assets 目录。
 
+## GitHub Actions 自动构建与 Release
+
+`.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
+
+版本由远程数字分支中的最大数值加 1，再拼接本次提交 SHA 前 8 位：`1.0`、`2.0` → `3.0-xxxxxxxx`。只读取 `refs/remotes/origin`，不把同名标签或非数字分支算进去；没有数字分支时从 `1.0` 开始。每次推送的基础版本可相同，提交后缀不同；创建新的数字备份分支才改变基础版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 可在本地验证规则。
+
+发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
+
 ## 架构与刷新
 
 四组 probe 后端整合为独立服务，无常驻辅助进程，不依赖厂商 RPC 客户端 DLL。`SerializedFeatureService` 串行执行同一服务的读、写和关闭；首次检测及不同服务之间可并行。只由用户操作或已选择的显卡智能策略触发写入，不通过试写检测能力，无常态轮询。

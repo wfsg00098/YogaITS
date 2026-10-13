@@ -1,0 +1,106 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-release-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+      archive_name: ${{ steps.version.outputs.archive_name }}
+    steps:
+      - name: Check out pushed commit and all branch refs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check release version logic
+        run: ./Tests/ReleaseVersionChecks.ps1
+
+      - name: Calculate release version
+        id: version
+        run: |
+          $release = ./scripts/Get-ReleaseVersion.ps1 -CommitSha $env:GITHUB_SHA
+          "version=$($release.Version)" >> $env:GITHUB_OUTPUT
+          "artifact_name=$($release.ArtifactName)" >> $env:GITHUB_OUTPUT
+          "archive_name=$($release.ArchiveName)" >> $env:GITHUB_OUTPUT
+          Write-Host "Release version: $($release.Version)"
+
+      - name: Clean and publish Windows x64 Release
+        run: ./build-clean.ps1
+
+      - name: Run hardware-free policy checks
+        run: |
+          dotnet run --project ./Tests/YogaITS.PolicyChecks -c Release -- --icon-executable ./dist/YogaITS.Tray.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed.' }
+
+      - name: Package complete publish directory
+        env:
+          ARCHIVE_NAME: ${{ steps.version.outputs.archive_name }}
+        run: |
+          New-Item -ItemType Directory -Path ./publish -Force | Out-Null
+          Compress-Archive -Path ./dist/* -DestinationPath (Join-Path ./publish $env:ARCHIVE_NAME) -CompressionLevel Optimal
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: publish/${{ steps.version.outputs.archive_name }}
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: windows-2025
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated build artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release-assets
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          ARCHIVE_NAME: ${{ needs.build.outputs.archive_name }}
+        run: |
+          $archive = Join-Path ./release-assets $env:ARCHIVE_NAME
+          if (-not (Test-Path -LiteralPath $archive)) { throw 'Release archive is missing.' }
+          gh release view $env:RELEASE_VERSION --json tagName > $null 2> $null
+          if ($LASTEXITCODE -eq 0) {
+            $tagSha = gh api "repos/$env:GH_REPO/git/ref/tags/$env:RELEASE_VERSION" --jq '.object.sha'
+            if ($LASTEXITCODE -ne 0 -or $tagSha -ne $env:GITHUB_SHA) {
+              throw 'Existing release tag does not point to this commit; refusing to overwrite assets.'
+            }
+            gh release upload $env:RELEASE_VERSION $archive --clobber
+          } else {
+            gh release create $env:RELEASE_VERSION $archive --target $env:GITHUB_SHA --title $env:RELEASE_VERSION --generate-notes --notes 'Windows x64 framework-dependent build. Extract the complete ZIP; .NET 10 Desktop Runtime and compatible Windows App Runtime are required.'
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

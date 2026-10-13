@@ -8,6 +8,8 @@
 
 ## 开始使用
 
+从 [GitHub Releases](https://github.com/wfsg00098/YogaITS/releases/latest) 下载 Windows x64 ZIP；推送主线后会自动构建并发布新版本。
+
 运行环境：Windows 11 x64、.NET 10 Desktop Runtime、兼容的 Windows App Runtime，以及对应的联想硬件驱动和服务。程序需要管理员权限，启动时请允许 UAC 提示。
 
 将已编译的程序完整解压到固定目录，双击 `YogaITS.Tray.exe` 启动。不要只复制 EXE，其他运行文件也需要保留。无需运行联想电脑管家，但不要卸载相关驱动和底层服务。
