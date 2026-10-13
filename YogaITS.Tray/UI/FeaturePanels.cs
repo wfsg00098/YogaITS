@@ -195,7 +195,9 @@ internal sealed class FeaturePanels : IDisposable
                         () => _color.SetAdvancedColorAsync(true, !advanced.HighDynamicRangeUserEnabled),
                         advanced.HighDynamicRangeUserEnabled || advanced.HighDynamicRangeSupported));
                 if (ColorBackendPolicy.CanToggleAcm(advanced.WideColorSupported, advanced.WideColorUserEnabled))
-                    switches.Add(_colorCard.Option("ACM 自动颜色管理", advanced.AcmActive,
+                    // HDR and WCG are mutually exclusive effective modes. The ACM
+                    // switch reflects its independent user setting, including in HDR.
+                    switches.Add(_colorCard.Option("ACM 自动颜色管理", advanced.WideColorUserEnabled,
                         () => _color.SetAdvancedColorAsync(false, !advanced.WideColorUserEnabled)));
                 if (switches.Count > 0)
                     _colorCard.Options(body, switches.ToArray());

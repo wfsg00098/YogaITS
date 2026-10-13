@@ -58,7 +58,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 | 显卡工作模式 | `IsSupportIGPUMode.Data > 0`；实际状态来自 `GetIGPUModeStatus`，逻辑模式由应用保存。集显选择要求 `GetIGPUMHDMIStatus == 0`，未知也禁用。 |
 | 显卡智能策略 | 电源通知必须可用；AC 目标双显，DC 且外接独显路径未占用时目标集显，供电未知不切换。DC 临时失败最多重试 5 次、间隔 5 秒；新事件或手动选择取消旧重试。 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配序列号、面板及 Machine Type。 |
-| HDR/ACM | 卡片及色域保护使用实际 `activeColorMode`，不使用偏好位代替实际状态。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止写入。 |
+| HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
 | 唤醒/睡眠 | `GetAll rc=0` 且 `unAwareAbility` 非零。人员辅助判定还要求 `sensor_type != 4` 和 `capability & 0x40`。 |
 | 播放/暂停 | `GetAll rc=0`，且 `sensor_type` 为 3/4 或 `unAwareAbility` 非零。 |
 | 音频降噪 | 当前 Capture/Render endpoint 声明 `uplink/downlink`，并且对应 `GetMode` 返回 OK。 |
@@ -73,6 +73,8 @@ ITS 校验参考 [LLT ITSModeFeatureDriver](https://github.com/LenovoLegionToolk
 色域模式来自 STANDARD，不自动恢复旧 ICC。保留 managed ICC 注册、字节校验、association、STANDARD/WCS 回读、可选亮度及 DWM 刷新；Factory 源不修改。按钮文案映射如下：
 
 ACM 卡片仅按 `WideColorSupported || WideColorUserEnabled` 显示和允许操作，不因实际 HDR 或 `LimitedByPolicy` 禁用。HDR/ACM 请求均只修改对应偏好，随后回读实际状态；不主动关闭另一个功能、不修改 Windows 电源策略。能力不存在仍不允许开启；系统 API 拒绝请求或偏好回读不匹配仍报告真实错误。
+
+ACM 卡片选中状态读取 `wideColorUserEnabled`，不能用 `activeColorMode == WCG` 代替：HDR 期间有效模式为 HDR，无法同时用枚举表示独立 ACM 选项。HDR 卡片仍使用实际 HdrActive；色域阻断/显隐仍使用实际 SDR/WCG/HDR，不能被保存的 ACM 偏好改变。
 
 | 配置标识 | 用户名称（颜色配置） |
 | --- | --- |
@@ -147,7 +149,7 @@ dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executabl
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 
-最近一轮带图标验证的 PolicyChecks 为 **544 项通过**。直接复用原探针 SupportsMode 验证目标能力位，并覆盖 ACM 操作能力/实际模式/策略位组合、未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
+最近一轮带图标验证的 PolicyChecks 为 **564 项通过**。直接复用原探针 SupportsMode 验证目标能力位，并覆盖 ACM 操作能力/设置与有效模式独立性/策略位组合、未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
 
 2026-10-13 TCON 集成后，本机只读诊断确认选择 `Icc`，7 个有效工厂模式及 HDR 实际状态读取正常；未执行 TCON/ICC 色域写入、HDR 切换、音频设置、录音或在线下载。非管理员 GPU 探测仍为拒绝访问，不能据此判定能力不存在。
 

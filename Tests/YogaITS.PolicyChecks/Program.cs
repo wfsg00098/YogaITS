@@ -147,6 +147,8 @@ foreach (int mode in new[] { 0, 1, 2, 99 })
     Check(actualDisplay.IsBlocked == (mode != 0), "Only effective SDR permits gamut, regardless of preferences/policy");
     Check(actualDisplay.HdrEnabled == (mode == 2) && advanced.HdrActive == (mode == 2), "HDR display state uses actual mode");
     Check(actualDisplay.AcmEnabled == (mode == 1) && advanced.AcmActive == (mode == 1), "ACM display state uses actual mode");
+    Check(advanced.WideColorUserEnabled == ((value & (1u << 7)) != 0),
+        "ACM switch setting remains independent of effective SDR/WCG/HDR mode");
     Check((actualDisplay.ColorBlockReason.Length > 0) == (mode != 0), "Block reason follows effective mode");
 }
 var batteryColor = new NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2
