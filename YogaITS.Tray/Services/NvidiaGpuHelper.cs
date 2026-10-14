@@ -26,18 +26,6 @@ public static class NvidiaGpuHelper
     private const int ActiveAppV2Size = 264;
     private const uint ActiveAppV2Version = ActiveAppV2Size | (2u << 16);
 
-    private static readonly HashSet<string> ProtectedProcessNames =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "system", "idle", "dwm", "csrss", "winlogon", "services", "lsass",
-            "smss", "wininit", "svchost", "fontdrvhost", "explorer", "taskhostw",
-            "sihost", "runtimebroker", "shellexperiencehost", "searchhost",
-            "startmenuexperiencehost", "textinputhost", "applicationframehost",
-            "systemsettings", "dllhost", "conhost", "audiodg", "ctfmon", "spoolsv",
-            "wlanext", "msdtc", "nvcontainer", "nvdisplay.container", "nvsettings",
-            "nvspcaps64", "nvsphelper64", "nvwmi64", "nvcplui"
-        };
-
     public static bool HasNvidiaDisplayDevice()
     {
         // Presence detection is intentionally PnP/WMI-only so merely opening the
@@ -160,30 +148,9 @@ public static class NvidiaGpuHelper
 
     public static IReadOnlyList<GpuProcessInfo> GetKillCandidates(IEnumerable<GpuProcessInfo> apps)
     {
-        var result = new List<GpuProcessInfo>();
-
-        foreach (var app in apps)
-        {
-            string baseName = Path.GetFileNameWithoutExtension(app.Name);
-
-            if (ProtectedProcessNames.Contains(baseName))
-                continue;
-
-            try
-            {
-                using Process p = Process.GetProcessById(app.Pid);
-                if (p.SessionId == 0)
-                    continue;
-            }
-            catch
-            {
-                continue;
-            }
-
-            result.Add(app);
-        }
-
-        return result;
+        // No name, owner, or session exclusions. Never terminate this app itself.
+        return apps.Where(app => app.Pid > 0 && app.Pid != Environment.ProcessId)
+            .DistinctBy(app => app.Pid).ToArray();
     }
 
     public static async Task<GpuActionResult> KillProcessesAsync(IEnumerable<int> pids)
@@ -200,20 +167,33 @@ public static class NvidiaGpuHelper
             {
                 using Process p = Process.GetProcessById(pid);
 
-                string baseName = p.ProcessName;
-                if (ProtectedProcessNames.Contains(baseName) || p.SessionId == 0)
+                bool debugEnabled = false;
+                try
                 {
-                    failed.Add($"{baseName} ({pid})：已保护");
-                    continue;
+                    // Administrator elevation alone does not enable SeDebugPrivilege.
+                    // Scope it to opening/terminating the target, before any async wait.
+                    Process.EnterDebugMode();
+                    debugEnabled = true;
+                    // Kill only the reported GPU occupant, not unrelated descendants.
+                    p.Kill();
+                }
+                finally
+                {
+                    if (debugEnabled)
+                        Process.LeaveDebugMode();
                 }
 
-                p.Kill(entireProcessTree: true);
-                await p.WaitForExitAsync();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await p.WaitForExitAsync(timeout.Token);
                 killed++;
             }
             catch (ArgumentException)
             {
                 // Already exited; that's effectively fine for the goal.
+            }
+            catch (OperationCanceledException)
+            {
+                failed.Add($"PID {pid}：已请求结束，但 10 秒内未确认退出。");
             }
             catch (Exception ex)
             {

@@ -17,6 +17,21 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+var gpuOccupants = new[]
+{
+    new GpuProcessInfo(int.MaxValue, "nvcontainer.exe"),
+    new GpuProcessInfo(int.MaxValue - 1, "svchost.exe"),
+    new GpuProcessInfo(int.MaxValue - 2, "dwm.exe"),
+    new GpuProcessInfo(int.MaxValue, "duplicate"),
+    new GpuProcessInfo(Environment.ProcessId, "YogaITS.Tray.exe"),
+    new GpuProcessInfo(0, "idle"),
+    new GpuProcessInfo(-1, "invalid")
+};
+var gpuTargets = NvidiaGpuHelper.GetKillCandidates(gpuOccupants);
+Check(gpuTargets.Select(app => app.Pid).SequenceEqual(new[] { int.MaxValue, int.MaxValue - 1, int.MaxValue - 2 }),
+    "GPU termination includes driver/system names without probing owner/session, deduplicates PIDs, and excludes only invalid/self PIDs");
+Check(NvidiaGpuHelper.GetKillCandidates(Array.Empty<GpuProcessInfo>()).Count == 0,
+    "Empty GPU occupant list has no termination targets");
 Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
 foreach (bool supported in new[] { false, true })
 foreach (bool preference in new[] { false, true })

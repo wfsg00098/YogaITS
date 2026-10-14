@@ -76,6 +76,8 @@ ITS 校验参考 [LLT ITSModeFeatureDriver](https://github.com/LenovoLegionToolk
 
 显卡 WMI 直接对枚举实例调用方法，不依赖 ReturnValue，设置后等待并回读。NVIDIA 存在性随后台刷新更新，切至集显后独显休眠分组可动态隐藏；独显操作返回 Task，执行期间显示强调色并防止重复点击，结束后清除。
 
+结束独显占用进程不设名称、用户或 Session 白名单，包括 SYSTEM/Session 0 的 NVIDIA 容器；仅跳过无效 PID 和本程序。逐个结束 NVAPI 报告的进程，不扩展到未报告的子进程；结束时临时启用 `SeDebugPrivilege`，随后立即关闭，每个进程最多等待 10 秒确认退出。系统拒绝或超时显示具体失败，不伪报成功。无硬件逻辑检查覆盖原白名单名称与 PID 去重，不实际结束进程；SYSTEM 容器的结束能力需管理员实机验收。
+
 夜间优化与三个充电模式互斥：选择夜间优化先开启夜间标志，再设常规模式；选择其他模式先关夜间标志，再写目标。共享串行入口，失败停止后续写入，最后一起回读并一次更新缓存。
 
 色域模式来自 STANDARD，不自动恢复旧 ICC。保留 managed ICC 注册、字节校验、association、STANDARD/WCS 回读、可选亮度及 DWM 刷新；Factory 源不修改。按钮文案映射如下：
