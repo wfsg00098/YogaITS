@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Security.Principal;
 
 namespace YogaITS.Tray.Services;
 
@@ -91,23 +92,28 @@ public static class StartupTaskHelper
                 "无法确定当前 EXE 路径，未创建开机启动任务。");
         }
 
-        // Delete first even when the old task points to another installation.
-        StartupTaskResult deletion = await DisableAsync().ConfigureAwait(false);
-        if (!deletion.Success) return deletion;
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        string? userSid = identity.User?.Value;
+        if (userSid is null) return new(false, "无法确定当前用户，未创建开机启动任务。");
 
-        // /IT: interactive-only, so the tray UI appears in this user's session.
-        // /RL HIGHEST: Task Scheduler launches the app elevated at logon.
-        // The app itself is already elevated while creating this task, so there is
-        // no additional prompt here, and future logon starts do not show UAC.
-        string taskCommand = $"\"{exePath}\" --startup";
+        string xml = StartupTaskPolicy.CreateDefinition(TaskName, exePath, userSid);
+        string tempFile = Path.GetTempFileName();
+        ProcessResult result;
+        try
+        {
+            // Prepare the full definition before removing the old task.
+            await File.WriteAllTextAsync(tempFile, xml).ConfigureAwait(false);
+            StartupTaskResult deletion = await DisableAsync().ConfigureAwait(false);
+            if (!deletion.Success) return deletion;
 
-        ProcessResult result = await RunSchtasksAsync(
-            "/Create",
-            "/TN", TaskName,
-            "/TR", taskCommand,
-            "/SC", "ONLOGON",
-            "/RL", "HIGHEST",
-            "/IT").ConfigureAwait(false);
+            // Explicit XML avoids schtasks defaults: AC-only and a 72-hour limit.
+            // InteractiveToken/HighestAvailable preserve elevated UI logon startup.
+            result = await RunSchtasksAsync("/Create", "/TN", TaskName, "/XML", tempFile).ConfigureAwait(false);
+        }
+        finally
+        {
+            try { File.Delete(tempFile); } catch { }
+        }
 
         if (result.ExitCode == 0)
         {

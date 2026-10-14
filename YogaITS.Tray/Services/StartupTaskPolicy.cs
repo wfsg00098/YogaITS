@@ -5,6 +5,36 @@ namespace YogaITS.Tray.Services;
 
 internal static class StartupTaskPolicy
 {
+    public static string CreateDefinition(string taskName, string executable, string userSid)
+    {
+        XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+        return new XDocument(new XDeclaration("1.0", "utf-8", null),
+            new XElement(ns + "Task", new XAttribute("version", "1.2"),
+                new XElement(ns + "RegistrationInfo", new XElement(ns + "URI", @"\" + taskName)),
+                new XElement(ns + "Triggers", new XElement(ns + "LogonTrigger",
+                    new XElement(ns + "Enabled", true),
+                    new XElement(ns + "ExecutionTimeLimit", "PT0S"),
+                    new XElement(ns + "UserId", userSid))),
+                new XElement(ns + "Principals", new XElement(ns + "Principal", new XAttribute("id", "Author"),
+                    new XElement(ns + "UserId", userSid),
+                    new XElement(ns + "LogonType", "InteractiveToken"),
+                    new XElement(ns + "RunLevel", "HighestAvailable"))),
+                new XElement(ns + "Settings",
+                    new XElement(ns + "MultipleInstancesPolicy", "IgnoreNew"),
+                    new XElement(ns + "DisallowStartIfOnBatteries", false),
+                    new XElement(ns + "StopIfGoingOnBatteries", false),
+                    new XElement(ns + "RunOnlyIfIdle", false),
+                    new XElement(ns + "RunOnlyIfNetworkAvailable", false),
+                    new XElement(ns + "IdleSettings", new XElement(ns + "StopOnIdleEnd", false)),
+                    new XElement(ns + "AllowStartOnDemand", true),
+                    new XElement(ns + "Enabled", true),
+                    new XElement(ns + "ExecutionTimeLimit", "PT0S")),
+                new XElement(ns + "Actions", new XAttribute("Context", "Author"),
+                    new XElement(ns + "Exec", new XElement(ns + "Command", executable),
+                        new XElement(ns + "Arguments", "--startup"),
+                        new XElement(ns + "WorkingDirectory", Path.GetDirectoryName(executable)))))).ToString();
+    }
+
     public static bool IsEnabledForExecutable(string xml, string? executable)
     {
         if (string.IsNullOrWhiteSpace(xml) || string.IsNullOrWhiteSpace(executable)) return false;

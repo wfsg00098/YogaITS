@@ -26,6 +26,18 @@ string StartupXml(string command, string enabled = "true")
             new XElement(ns + "Command", command), new XElement(ns + "Arguments", "--startup")))).ToString();
 }
 const string startupPath = @"C:\Data\YogaITS\YogaITS.Tray.exe";
+var startupDefinition = XDocument.Parse(StartupTaskPolicy.CreateDefinition("Yoga ITS Tray", startupPath, "S-1-5-21-1-2-3-1001"));
+XNamespace startupNs = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+XElement startupSettings = startupDefinition.Root!.Element(startupNs + "Settings")!;
+foreach (string condition in new[] { "DisallowStartIfOnBatteries", "StopIfGoingOnBatteries", "RunOnlyIfIdle", "RunOnlyIfNetworkAvailable" })
+    Check((string?)startupSettings.Element(startupNs + condition) == "false", "Startup XML explicitly disables " + condition);
+Check((string?)startupSettings.Element(startupNs + "ExecutionTimeLimit") == "PT0S", "Startup task has no execution time limit");
+Check((string?)startupSettings.Element(startupNs + "IdleSettings")?.Element(startupNs + "StopOnIdleEnd") == "false", "Startup task never stops when idle ends");
+Check(startupDefinition.Descendants(startupNs + "ExecutionTimeLimit").Count() == 2 &&
+    startupDefinition.Descendants(startupNs + "ExecutionTimeLimit").All(element => element.Value == "PT0S"), "Task and logon trigger both have unlimited execution");
+Check(startupDefinition.Descendants(startupNs + "LogonType").Single().Value == "InteractiveToken" &&
+    startupDefinition.Descendants(startupNs + "RunLevel").Single().Value == "HighestAvailable", "Startup XML retains interactive elevated logon");
+Check(StartupTaskPolicy.IsEnabledForExecutable(startupDefinition.ToString(), startupPath), "Generated task definition matches current executable");
 foreach (string command in new[] { startupPath, '"' + startupPath + '"', @"c:\data\yogaits\YOGAITS.TRAY.EXE", @"C:\Data\YogaITS\..\YogaITS\YogaITS.Tray.exe" })
     Check(StartupTaskPolicy.IsEnabledForExecutable(StartupXml(command), startupPath), "Startup task matches current executable after path normalization");
 Check(!StartupTaskPolicy.IsEnabledForExecutable(StartupXml(@"D:\old\YogaITS.Tray.exe"), startupPath), "Startup task for another installation is off");
