@@ -17,6 +17,13 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+Check(AppGpuPreference.PowerSavingDefault(null) == "GpuPreference=1;", "Unconfigured app defaults to power-saving GPU");
+Check(AppGpuPreference.PowerSavingDefault("") == "GpuPreference=1;", "Empty GPU configuration defaults to power saving");
+foreach (string preference in new[] { "GpuPreference=0;", "GpuPreference=1;", "GpuPreference=2;", "AutoHDREnable=1;gpupreference=2;", " GpuPreference =2;" })
+    Check(AppGpuPreference.PowerSavingDefault(preference) == preference, "Explicit user GPU choices remain unchanged");
+Check(AppGpuPreference.PowerSavingDefault("AutoHDREnable=1;") == "AutoHDREnable=1;GpuPreference=1;", "Default GPU preference preserves other graphics options");
+Check(AppGpuPreference.PowerSavingDefault("VRROptimizeEnable=0") == "VRROptimizeEnable=0;GpuPreference=1;", "Default GPU preference handles missing separator");
+Check(AppGpuPreference.PowerSavingDefault("NotGpuPreference=2;") == "NotGpuPreference=2;GpuPreference=1;", "GPU option matching is exact");
 var gpuOccupants = new[]
 {
     new GpuProcessInfo(int.MaxValue, "nvcontainer.exe"),

@@ -452,7 +452,8 @@ public sealed class TrayMenuWindow : Window
         if (nvidia)
             Section("独显休眠", new UIElement[]
             {
-                CreateActionTile(_fullWindow ? "结束独显占用进程" : "结束独显\n占用进程", _killGpuApps),
+                CreateActionTile(_fullWindow ? "结束独显占用进程" : "结束独显\n占用进程", _killGpuApps,
+                    delayBeforeActionMilliseconds: 500),
                 CreateActionTile("重启独显设备", _restartGpu)
             }, 2, 62,
                 "结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁；实际休眠还取决于外接显示器及其他占用。");
@@ -799,7 +800,8 @@ public sealed class TrayMenuWindow : Window
 
     private Button CreateActionTile(
         string text,
-        Func<Task> action)
+        Func<Task> action,
+        int delayBeforeActionMilliseconds = 0)
     {
         Button button = CreateOptionTile(text, false, isAction: true, minHeight: 62);
         button.Click += async (_, _) =>
@@ -807,7 +809,13 @@ public sealed class TrayMenuWindow : Window
             if (_updatingGpuAction || _closed) return;
             _updatingGpuAction = true;
             RefreshOptionTile(button, false, pending: true);
-            try { await action(); }
+            try
+            {
+                // Yield to the dispatcher so the pending outline is rendered first.
+                if (delayBeforeActionMilliseconds > 0)
+                    await Task.Delay(delayBeforeActionMilliseconds);
+                if (!_closed) await action();
+            }
             catch (Exception ex) { if (!_closed) _showInfo("独显休眠操作失败", ex.Message); }
             finally
             {
