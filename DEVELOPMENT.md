@@ -80,7 +80,11 @@ ITS 校验参考 [LLT ITSModeFeatureDriver](https://github.com/LenovoLegionToolk
 
 显卡 WMI 直接对枚举实例调用方法，不依赖 ReturnValue，设置后等待并回读。NVIDIA 存在性随后台刷新更新，切至集显后独显休眠分组可动态隐藏；独显操作返回 Task，执行期间显示强调色并防止重复点击，结束后清除。
 
-结束独显占用进程不设名称、用户或 Session 白名单，包括 SYSTEM/Session 0 的 NVIDIA 容器；仅跳过无效 PID 和本程序。大小窗口先显示执行中的强调色边线，异步等待 500 ms 后执行，等待期间若窗口已关闭则不执行。逐个结束 NVAPI 报告的进程，不扩展到未报告的子进程；结束时临时启用 `SeDebugPrivilege`，随后立即关闭，每个进程最多等待 10 秒确认退出。系统拒绝或超时显示具体失败，不伪报成功。无硬件逻辑检查覆盖原白名单名称与 PID 去重，不实际结束进程；SYSTEM 容器的结束能力需管理员实机验收。
+结束独显占用进程对齐 LLT 的批量路径：NVAPI V2 活动进程列表按原始进程名忽略大小写排除 `dwm.exe`、`explorer.exe`，没有 NVIDIA 容器、SYSTEM 或 Session 0 排除；另保留本程序与无效 PID 的防护、PID 去重。逐个 `Kill(entireProcessTree: true)` 后异步等待根进程退出，单项异常不中断后续目标；撤销额外的 Enter/LeaveDebugMode 和 10 秒退出超时。NVAPI 查询失败按异常处理，不伪装为空列表。大小窗口保留 500 ms 执行前强调色提示。只有 LLT 的单项强制结束菜单允许直接操作桌面进程，本项目不提供该入口。
+
+参考固定版本 [LLT GPUController](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/d0c57bfc7ecc26d4ccf15bb3835fed7ac28a259f/LenovoLegionToolkit.Lib/Controllers/GPUController.cs) 与 [PhyscialGPUExtensions](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/d0c57bfc7ecc26d4ccf15bb3835fed7ac28a259f/LenovoLegionToolkit.Lib/Extensions/PhyscialGPUExtensions.cs)。NVAPIWrapper 的 V2 结构大小、容量 128 和查询失败语义也已核对。逻辑检查覆盖桌面进程大小写排除及容器保留，不实际结束进程；SYSTEM 容器与进程树处理需实机验收。NVAPI 返回数量不等同于 NVIDIA 托盘的可见应用数量，不能据此断言应全部结束。
+
+可选 `dotnet run --project Tests/YogaITS.PolicyChecks -c Release -- --gpu-process-tree` 验证结束进程树，仅创建并结束该测试自己的父/子进程，不访问 NVAPI 或当前系统占用进程；默认 CI 不运行此选项。
 
 入口在启动 WinUI 前为当前 EXE 路径注册 `HKCU\Software\Microsoft\DirectX\UserGpuPreferences` 的 `GpuPreference=1;` 节能默认值。已有显卡偏好（包括让 Windows 决定）不覆盖，其他图形选项保留，不改全局或其他程序；注册失败不阻止启动。该注册表约定不是公开的进程级强制 GPU API，首次注册可能需下次启动生效，不自动重启；实际适配器由 Windows/驱动决定，单显卡自然回退。纯逻辑测试不读写注册表，双显卡分配需实机验证。
 

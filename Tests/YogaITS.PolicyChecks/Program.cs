@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +9,25 @@ using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.UI;
+
+// Opt-in process-tree smoke test uses only child processes created by this test.
+if (args.Length == 1 && args[0] == "--gpu-test-child")
+{
+    await Task.Delay(Timeout.Infinite);
+    return;
+}
+if (args.Length == 1 && args[0] == "--gpu-test-parent")
+{
+    using Process child = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--gpu-test-child")
+    {
+        UseShellExecute = false,
+        CreateNoWindow = true
+    })!;
+    Console.WriteLine(child.Id);
+    Console.Out.Flush();
+    await Task.Delay(Timeout.Infinite);
+    return;
+}
 
 int checks = 0;
 void Check(bool condition, string name)
@@ -66,14 +86,19 @@ var gpuOccupants = new[]
     new GpuProcessInfo(int.MaxValue, "nvcontainer.exe"),
     new GpuProcessInfo(int.MaxValue - 1, "svchost.exe"),
     new GpuProcessInfo(int.MaxValue - 2, "dwm.exe"),
+    new GpuProcessInfo(int.MaxValue - 3, "explorer.exe"),
+    new GpuProcessInfo(int.MaxValue - 4, "DWM.EXE"),
+    new GpuProcessInfo(int.MaxValue - 5, "EXPLORER.EXE"),
     new GpuProcessInfo(int.MaxValue, "duplicate"),
     new GpuProcessInfo(Environment.ProcessId, "YogaITS.Tray.exe"),
     new GpuProcessInfo(0, "idle"),
     new GpuProcessInfo(-1, "invalid")
 };
 var gpuTargets = NvidiaGpuHelper.GetKillCandidates(gpuOccupants);
-Check(gpuTargets.Select(app => app.Pid).SequenceEqual(new[] { int.MaxValue, int.MaxValue - 1, int.MaxValue - 2 }),
-    "GPU termination includes driver/system names without probing owner/session, deduplicates PIDs, and excludes only invalid/self PIDs");
+Check(gpuTargets.Select(app => app.Pid).SequenceEqual(new[] { int.MaxValue, int.MaxValue - 1 }),
+    "LLT batch GPU filtering excludes DWM/Explorer case-insensitively, retains driver/system names without owner/session checks, and deduplicates PIDs");
+Check(!gpuTargets.Any(app => app.Pid <= 0 || app.Pid == Environment.ProcessId), "GPU batch never targets invalid/self PIDs");
+Check(gpuTargets.Any(app => app.Name == "nvcontainer.exe"), "LLT batch still permits NVIDIA container termination");
 Check(NvidiaGpuHelper.GetKillCandidates(Array.Empty<GpuProcessInfo>()).Count == 0,
     "Empty GPU occupant list has no termination targets");
 Check(SettingsOptionText.GroupedName("性能选项", "性能模式") == "性能选项中的性能模式", "Narrator name includes performance group");
@@ -432,6 +457,36 @@ await using (var service = new FakeService())
     await service.DisposeAsync();
     await service.Execute(() => { service.Value = 3; return Task.CompletedTask; });
     Check(service.Value == 2 && service.Closed, "Disposed services never invoke hardware operations");
+}
+if (args.Contains("--gpu-process-tree"))
+{
+    using Process parent = Process.Start(new ProcessStartInfo(Environment.ProcessPath!, "--gpu-test-parent")
+    {
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true
+    })!;
+    Process? child = null;
+    try
+    {
+        string? childPid = await parent.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        child = Process.GetProcessById(int.Parse(childPid!));
+        _ = child.Handle; // Keep a stable handle for verification after its parent exits.
+        GpuActionResult result = await NvidiaGpuHelper.KillProcessesAsync([parent.Id]);
+        Check(result.Success && parent.HasExited, "LLT termination exits the owned test parent");
+        await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+        Check(child.HasExited, "LLT termination also exits the owned test child");
+        Console.WriteLine("PASS: process-tree smoke test terminated only its own parent/child fixtures.");
+    }
+    finally
+    {
+        if (!parent.HasExited) parent.Kill(entireProcessTree: true);
+        if (child is not null)
+        {
+            if (!child.HasExited) child.Kill();
+            child.Dispose();
+        }
+    }
 }
 Console.WriteLine($"PASS: {checks} checks. No hardware, registry, microphone, or network operations were performed.");
 

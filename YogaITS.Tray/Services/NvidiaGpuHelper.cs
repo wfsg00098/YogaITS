@@ -26,6 +26,10 @@ public static class NvidiaGpuHelper
     private const int ActiveAppV2Size = 264;
     private const uint ActiveAppV2Version = ActiveAppV2Size | (2u << 16);
 
+    // Match LLT's batch GPU process list, not its individual force-kill menu.
+    private static readonly HashSet<string> ExcludedProcessNames =
+        new(StringComparer.OrdinalIgnoreCase) { "dwm.exe", "explorer.exe" };
+
     public static bool HasNvidiaDisplayDevice()
     {
         // Presence detection is intentionally PnP/WMI-only so merely opening the
@@ -93,10 +97,8 @@ public static class NvidiaGpuHelper
                     uint count = NvapiMaxApplications;
                     int status = queryActiveApps(handles[gpuIndex], buffer, ref count);
 
-                    // A sleeping/inaccessible GPU can return a non-zero status.
-                    // Continue other NVIDIA GPUs rather than turning this into monitoring/retry logic.
-                    if (status != NvapiOk)
-                        continue;
+                    // Like LLT's QueryActiveApps, a failed query is not an empty list.
+                    Check(status, "NvAPI_GPU_QueryActiveApps");
 
                     int safeCount = Math.Min((int)count, NvapiMaxApplications);
 
@@ -148,8 +150,10 @@ public static class NvidiaGpuHelper
 
     public static IReadOnlyList<GpuProcessInfo> GetKillCandidates(IEnumerable<GpuProcessInfo> apps)
     {
-        // No name, owner, or session exclusions. Never terminate this app itself.
+        // LLT excludes only these two desktop processes; NVIDIA containers and
+        // Session 0/SYSTEM processes are not excluded. Retain invalid/self guards.
         return apps.Where(app => app.Pid > 0 && app.Pid != Environment.ProcessId)
+            .Where(app => !ExcludedProcessNames.Contains(app.Name))
             .DistinctBy(app => app.Pid).ToArray();
     }
 
@@ -167,33 +171,15 @@ public static class NvidiaGpuHelper
             {
                 using Process p = Process.GetProcessById(pid);
 
-                bool debugEnabled = false;
-                try
-                {
-                    // Administrator elevation alone does not enable SeDebugPrivilege.
-                    // Scope it to opening/terminating the target, before any async wait.
-                    Process.EnterDebugMode();
-                    debugEnabled = true;
-                    // Kill only the reported GPU occupant, not unrelated descendants.
-                    p.Kill();
-                }
-                finally
-                {
-                    if (debugEnabled)
-                        Process.LeaveDebugMode();
-                }
-
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-                await p.WaitForExitAsync(timeout.Token);
+                // LLT terminates the process tree and waits for the root to exit.
+                // Do not toggle the process-wide debug privilege between targets.
+                p.Kill(entireProcessTree: true);
+                await p.WaitForExitAsync().ConfigureAwait(false);
                 killed++;
             }
             catch (ArgumentException)
             {
                 // Already exited; that's effectively fine for the goal.
-            }
-            catch (OperationCanceledException)
-            {
-                failed.Add($"PID {pid}：已请求结束，但 10 秒内未确认退出。");
             }
             catch (Exception ex)
             {
