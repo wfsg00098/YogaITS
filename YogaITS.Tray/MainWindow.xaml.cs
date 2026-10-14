@@ -423,8 +423,8 @@ public sealed partial class MainWindow : Window
         StartupTaskResult result =
             await StartupTaskHelper.SetEnabledAsync(enabled);
 
-        if (result.Success)
-            _stateCache.UpdateStartup(enabled);
+        if (result.Enabled is bool actual)
+            _stateCache.UpdateStartup(actual);
 
         return result;
     }

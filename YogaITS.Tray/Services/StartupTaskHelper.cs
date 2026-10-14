@@ -2,11 +2,13 @@
 
 namespace YogaITS.Tray.Services;
 
-public sealed record StartupTaskResult(bool Success, string Message);
+public sealed record StartupTaskResult(bool Success, string Message, bool? Enabled = null);
 
 public static class StartupTaskHelper
 {
     private const string TaskName = "Yoga ITS Tray";
+    private const int TaskNotFound = unchecked((int)0x80070002);
+    private static readonly SemaphoreSlim MutationGate = new(1, 1);
 
     public static bool IsEnabled()
     {
@@ -17,8 +19,9 @@ public static class StartupTaskHelper
             // opens. Do not call an async method and block on GetResult() here,
             // because its continuation may need the same DispatcherQueue and
             // deadlock the UI before the Mica window is created.
-            return RunSchtasksExitCodeSync(
-                "/Query", "/TN", TaskName) == 0;
+            ProcessResult result = QueryTaskSync();
+            return result.ExitCode == 0 &&
+                StartupTaskPolicy.IsEnabledForExecutable(result.StdOut, Environment.ProcessPath);
         }
         catch
         {
@@ -26,21 +29,9 @@ public static class StartupTaskHelper
         }
     }
 
-    private static int RunSchtasksExitCodeSync(params string[] arguments)
+    private static ProcessResult QueryTaskSync()
     {
-        string exe = Path.Combine(
-            Environment.SystemDirectory,
-            "schtasks.exe");
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = exe,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        foreach (string argument in arguments)
-            psi.ArgumentList.Add(argument);
+        ProcessStartInfo psi = CreateStartInfo("/Query", "/TN", TaskName, "/XML", "/HRESULT");
 
         using Process? process = Process.Start(psi);
 
@@ -48,15 +39,45 @@ public static class StartupTaskHelper
             throw new InvalidOperationException(
                 "无法启动 schtasks.exe。");
 
-        process.WaitForExit();
-        return process.ExitCode;
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(10_000))
+        {
+            process.Kill();
+            throw new TimeoutException("读取开机启动任务超时。");
+        }
+        return new(process.ExitCode, stdout.GetAwaiter().GetResult().Trim(), stderr.GetAwaiter().GetResult().Trim());
     }
 
     public static async Task<StartupTaskResult> SetEnabledAsync(bool enabled)
     {
-        return enabled
-            ? await EnableAsync()
-            : await DisableAsync();
+        await MutationGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            StartupTaskResult result;
+            try
+            {
+                result = enabled
+                    ? await EnableAsync().ConfigureAwait(false)
+                    : await DisableAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                result = new(false, $"开机自启操作失败：{ex.Message}");
+            }
+            bool actual = false;
+            try
+            {
+                ProcessResult query = await QueryTaskAsync().ConfigureAwait(false);
+                actual = query.ExitCode == 0 &&
+                    StartupTaskPolicy.IsEnabledForExecutable(query.StdOut, Environment.ProcessPath);
+            }
+            catch { /* Unknown/unreadable does not count as enabled. */ }
+            if (result.Success && actual != enabled)
+                return new(false, "计划任务操作已执行，但回读未确认当前程序的开机自启状态。", actual);
+            return result with { Enabled = actual };
+        }
+        finally { MutationGate.Release(); }
     }
 
     private static async Task<StartupTaskResult> EnableAsync()
@@ -70,6 +91,10 @@ public static class StartupTaskHelper
                 "无法确定当前 EXE 路径，未创建开机启动任务。");
         }
 
+        // Delete first even when the old task points to another installation.
+        StartupTaskResult deletion = await DisableAsync().ConfigureAwait(false);
+        if (!deletion.Success) return deletion;
+
         // /IT: interactive-only, so the tray UI appears in this user's session.
         // /RL HIGHEST: Task Scheduler launches the app elevated at logon.
         // The app itself is already elevated while creating this task, so there is
@@ -82,8 +107,7 @@ public static class StartupTaskHelper
             "/TR", taskCommand,
             "/SC", "ONLOGON",
             "/RL", "HIGHEST",
-            "/IT",
-            "/F");
+            "/IT").ConfigureAwait(false);
 
         if (result.ExitCode == 0)
         {
@@ -99,16 +123,17 @@ public static class StartupTaskHelper
 
     private static async Task<StartupTaskResult> DisableAsync()
     {
-        // Treat an already-missing task as successfully disabled.
-        if (!IsEnabled())
-            return new(true, "开机自启动已关闭。");
-
         ProcessResult result = await RunSchtasksAsync(
             "/Delete",
             "/TN", TaskName,
-            "/F");
+            "/F").ConfigureAwait(false);
 
         if (result.ExitCode == 0)
+            return new(true, "开机自启动已关闭。");
+
+        // Missing is distinct from unreadable, disabled, or pointing to another EXE.
+        ProcessResult query = await QueryTaskAsync().ConfigureAwait(false);
+        if (query.ExitCode == TaskNotFound)
             return new(true, "开机自启动已关闭。");
 
         return new(
@@ -116,7 +141,10 @@ public static class StartupTaskHelper
             $"删除计划任务失败（ExitCode={result.ExitCode}）。\n\n{BestMessage(result)}");
     }
 
-    private static async Task<ProcessResult> RunSchtasksAsync(params string[] arguments)
+    private static Task<ProcessResult> QueryTaskAsync() =>
+        RunSchtasksAsync("/Query", "/TN", TaskName, "/XML", "/HRESULT");
+
+    private static ProcessStartInfo CreateStartInfo(params string[] arguments)
     {
         string exe = Path.Combine(Environment.SystemDirectory, "schtasks.exe");
 
@@ -132,7 +160,12 @@ public static class StartupTaskHelper
         foreach (string argument in arguments)
             psi.ArgumentList.Add(argument);
 
-        using Process? process = Process.Start(psi);
+        return psi;
+    }
+
+    private static async Task<ProcessResult> RunSchtasksAsync(params string[] arguments)
+    {
+        using Process? process = Process.Start(CreateStartInfo(arguments));
 
         if (process is null)
             throw new InvalidOperationException("无法启动 schtasks.exe。");
@@ -140,12 +173,18 @@ public static class StartupTaskHelper
         Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
         Task<string> stderrTask = process.StandardError.ReadToEndAsync();
 
-        await process.WaitForExitAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try { await process.WaitForExitAsync(timeout.Token).ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        {
+            process.Kill();
+            throw new TimeoutException("计划任务操作超时，请刷新状态后重试。");
+        }
 
         return new(
             process.ExitCode,
-            (await stdoutTask).Trim(),
-            (await stderrTask).Trim());
+            (await stdoutTask.ConfigureAwait(false)).Trim(),
+            (await stderrTask.ConfigureAwait(false)).Trim());
     }
 
     private static string BestMessage(ProcessResult result)

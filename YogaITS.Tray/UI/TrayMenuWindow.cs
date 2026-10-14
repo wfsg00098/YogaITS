@@ -1001,14 +1001,13 @@ public sealed class TrayMenuWindow : Window
         bool requested = !_startupEnabled;
         _updatingStartup = true;
         RefreshOptionTile(_startupVisual.Button, _startupEnabled, pending: true);
-        _startupEnabled = requested;
 
         try
         {
             StartupTaskResult result = await _setStartup(requested);
+            _startupEnabled = result.Enabled ?? (result.Success ? requested : _startupEnabled);
             if (!result.Success)
             {
-                _startupEnabled = !requested;
                 RefreshToggleVisual(_startupVisual, _startupEnabled);
                 _showInfo("开机自启动设置失败", result.Message);
             }

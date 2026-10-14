@@ -12,6 +12,7 @@
     <Compile Include="../../YogaITS.Tray/Services/ItsCapabilityPolicy.cs" Link="ItsCapabilityPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuAutoPolicy.cs" Link="GpuAutoPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AppLaunchPolicy.cs" Link="AppLaunchPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/StartupTaskPolicy.cs" Link="StartupTaskPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AppGpuPreference.cs" Link="AppGpuPreference.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ApplicationIcon.cs" Link="ApplicationIcon.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SystemEventMonitor.cs" Link="SystemEventMonitor.cs" />

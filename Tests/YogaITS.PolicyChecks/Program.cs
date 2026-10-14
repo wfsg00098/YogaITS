@@ -17,6 +17,31 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+string StartupXml(string command, string enabled = "true")
+{
+    XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+    return new XElement(ns + "Task",
+        new XElement(ns + "Settings", new XElement(ns + "Enabled", enabled)),
+        new XElement(ns + "Actions", new XElement(ns + "Exec",
+            new XElement(ns + "Command", command), new XElement(ns + "Arguments", "--startup")))).ToString();
+}
+const string startupPath = @"C:\Data\YogaITS\YogaITS.Tray.exe";
+foreach (string command in new[] { startupPath, '"' + startupPath + '"', @"c:\data\yogaits\YOGAITS.TRAY.EXE", @"C:\Data\YogaITS\..\YogaITS\YogaITS.Tray.exe" })
+    Check(StartupTaskPolicy.IsEnabledForExecutable(StartupXml(command), startupPath), "Startup task matches current executable after path normalization");
+Check(!StartupTaskPolicy.IsEnabledForExecutable(StartupXml(@"D:\old\YogaITS.Tray.exe"), startupPath), "Startup task for another installation is off");
+foreach (string disabled in new[] { "false", "0", "invalid" })
+    Check(!StartupTaskPolicy.IsEnabledForExecutable(StartupXml(startupPath, disabled), startupPath), "Disabled or invalid task setting is off");
+foreach (string command in new[] { "", "YogaITS.Tray.exe", "cmd.exe", startupPath + " --startup" })
+    Check(!StartupTaskPolicy.IsEnabledForExecutable(StartupXml(command), startupPath), "Missing, relative, or combined command does not match current executable");
+foreach (string xml in new[] { "", "<broken>", "<Task/>", "<!DOCTYPE Task [<!ENTITY x 'test'>]><Task/>" })
+    Check(!StartupTaskPolicy.IsEnabledForExecutable(xml, startupPath), "Malformed or unexpected task XML fails closed");
+Check(!StartupTaskPolicy.IsEnabledForExecutable(StartupXml(startupPath), null), "Unknown current executable cannot report startup enabled");
+const string unicodePath = @"C:\测试目录\YogaITS\YogaITS.Tray.exe";
+Check(StartupTaskPolicy.IsEnabledForExecutable(StartupXml(unicodePath), unicodePath), "Unicode executable paths match");
+var multiActionTask = XDocument.Parse(StartupXml(startupPath));
+XNamespace taskNs = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+multiActionTask.Root!.Element(taskNs + "Actions")!.Add(new XElement(taskNs + "Exec", new XElement(taskNs + "Command", @"D:\old\YogaITS.Tray.exe")));
+Check(!StartupTaskPolicy.IsEnabledForExecutable(multiActionTask.ToString(), startupPath), "Mixed executable actions do not count as this app's startup task");
 Check(AppGpuPreference.PowerSavingDefault(null) == "GpuPreference=1;", "Unconfigured app defaults to power-saving GPU");
 Check(AppGpuPreference.PowerSavingDefault("") == "GpuPreference=1;", "Empty GPU configuration defaults to power saving");
 foreach (string preference in new[] { "GpuPreference=0;", "GpuPreference=1;", "GpuPreference=2;", "AutoHDREnable=1;gpupreference=2;", " GpuPreference =2;" })
