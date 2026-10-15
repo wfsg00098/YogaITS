@@ -65,7 +65,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 | 功能 | 检测与行为约束 |
 | --- | --- |
-| ITS 性能选项 | 保留型号筛选和现代服务版本门槛；SMART_POWER 查询 2 成功且含 `0x1` 有效位才显示。 |
+| ITS 性能选项 | 保留型号筛选；Dispatcher Version ≥8192 走现代服务，查询 2 成功且含 `0x1` 才显示。较低/缺失版本走 LITSSVC，要求旧 MMC 状态键和 EnergyDrv 存在，不套用现代查询 2 门槛。 |
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
 | 显卡工作模式 | `IsSupportIGPUMode.Data > 0`；实际状态来自 `GetIGPUModeStatus`，逻辑模式由应用保存。集显选择要求 `GetIGPUMHDMIStatus == 0`，未知也禁用。 |
 | 显卡智能策略 | 电源通知必须可用；AC 目标双显，DC 且外接独显路径未占用时目标集显，供电未知不切换。DC 临时失败最多重试 5 次、间隔 5 秒；新事件或手动选择取消旧重试。 |
@@ -76,7 +76,13 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 | 音频降噪 | 当前 Capture/Render endpoint 声明 `uplink/downlink`，并且对应 `GetMode` 返回 OK。 |
 | 多人/定位/声纹 | 仅内置阵列麦克风；多人模式按端点类型限制，人声定位还要求 `special`，声纹要求 `speaker_extraction` 与声纹查询正常。 |
 
-ITS 校验参考 [LLT ITSModeFeatureDriver](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/master/LenovoLegionToolkit.Lib/Features/ITSModeFeatureDriver.cs)。EnergyDrv 查询返回长度必须是 4 字节，失败保守隐藏，不启用实验性驱动写入。现有服务控制命令保持不变。
+ITS 校验参考 [LLT ITSModeFeature](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/master/LenovoLegionToolkit.Lib/Features/ITSModeFeature.cs) 及 [ITSModeFeatureDriver](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/master/LenovoLegionToolkit.Lib/Features/ITSModeFeatureDriver.cs)。只按 `LenovoProcessManagement\Performance\PowerSlider\Version` 的 8192 界限选择路径，现代命令失败不回退旧服务。EnergyDrv 查询返回长度必须是 4 字节；未接入 LLT 的 ThinkBook 实验性整套驱动切换。
+
+旧版通过 `LITSSVC`：智能发 135，安静依次 134/146，性能依次 134/148。回读 `LITSSVC\LNBITS\IC\MMC` 的 `(AutomaticModeSetting, CurrentSetting)`，仅 `(2,0)`、`(1,1)`、`(1,3)` 分别识别为智能、安静、性能，其他组合未知。写入串行化，最长约 3 秒、每 200 ms 回读；不直接写注册表，也不强制更改 Windows 电源模式。现代 163/164/165/172 命令和既有能力检测保留。
+
+旧版第四档按 LLT 查询 10 的 `0x00020001` 位检测，不要求现代 `ITS_CurrentSettingV`。开启时先设性能再发 `0x001F100B`，其他模式前尽力发 `0x000F100B` 清除旧极客覆盖；仍要求插电才能开启第四档。旧服务本身只回读三档，第四档标记与 LLT 一样仅在进程内跟踪，重启后或管家外部切换无法可靠区分，不宣称硬件独立回读第四档已验证。
+
+`dotnet run --project Tests/YogaITS.ReadOnlyProbe -- --its-only` 仅输出机型、后端、版本及模式/旧字段，便于在 IAH7 上比较管家切换前后；不发送任何设置命令。纯逻辑测试覆盖路径边界、指令顺序、双字段组合和第四档能力差异。新增旧路径尚待小新 Pro IAH7 实机验收，不沿用 Yoga 现代路径的通过结论。
 
 显卡 WMI 直接对枚举实例调用方法，不依赖 ReturnValue，设置后等待并回读。NVIDIA 存在性随后台刷新更新，切至集显后独显休眠分组可动态隐藏；独显操作返回 Task，执行期间显示强调色并防止重复点击，结束后清除。
 

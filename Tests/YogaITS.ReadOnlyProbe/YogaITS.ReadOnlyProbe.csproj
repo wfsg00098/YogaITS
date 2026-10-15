@@ -9,6 +9,11 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="System.Management" Version="10.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
+    <Compile Include="../../YogaITS.Tray/Services/LenovoItsHelper.cs" Link="Services/LenovoItsHelper.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/LenovoMachineInfoHelper.cs" Link="Services/LenovoMachineInfoHelper.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/ItsCapabilityPolicy.cs" Link="Services/ItsCapabilityPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/ItsModePolicy.cs" Link="Services/ItsModePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SerializedFeatureService.cs" Link="Services/SerializedFeatureService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/UserSettingsStore.cs" Link="Services/UserSettingsStore.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SystemEventMonitor.cs" Link="Services/SystemEventMonitor.cs" />

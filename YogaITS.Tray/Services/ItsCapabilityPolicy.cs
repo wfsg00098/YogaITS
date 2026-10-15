@@ -12,5 +12,9 @@ internal static class ItsCapabilityPolicy
         querySucceeded && (currentMode & 0x1) != 0;
 
     public static bool SupportsFourthMode(bool querySucceeded, uint capability, object? versionedState) =>
-        querySucceeded && (capability & 0x00020001) == 0x00020001 && versionedState is int;
+        SupportsLegacyFourthMode(querySucceeded, capability) && versionedState is int;
+
+    // LLT's legacy path does not require the modern ITS_CurrentSettingV DWORD.
+    public static bool SupportsLegacyFourthMode(bool querySucceeded, uint capability) =>
+        querySucceeded && (capability & 0x00020001) == 0x00020001;
 }

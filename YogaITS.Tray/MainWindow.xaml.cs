@@ -378,7 +378,7 @@ public sealed partial class MainWindow : Window
                 ShowChild(new InfoWindow(
                     "Yoga ITS",
                     $"切换命令已发送，但注册表当前显示：{result.Snapshot.DisplayName}。\n\n" +
-                    "程序不会直接写 ITS 状态注册表；这里只用它确认 LenovoProcessManagement 的实际结果。"));
+                    "程序不会直接写 ITS 状态注册表；这里只用它确认联想性能服务的回读结果。"));
             }
 
             return result;

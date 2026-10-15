@@ -1,18 +1,11 @@
 ﻿using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 
 namespace YogaITS.Tray.Services;
-
-public enum ItsMode
-{
-    Intelligent,
-    Cool,
-    Performance,
-    Creator
-}
 
 public sealed record ItsModeSnapshot(ItsMode? Mode, int? RawState, string DisplayName);
 
@@ -25,6 +18,8 @@ public readonly record struct ItsCapabilitySnapshot(
     int DispatcherVersion,
     int ItsFnCapability)
 {
+    public bool UsesLegacyService => ItsModePolicy.UsesLegacyService(DispatcherVersion);
+
     public string FourthModeDisplayName => ShowGeekAsCreatorMode
         ? "创作模式"
         : "极客模式";
@@ -33,12 +28,15 @@ public readonly record struct ItsCapabilitySnapshot(
 public static class LenovoItsHelper
 {
     private const string ServiceName = "LenovoProcessManagement";
+    private const string LegacyServiceName = "LITSSVC";
+    private const string LegacyRegistryPath = @"SYSTEM\CurrentControlSet\Services\LITSSVC\LNBITS\IC\MMC";
     private const string RegistryPath =
         @"SYSTEM\CurrentControlSet\Services\LenovoProcessManagement\Performance\PowerSlider";
 
     // Matches current LLT ITSModeFeature.
-    private const int DispatcherVersion3 = 8192; // 0x2000
     private const uint IoctlEnergySmartPower = 0x8310213C;
+    private static readonly SemaphoreSlim ModeSetGate = new(1, 1);
+    private static volatile bool _legacyGeekModeActive;
 
     private const uint FileReadData = 0x00000001;
     private const uint FileWriteData = 0x00000002;
@@ -47,35 +45,20 @@ public static class LenovoItsHelper
     private const uint OpenExisting = 3;
     private const uint FileAttributeNormal = 0x00000080;
 
-    private static readonly IReadOnlyDictionary<ItsMode, (int ControlCode, int State)> Modes =
-        new Dictionary<ItsMode, (int, int)>
-        {
-            [ItsMode.Intelligent] = (163, 0),
-            [ItsMode.Cool] = (164, 1),
-            [ItsMode.Performance] = (165, 3),
-            [ItsMode.Creator] = (172, 4)
-        };
-
     public static ItsCapabilitySnapshot ReadCapabilities(string model)
     {
         if (!SupportsItsModeByModel(model))
             return default;
 
+        int version = ReadDispatcherInt("Version");
+        int fnCapability = ReadDispatcherInt("ITS_FN_Capability");
         try
         {
+            if (ItsModePolicy.UsesLegacyService(version))
+                return ReadLegacyCapabilities(version, fnCapability);
             using RegistryKey? key = Registry.LocalMachine.OpenSubKey(RegistryPath, writable: false);
-            if (key is null)
-                return default;
+            if (key is null) return new(false, false, false, version, fnCapability);
 
-            int version = ReadRegistryInt(key, "Version", 0);
-
-            // This app intentionally implements LLT's modern LenovoProcessManagement
-            // path only. Do not expose controls on a legacy LITSSVC machine that we
-            // cannot safely drive with the modern service-control commands.
-            if (version < DispatcherVersion3)
-                return new(false, false, false, version, 0);
-
-            int fnCapability = ReadRegistryInt(key, "ITS_FN_Capability", 0);
             bool showGeekAsCreator = (fnCapability & 0x20) != 0;
 
             bool currentModeRead = QueryEnergySmartPower(ItsCapabilityPolicy.CurrentModeQuery, out uint currentMode);
@@ -107,7 +90,7 @@ public static class LenovoItsHelper
         }
         catch
         {
-            return default;
+            return new(false, false, false, version, fnCapability);
         }
     }
 
@@ -118,6 +101,8 @@ public static class LenovoItsHelper
 
         try
         {
+            if (capabilities.UsesLegacyService)
+                return ReadLegacyMode(capabilities);
             using RegistryKey? key = Registry.LocalMachine.OpenSubKey(RegistryPath, writable: false);
             if (key is null)
                 return new(null, null, "无法读取");
@@ -135,14 +120,7 @@ public static class LenovoItsHelper
             if (state == -1)
                 return new(null, null, "无法读取");
 
-            ItsMode? mode = state switch
-            {
-                0 => ItsMode.Intelligent,
-                1 => ItsMode.Cool,
-                3 => ItsMode.Performance,
-                4 => ItsMode.Creator,
-                _ => null
-            };
+            ItsMode? mode = ItsModePolicy.FromCurrentSetting(state);
 
             if (mode is null)
                 return new(null, state, $"未知模式 ({state})");
@@ -167,35 +145,104 @@ public static class LenovoItsHelper
         ItsCapabilitySnapshot capabilities)
     {
         if (!capabilities.Supported)
-            throw new InvalidOperationException("此机型未检测到可用的现代 ITS 模式切换能力。");
+            throw new InvalidOperationException("此机型未检测到可用的 ITS 模式切换能力。");
 
         if (mode == ItsMode.Creator && !capabilities.GeekModeSupported)
             throw new InvalidOperationException("此机型未检测到 Geek/创作模式能力。");
 
-        var spec = Modes[mode];
-
-        await Task.Run(() =>
+        int[] commands = ItsModePolicy.ServiceCommands(capabilities.UsesLegacyService, mode);
+        string serviceName = capabilities.UsesLegacyService ? LegacyServiceName : ServiceName;
+        await ModeSetGate.WaitAsync().ConfigureAwait(false);
+        try
         {
-            if (mode == ItsMode.Creator &&
-                !ItsCapabilityPolicy.CanSelectFourthMode(SystemEventMonitor.ReadPowerSource()))
-                throw new InvalidOperationException("极客/创作模式需要连接电源适配器。");
-            using var service = new ServiceController(ServiceName);
-            service.Refresh();
+            await Task.Run(() =>
+            {
+                if (mode == ItsMode.Creator &&
+                    !ItsCapabilityPolicy.CanSelectFourthMode(SystemEventMonitor.ReadPowerSource()))
+                    throw new InvalidOperationException("极客/创作模式需要连接电源适配器。");
+                using var service = new ServiceController(serviceName);
+                service.Refresh();
+                if (service.Status != ServiceControllerStatus.Running)
+                    throw new InvalidOperationException($"{serviceName} 服务没有运行。");
 
-            if (service.Status != ServiceControllerStatus.Running)
-                throw new InvalidOperationException($"{ServiceName} 服务没有运行。");
+                if (capabilities.UsesLegacyService && mode != ItsMode.Creator)
+                {
+                    // LLT clears the old Geek override best-effort before basic modes.
+                    try { SetLegacyGeekMode(false); } catch { }
+                }
+                foreach (int command in commands)
+                    service.ExecuteCommand(command);
+                if (capabilities.UsesLegacyService && mode == ItsMode.Creator)
+                    SetLegacyGeekMode(true);
+            }).ConfigureAwait(false);
 
-            service.ExecuteCommand(spec.ControlCode);
-        });
+            // LLT allows the service up to 3 seconds, checking every 200 ms.
+            var elapsed = Stopwatch.StartNew();
+            ItsModeSnapshot snapshot;
+            do
+            {
+                snapshot = await Task.Run(() => ReadMode(capabilities)).ConfigureAwait(false);
+                if (snapshot.Mode == mode) return new(snapshot, true);
+                await Task.Delay(200).ConfigureAwait(false);
+            }
+            while (elapsed.Elapsed < TimeSpan.FromSeconds(3));
+            return new(snapshot, false);
+        }
+        finally { ModeSetGate.Release(); }
+    }
 
-        // One delayed verification read only. No polling loop.
-        await Task.Delay(350);
-        ItsModeSnapshot snapshot = ReadMode(capabilities);
+    private static ItsCapabilitySnapshot ReadLegacyCapabilities(int version, int fnCapability)
+    {
+        using RegistryKey? key = Registry.LocalMachine.OpenSubKey(LegacyRegistryPath, writable: false);
+        if (key is null || !IsEnergyDriverPresent())
+            return new(false, false, false, version, fnCapability);
 
-        return new(
-            Snapshot: snapshot,
-            Verified: snapshot.RawState == spec.State
-        );
+        bool geekSupported = false;
+        try
+        {
+            bool success = QueryEnergySmartPower(ItsCapabilityPolicy.ExtendedCapabilitiesQuery, out uint capability);
+            geekSupported = ItsCapabilityPolicy.SupportsLegacyFourthMode(success, capability);
+        }
+        catch { /* Basic legacy modes do not depend on the fourth-mode query. */ }
+        return new(true, geekSupported, (fnCapability & 0x20) != 0, version, fnCapability);
+    }
+
+    private static ItsModeSnapshot ReadLegacyMode(ItsCapabilitySnapshot capabilities)
+    {
+        using RegistryKey? key = Registry.LocalMachine.OpenSubKey(LegacyRegistryPath, writable: false);
+        if (key is null) return new(null, null, "无法读取");
+        int automatic = ReadRegistryInt(key, "AutomaticModeSetting", -1);
+        int current = ReadRegistryInt(key, "CurrentSetting", -1);
+        ItsMode? mode = ItsModePolicy.FromLegacySettings(automatic, current, _legacyGeekModeActive);
+        return mode is ItsMode actual
+            ? new(actual, current, GetDisplayName(actual, capabilities))
+            : new(null, current < 0 ? null : current, $"未知模式 (Auto={automatic}, Current={current})");
+    }
+
+    private static void SetLegacyGeekMode(bool enabled)
+    {
+        uint command = enabled ? ItsModePolicy.LegacyGeekEnabled : ItsModePolicy.LegacyGeekDisabled;
+        if (!QueryEnergySmartPower(command, out _))
+            throw new InvalidOperationException("旧版极客模式设置未成功。");
+        _legacyGeekModeActive = enabled;
+    }
+
+    private static bool IsEnergyDriverPresent()
+    {
+        // Match LLT's presence probe: access denied still proves the device exists.
+        using SafeFileHandle handle = CreateFileW(@"\\.\EnergyDrv", 0,
+            FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, FileAttributeNormal, IntPtr.Zero);
+        return !handle.IsInvalid || Marshal.GetLastWin32Error() == 5;
+    }
+
+    private static int ReadDispatcherInt(string name)
+    {
+        try
+        {
+            using RegistryKey? key = Registry.LocalMachine.OpenSubKey(RegistryPath, writable: false);
+            return key is null ? 0 : ReadRegistryInt(key, name, 0);
+        }
+        catch { return 0; } // LLT treats missing/unreadable dispatcher metadata as zero.
     }
 
     public static Task<ItsSetResult> SetModeAsync(ItsMode mode)

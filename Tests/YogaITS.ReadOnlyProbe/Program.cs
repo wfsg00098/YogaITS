@@ -17,6 +17,20 @@ internal static class Program
 
     private static async Task RunProbeAsync(string[] args)
     {
+        if (args.Contains("--its-only"))
+        {
+            var machine = LenovoMachineInfoHelper.Read();
+            var capability = LenovoItsHelper.ReadCapabilities(machine.Model);
+            var state = LenovoItsHelper.ReadMode(capability);
+            Console.WriteLine($"Model: {machine.Model}; type={machine.MachineType}");
+            Console.WriteLine($"ITS: supported={capability.Supported}, service={(capability.UsesLegacyService ? "LITSSVC" : "LenovoProcessManagement")}, dispatcherVersion={capability.DispatcherVersion}, fnCapability=0x{capability.ItsFnCapability:X}, geekSupported={capability.GeekModeSupported}");
+            Console.WriteLine($"Mode: {state.Mode}; raw={state.RawState}; {state.DisplayName}");
+            using var legacy = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\LITSSVC\LNBITS\IC\MMC");
+            if (legacy is not null)
+                Console.WriteLine($"Legacy: AutomaticModeSetting={legacy.GetValue("AutomaticModeSetting")}, CurrentSetting={legacy.GetValue("CurrentSetting")}");
+            Console.WriteLine("Read-only ITS probe: no service commands, mode writes, or Windows power-mode changes.");
+            return;
+        }
         if (args.Contains("--check-calibration-http"))
         {
             var machine = MachineIdentityService.Read();

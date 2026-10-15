@@ -37,6 +37,37 @@ void Check(bool condition, string name)
 }
 
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+foreach (int version in new[] { 0, 1, 8191, 8192, 8193, int.MaxValue })
+    Check(ItsModePolicy.UsesLegacyService(version) == (version < 8192), "ITS service selection follows LLT's dispatcher version boundary, not model year");
+Check(ItsModePolicy.ServiceCommands(true, ItsMode.Intelligent).SequenceEqual(new[] { 135 }), "Legacy intelligent mode enables automatic cooling");
+Check(ItsModePolicy.ServiceCommands(true, ItsMode.Cool).SequenceEqual(new[] { 134, 146 }), "Legacy quiet mode disables automatic cooling before selecting quiet");
+Check(ItsModePolicy.ServiceCommands(true, ItsMode.Performance).SequenceEqual(new[] { 134, 148 }), "Legacy performance mode disables automatic cooling before selecting performance");
+Check(ItsModePolicy.ServiceCommands(true, ItsMode.Creator).SequenceEqual(new[] { 134, 148 }), "Legacy Geek first selects performance via LITSSVC");
+Check(ItsModePolicy.ServiceCommands(false, ItsMode.Intelligent).SequenceEqual(new[] { 163 }) &&
+    ItsModePolicy.ServiceCommands(false, ItsMode.Cool).SequenceEqual(new[] { 164 }) &&
+    ItsModePolicy.ServiceCommands(false, ItsMode.Performance).SequenceEqual(new[] { 165 }) &&
+    ItsModePolicy.ServiceCommands(false, ItsMode.Creator).SequenceEqual(new[] { 172 }), "Modern ITS service commands remain unchanged");
+foreach (int automatic in new[] { -1, 0, 1, 2, 3 })
+foreach (int current in new[] { -1, 0, 1, 2, 3, 4 })
+foreach (bool geek in new[] { false, true })
+{
+    ItsMode? expected = (automatic, current) switch
+    {
+        (2, 0) => ItsMode.Intelligent,
+        (1, 1) => ItsMode.Cool,
+        (1, 3) => geek ? ItsMode.Creator : ItsMode.Performance,
+        _ => null
+    };
+    Check(ItsModePolicy.FromLegacySettings(automatic, current, geek) == expected, "Legacy ITS mode requires matching automatic/current fields and never guesses unknown combinations");
+}
+Check(ItsModePolicy.FromCurrentSetting(0) == ItsMode.Intelligent && ItsModePolicy.FromCurrentSetting(1) == ItsMode.Cool &&
+    ItsModePolicy.FromCurrentSetting(3) == ItsMode.Performance && ItsModePolicy.FromCurrentSetting(4) == ItsMode.Creator &&
+    ItsModePolicy.FromCurrentSetting(2) is null, "Modern ITS state mapping remains unchanged");
+foreach (bool querySucceeded in new[] { false, true })
+foreach (uint capability in new uint[] { 0, 1, 0x20000, 0x20001, 0x60001 })
+    Check(ItsCapabilityPolicy.SupportsLegacyFourthMode(querySucceeded, capability) ==
+        (querySucceeded && (capability & 0x20001) == 0x20001), "Legacy Geek capability uses LLT query 10 bits without modern DWORD requirement");
+Check(ItsModePolicy.LegacyGeekDisabled == 0x000F100B && ItsModePolicy.LegacyGeekEnabled == 0x001F100B, "Legacy Geek commands match LLT's enable/disable values");
 string StartupXml(string command, string enabled = "true")
 {
     XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
