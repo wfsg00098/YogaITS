@@ -105,7 +105,7 @@ internal static class FactoryRecoveryService
             }
 
             return new(true,
-                $"Online recovery PASS: {valid.ProfileCount} per-unit Factory profiles validated and cached. No serial value was written to the log.",
+                $"Online recovery PASS: {valid.ProfileCount} Factory profiles validated and cached. No serial value was written to the log.",
                 FactoryRoot, valid.ProfileCount, zipBytes.LongLength);
         }
         catch (Exception ex)

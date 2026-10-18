@@ -82,19 +82,48 @@ internal static class IccInspector
         foreach (var p in profiles)
         {
             var id = ReadCxfIdentity(p.Path);
-            if (!id.Ok) return new(false, $"{p.FileName}: {id.Detail}", profiles, profiles.Count, native, mhc2);
-            if (!string.Equals(id.ComputerSerialNumber, machine.SerialNumber, StringComparison.OrdinalIgnoreCase))
-                return new(false, $"{p.FileName}: CxF computer serial does not match this machine.", profiles, profiles.Count, native, mhc2);
-            if (!string.Equals(id.DisplayHardwareId, panelHardwareId, StringComparison.OrdinalIgnoreCase))
-                return new(false, $"{p.FileName}: CxF panel identity does not match the current internal panel.", profiles, profiles.Count, native, mhc2);
-            if (!string.IsNullOrWhiteSpace(id.ComputerName) &&
-                !string.Equals(id.ComputerName, machine.MachineType, StringComparison.OrdinalIgnoreCase))
-                return new(false, $"{p.FileName}: CxF machine type does not match this machine.", profiles, profiles.Count, native, mhc2);
+            if (!ValidateIdentity(id, machine, panelHardwareId, out string detail))
+                return new(false, $"{p.FileName}: {detail}", profiles, profiles.Count, native, mhc2);
         }
 
         return new(true,
-            $"VALID: {profiles.Count} per-unit Factory ICC profiles; Native present; MHC2 present; CxF machine/panel identity matched.",
+            $"VALID: {profiles.Count} Factory ICC profiles; Native present; MHC2 present; CxF identity validated.",
             profiles, profiles.Count, native, mhc2);
+    }
+
+    public static bool ValidateIdentity(CxfIdentity identity, MachineIdentity machine, string? panelHardwareId, out string detail)
+    {
+        detail = identity.Detail;
+        if (!identity.Ok) return false;
+        if (string.IsNullOrWhiteSpace(panelHardwareId) ||
+            !string.Equals(identity.DisplayHardwareId, panelHardwareId, StringComparison.OrdinalIgnoreCase))
+        {
+            detail = "CxF panel identity does not match the current internal panel.";
+            return false;
+        }
+
+        // Lenovo's online LEN8BAD package uses this exact pair of placeholders,
+        // including in the factory files shipped with the machine. Do not treat
+        // empty fields, other placeholders, or real identity mismatches as generic.
+        bool panelOnly = string.Equals(identity.ComputerName, "INVALID", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(identity.ComputerSerialNumber, "INVALID", StringComparison.OrdinalIgnoreCase);
+        if (!panelOnly)
+        {
+            if (!string.Equals(identity.ComputerSerialNumber, machine.SerialNumber, StringComparison.OrdinalIgnoreCase))
+            {
+                detail = "CxF computer serial does not match this machine.";
+                return false;
+            }
+            if (!string.IsNullOrWhiteSpace(identity.ComputerName) &&
+                !string.Equals(identity.ComputerName, machine.MachineType, StringComparison.OrdinalIgnoreCase))
+            {
+                detail = "CxF machine type does not match this machine.";
+                return false;
+            }
+        }
+
+        detail = panelOnly ? "CxF panel identity matched; Lenovo machine identity placeholders accepted." : "CxF machine/panel identity matched.";
+        return true;
     }
 
     public static string Sha256(string path)

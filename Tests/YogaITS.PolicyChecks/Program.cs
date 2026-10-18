@@ -463,6 +463,23 @@ try
     Check(!IccInspector.ValidateFactoryDirectory(temporary, machine with { SerialNumber = "OTHER" }, "PANEL").Ok, "Other unit rejected");
     Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "OTHER").Ok, "Other panel rejected");
     Check(!IccInspector.ValidateFactoryDirectory(temporary, machine with { MachineType = "OTHER" }, "PANEL").Ok, "Other machine type rejected");
+    var placeholder = new CxfIdentity(true, "INVALID", "INVALID", "PANEL", "test");
+    Check(IccInspector.ValidateIdentity(placeholder, machine, "PANEL", out _), "Lenovo paired INVALID identities accept matching panel");
+    Check(!IccInspector.ValidateIdentity(placeholder, machine, "OTHER", out _), "Placeholder identity still rejects another panel");
+    Check(!IccInspector.ValidateIdentity(placeholder, machine, null, out _), "Placeholder identity requires a known current panel");
+    Check(!IccInspector.ValidateIdentity(placeholder with { Ok = false }, machine, "PANEL", out _), "Placeholder identity cannot bypass parse failure");
+    Check(!IccInspector.ValidateIdentity(placeholder with { ComputerName = "TEST" }, machine, "PANEL", out _), "Serial placeholder alone is rejected");
+    Check(!IccInspector.ValidateIdentity(placeholder with { ComputerSerialNumber = "SERIAL" }, machine, "PANEL", out _), "Machine-type placeholder alone is rejected");
+    Check(!IccInspector.ValidateIdentity(placeholder with { ComputerName = "", ComputerSerialNumber = "" }, machine, "PANEL", out _), "Empty identities do not qualify as Lenovo placeholders");
+    Check(!IccInspector.ValidateIdentity(placeholder with { ComputerName = "UNKNOWN", ComputerSerialNumber = "UNKNOWN" }, machine, "PANEL", out _), "Other placeholders are not accepted");
+    File.WriteAllBytes(native, Icc("INVALID", "PANEL", 100, "INVALID"));
+    File.WriteAllBytes(srgb, Icc("INVALID", "PANEL", 48, "INVALID"));
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Factory recovery accepts Lenovo panel-only package");
+    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "OTHER").Ok, "Panel-only package cannot be used on another panel");
+    File.WriteAllBytes(srgb, Icc("OTHER", "PANEL", 48));
+    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Placeholder package cannot hide a different unit's profile");
+    File.WriteAllBytes(native, Icc("SERIAL", "PANEL", 100));
+    File.WriteAllBytes(srgb, Icc("SERIAL", "PANEL", 48));
     Check(IccMetaBrightness.Read(native).Brightness == 100 && IccMetaBrightness.Read(srgb).Brightness == 48, "Brightness comes from ICC metadata");
     File.WriteAllBytes(srgb, Icc("SERIAL", "PANEL", 101));
     Check(!IccMetaBrightness.Read(srgb).Ok, "Out-of-range brightness rejected");
@@ -474,6 +491,14 @@ try
     Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Missing Native/cache rejected");
 }
 finally { Directory.Delete(temporary, recursive: true); }
+
+int factoryDirectoryIndex = Array.IndexOf(args, "--factory-directory");
+if (factoryDirectoryIndex >= 0)
+{
+    string directory = args[factoryDirectoryIndex + 1];
+    var validation = IccInspector.ValidateFactoryDirectory(directory, new("TEST", "SERIAL", "TEST", ""), "LEN8BAD");
+    Check(validation.Ok && validation.ProfileCount == 7, "Real Lenovo LEN8BAD panel-only package passes full factory validation");
+}
 
 await using (var service = new FakeService())
 {
@@ -521,10 +546,10 @@ if (args.Contains("--gpu-process-tree"))
 }
 Console.WriteLine($"PASS: {checks} checks. No hardware, registry, microphone, or network operations were performed.");
 
-static byte[] Icc(string serial, string panel, int brightness)
+static byte[] Icc(string serial, string panel, int brightness, string machineType = "TEST")
 {
     string xml = new XElement("Root", new XElement("CustomAttributes",
-        new XAttribute("ComputerName", "TEST"), new XAttribute("ComputerSerialNumber", serial),
+        new XAttribute("ComputerName", machineType), new XAttribute("ComputerSerialNumber", serial),
         new XAttribute("DisplayHardwareId", panel))).ToString() + "\0";
     using var zipped = new MemoryStream();
     using (var zlib = new ZLibStream(zipped, CompressionLevel.Optimal, leaveOpen: true))

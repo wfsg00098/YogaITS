@@ -69,7 +69,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
 | 显卡工作模式 | `IsSupportIGPUMode.Data > 0`；实际状态来自 `GetIGPUModeStatus`，逻辑模式由应用保存。集显选择要求 `GetIGPUMHDMIStatus == 0`，未知也禁用。 |
 | 显卡智能策略 | 电源通知必须可用；AC 目标双显，DC 且外接独显路径未占用时目标集显，供电未知不切换。DC 临时失败最多重试 5 次、间隔 5 秒；新事件或手动选择取消旧重试。 |
-| 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配序列号、面板及 Machine Type。 |
+| 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配面板及有效的序列号、Machine Type。仅当后两者同时为 `INVALID` 时接受 Lenovo 的面板级配置，不放宽真实身份不匹配或空字段校验；恢复与实际切换共用校验逻辑。 |
 | HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
 | 唤醒/睡眠 | `GetAll rc=0` 且 `unAwareAbility` 非零。人员辅助判定还要求 `sensor_type != 4` 和 `capability & 0x40`。 |
 | 播放/暂停 | `GetAll rc=0`，且 `sensor_type` 为 3/4 或 `unAwareAbility` 非零。 |

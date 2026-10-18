@@ -43,12 +43,8 @@ internal static class GamutApplyService
             if (string.IsNullOrWhiteSpace(d.WcsDeviceId)) return Fail("Dynamic WCS monitor DeviceID discovery failed: " + d.WcsDiscovery);
 
             var identity = IccInspector.ReadCxfIdentity(source.Path);
-            if (!identity.Ok ||
-                !string.Equals(identity.ComputerSerialNumber, machine.SerialNumber, StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(identity.DisplayHardwareId, d.HardwareId, StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(identity.ComputerName) &&
-                 !string.Equals(identity.ComputerName, machine.MachineType, StringComparison.OrdinalIgnoreCase)))
-                return Fail("Factory ICC failed per-unit machine/panel identity validation.");
+            if (!IccInspector.ValidateIdentity(identity, machine, d.HardwareId, out string identityDetail))
+                return Fail("Factory ICC failed identity validation: " + identityDetail);
 
             var brMeta = IccMetaBrightness.Read(source.Path);
             if (!brMeta.Ok) return Fail("Cannot read profile Brightness metadata: " + brMeta.Detail);
