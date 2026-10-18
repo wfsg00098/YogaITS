@@ -7,9 +7,10 @@
 | 已完善测试的机型 | 重点验证路径 |
 | --- | --- |
 | Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证。 |
-| 小新 Pro IAH7 | 旧版 ITS 服务的性能选项切换。 |
-| 小新 Pro IAH10 | 不同屏幕配置下的 ICC 色域切换。 |
+| 小新 Pro 16 IAH7 | 旧版 ITS 服务的性能选项切换。 |
+| 小新 Pro 16 IAH10 | 不同屏幕配置下的 ICC 色域切换。 |
 | ThinkBook 14 G6+ AHP | TCON 硬件色域控制，P3/sRGB 切换。 |
+| ThinkBook 14 G6+ IMH | TCON 硬件色域控制，P3/sRGB 切换。 |
 | ThinkBook 14 G7+ IAH | TCON 硬件色域控制，P3/sRGB 切换。 |
 
 其他机型的兼容性仍需实机确认。色彩管理按实际能力自动选择 TCON 或 ICC 路径；TCON 的 Adobe RGB 协议映射已确认，但尚无支持该能力的正样本完成实机验证。
