@@ -96,7 +96,7 @@ ITS 校验参考 [LLT ITSModeFeature](https://github.com/LenovoLegionToolkit-Tea
 
 旧版第四档按 LLT 查询 10 的 `0x00020001` 位检测，不要求现代 `ITS_CurrentSettingV`。开启时先设性能再发 `0x001F100B`，其他模式前尽力发 `0x000F100B` 清除旧极客覆盖；仍要求插电才能开启第四档。旧服务本身只回读三档，第四档标记与 LLT 一样仅在进程内跟踪，重启后或管家外部切换无法可靠区分，不宣称硬件独立回读第四档已验证。
 
-`dotnet run --project Tests/YogaITS.ReadOnlyProbe -- --its-only` 仅输出机型、后端、版本及模式/旧字段，便于在 IAH7 上比较管家切换前后；不发送任何设置命令。纯逻辑测试覆盖路径边界、指令顺序、双字段组合和第四档能力差异。新增旧路径尚待小新 Pro IAH7 实机验收，不沿用 Yoga 现代路径的通过结论。
+`dotnet run --project Tests/YogaITS.ReadOnlyProbe -- --its-only` 仅输出机型、后端、版本及模式/旧字段，便于在 IAH7 上比较管家切换前后；不发送任何设置命令。纯逻辑测试覆盖路径边界、指令顺序、双字段组合和第四档能力差异。2026-10-18：用户确认旧路径性能选项切换已在小新 Pro IAH7 实机测试成功；不据此扩大为该机型全部功能或所有旧款机型均已验证。
 
 显卡 WMI 直接对枚举实例调用方法，不依赖 ReturnValue，设置后等待并回读。NVIDIA 存在性随后台刷新更新，切至集显后独显休眠分组可动态隐藏；独显操作返回 Task，执行期间显示强调色并防止重复点击，结束后清除。
 
@@ -132,7 +132,7 @@ HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回
 
 ## TCON 与 ICC 自动选择
 
-2026-10-18：用户确认小新 Pro 16 IAH10 的在线恢复校色文件实机通过。联想服务器的 LEN8BAD 七档包使用成对 `INVALID` 机型/序列号占位；仅对这一明确组合按屏幕 HWID 验证，正常逐机文件仍严格匹配身份，恢复与切换共用校验。
+2026-10-18：用户确认小新 Pro 16 IAH10 的在线恢复校色文件及 ICC 色域切换实机通过。联想服务器的 LEN8BAD 七档包使用成对 `INVALID` 机型/序列号占位；仅对这一明确组合按屏幕 HWID 验证，正常逐机文件仍严格匹配身份，恢复与切换共用校验。
 
 `ColorGamutService` 统一选择 backend；不按 ThinkBook/Yoga 名称或代际硬编码。内屏存在后先执行 TCON native WMI preflight，只有 `LENOVO_TCON_DATA`、`SetTconSwitch`、实例、live `F3 00` 总能力/模式位和 `F0 1D` GET 均通过才选择 TCON。类不存在立即返回，不打开 SPB。已验证的 ICC 文件仍可作为非 TCON 路径；TCON 检测不确定且没有有效 ICC 时，不提供盲目的 ICC 在线恢复。
 
