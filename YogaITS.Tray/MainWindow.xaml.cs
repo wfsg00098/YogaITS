@@ -4,6 +4,7 @@ using YogaITS.Tray.UI;
 using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
+using YogaITS.Tray.Services.Updates;
 
 namespace YogaITS.Tray;
 
@@ -19,6 +20,8 @@ public sealed partial class MainWindow : Window
     private readonly HpdService _hpd = new();
     private readonly ColorGamutService _color = new();
     private readonly ElevocService _audio = new();
+    private readonly AppUpdateService _updates = new();
+    private bool _updateRequested;
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
     private readonly SemaphoreSlim _coreRefreshGate = new(1, 1);
@@ -86,6 +89,7 @@ public sealed partial class MainWindow : Window
         _ = _color.RefreshAsync();
         _audio.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _audio.RefreshAsync();
+        _updates.Changed += () => DispatcherQueue.TryEnqueue(RefreshUpdateCard);
     }
 
     private void InitializeHiddenTrayHost()
@@ -205,6 +209,7 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
+                RefreshUpdateCard();
                 _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio);
                 bool active = false;
                 menu.Activated += (_, args) =>
@@ -321,6 +326,7 @@ public sealed partial class MainWindow : Window
         _trayIcon?.SetTooltip(BuildTooltip(state));
         _trayMenuWindow?.ApplyRefreshedState(state);
         _controlCenterWindow?.ApplyRefreshedState(state);
+        RefreshUpdateCard();
     }
 
     private async Task RefreshCoreAsync()
@@ -491,6 +497,29 @@ public sealed partial class MainWindow : Window
         window.Activate();
     }
 
+    private void RefreshUpdateCard()
+    {
+        if (_exiting || _controlCenterWindow is not { } menu) return;
+        menu.SetAvailableUpdate(_updates.Available, _updates.Busy, () => InstallUpdateAsync(menu));
+    }
+
+    private async Task InstallUpdateAsync(TrayMenuWindow menu)
+    {
+        if (_updateRequested || _exiting || _updates.Available is not { } release) return;
+        _updateRequested = true;
+        try
+        {
+            if (!await menu.ConfirmUpdateAsync(release.Version)) return;
+            await _updates.StartInstallerAsync(release);
+            await ExitApplicationAsync();
+        }
+        catch (Exception ex)
+        {
+            if (!_exiting) ShowChild(new InfoWindow("更新失败", ex.Message + "\n现有程序未被替换，可以稍后重试。"));
+        }
+        finally { _updateRequested = false; }
+    }
+
     private void ExitApplication()
         => _ = ExitApplicationAsync();
 
@@ -502,6 +531,7 @@ public sealed partial class MainWindow : Window
         _colorRefreshDebounce?.Dispose();
         _gpu.CancelRetry();
         _audio.CancelRegistration();
+        _updates.Dispose();
         _systemEvents?.Dispose();
         _systemEvents = null;
         try

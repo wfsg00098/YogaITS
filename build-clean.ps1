@@ -4,6 +4,9 @@ $root = $PSScriptRoot
 $project = Join-Path $root "YogaITS.Tray\YogaITS.Tray.csproj"
 $projectDir = Split-Path $project
 $dist = Join-Path $root "dist"
+$commit = git -C $root rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw 'Unable to read build commit.' }
+$release = & (Join-Path $root 'scripts\Get-ReleaseVersion.ps1') -CommitSha $commit
 
 Write-Host "Cleaning previous build artifacts..." -ForegroundColor Cyan
 Remove-Item (Join-Path $projectDir "bin") -Recurse -Force -ErrorAction SilentlyContinue
@@ -20,8 +23,13 @@ dotnet publish $project `
     -r win-x64 `
     --self-contained false `
     -o $dist `
+    "-p:InformationalVersion=$($release.Version)+$($release.CommitSha)" `
+    -p:IncludeSourceRevisionInInformationalVersion=false `
     --no-restore
 
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+dotnet publish (Join-Path $root 'YogaITS.Updater\YogaITS.Updater.csproj') -c Release -r win-x64 --self-contained false -o $dist
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Unpackaged WinUI 3 needs the application's PRI in the publish directory.

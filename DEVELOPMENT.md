@@ -31,7 +31,7 @@ dotnet build .\YogaITS.Tray\YogaITS.Tray.csproj -c Debug
 
 `build-clean.ps1` 删除本项目的 `bin/`、`obj/`、`dist/`，还原并发布 Release，验证 `YogaITS.Tray.pri`，移除 PDB/XML 和中间产物。执行前退出程序，避免发布文件被占用；`dist/` 中如有需要保留的诊断日志，先备份。
 
-只更新发布输出而不清理的命令：
+仅编译主程序（不包含可交付的更新助手）：
 
 ```powershell
 dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-contained false -o .\dist
@@ -43,9 +43,23 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 `.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
 
-版本由远程数字分支中的最大数值加 1，再拼接本次提交 SHA 前 8 位：`1.0`、`2.0` → `3.0-xxxxxxxx`。只读取 `refs/remotes/origin`，不把同名标签或非数字分支算进去；没有数字分支时从 `1.0` 开始。每次推送的基础版本可相同，提交后缀不同；创建新的数字备份分支才改变基础版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 可在本地验证规则。
+根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.0`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，更新比较使用 GitHub latest 的版本/提交身份而非字符串排序，兼容旧 tag。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证规则。
+
+版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`。
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
+
+发布前及上传后核对远端 main，只有仍对应 main 的发布才标记 latest，避免旧构建晚完成覆盖最新版。完整交付必须使用 `build-clean.ps1`，该脚本另发布 `YogaITS.Updater`；不要只复制主程序的发布输出。
+
+## 自动更新链路
+
+`AppUpdateService` 启动后延迟 3 秒检查一次，此后每 24 小时检查；仅大窗口出现单个更新卡片。后台检查静默失败，不接触硬件或私有配置。点击后使用默认取消的 ContentDialog 确认；确认的版本固定，检查与下载串行，不重复安装。
+
+`GitHubUpdateClient` 请求固定仓库 `wfsg00098/YogaITS` 的 `/releases/latest`。优先直连，元数据直连 8 秒、代理 20 秒；下载有响应头/读取空闲/总时限，直连持续低于 32 KiB/s 时回退。唯一回退前缀为 `https://gh-proxy.org/`，不发送凭证、序列号或配置。只接收正式版、预期仓库/文件名的 x64 ZIP、合理大小及 GitHub SHA-256 digest；直连损坏也回退，最终仍校验 digest。第三方代理同时承载元数据与包时仍存在代理信任边界，SHA-256 并不等价于发行者数字签名。
+
+更新暂存与旧文件备份位于 `%LOCALAPPDATA%\YogaITS\Updates\<GUID>\`，不写 Logs。拒绝 ZIP 路径穿越、重复路径、缺少必需文件及过大展开内容。助手从暂存目录运行，按 PID 和启动时间等待原进程退出，再从原 ZIP 重新验 hash/解压、备份被覆盖文件、复制及逐文件验 hash，最后重新启动原路径。复制、校验或启动失败回滚；回滚不完整时保留备份并明确提示。未运行常驻更新服务，不修改计划任务或硬件设置。
+
+自动检查覆盖模拟 HTTP 直连/回退/取消/坏包、版本身份、ZIP 路径安全、临时目录安装/配置保留及回滚。完整 UI 更新和真实程序重启仍需实机验收。
 
 ## 架构与刷新
 
@@ -117,6 +131,8 @@ ACM 卡片选中状态读取 `wideColorUserEnabled`，不能用 `activeColorMode
 HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回读；不暴露距离或 YogaMode。自动睡眠关闭时隐藏速度与人员辅助判定。自动唤醒/睡眠、播放/暂停仅开启时显示对应说明。
 
 ## TCON 与 ICC 自动选择
+
+2026-10-18：用户确认小新 Pro 16 IAH10 的在线恢复校色文件实机通过。联想服务器的 LEN8BAD 七档包使用成对 `INVALID` 机型/序列号占位；仅对这一明确组合按屏幕 HWID 验证，正常逐机文件仍严格匹配身份，恢复与切换共用校验。
 
 `ColorGamutService` 统一选择 backend；不按 ThinkBook/Yoga 名称或代际硬编码。内屏存在后先执行 TCON native WMI preflight，只有 `LENOVO_TCON_DATA`、`SetTconSwitch`、实例、live `F3 00` 总能力/模式位和 `F0 1D` GET 均通过才选择 TCON。类不存在立即返回，不打开 SPB。已验证的 ICC 文件仍可作为非 TCON 路径；TCON 检测不确定且没有有效 ICC 时，不提供盲目的 ICC 在线恢复。
 

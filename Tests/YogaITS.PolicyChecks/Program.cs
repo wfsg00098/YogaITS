@@ -9,6 +9,15 @@ using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.UI;
+using YogaITS.Tray.Services.Updates;
+
+if (args.Contains("--check-updates-http"))
+{
+    using var client = new GitHubUpdateClient();
+    var release = await client.GetLatestAsync(default);
+    Console.WriteLine($"Latest stable release: {release.Version}; bytes={release.Size}; SHA256 present. No download, install, or hardware access.");
+    return;
+}
 
 // Opt-in process-tree smoke test uses only child processes created by this test.
 if (args.Length == 1 && args[0] == "--gpu-test-child")
@@ -237,11 +246,12 @@ var failed = HpdFeatureProfile.Create(0x40, Hpd(1, 3), -1);
 Check(!failed.WakeSleepSection && !failed.AutoVideoPause && !failed.CameraAssist, "Failed HPD read hides features");
 
 Check(AppLaunchPolicy.ShouldOpenControlCenter([]), "Argument-free launch opens the control center");
-if (args.Length == 2 && args[0] == "--icon-executable")
+int iconIndex = Array.IndexOf(args, "--icon-executable");
+if (iconIndex >= 0)
 {
     foreach (bool small in new[] { false, true })
     {
-        using var icon = ApplicationIcon.Load(small, args[1]);
+        using var icon = ApplicationIcon.Load(small, args[iconIndex + 1]);
         Check(!icon.IsInvalid && !icon.IsClosed, "Published executable supplies a valid embedded icon handle");
         icon.Dispose();
         Check(icon.IsClosed, "Extracted icon ownership is released safely");
@@ -544,6 +554,8 @@ if (args.Contains("--gpu-process-tree"))
         }
     }
 }
+int updaterIndex = Array.IndexOf(args, "--updater-executable");
+checks += await UpdateChecks.RunAsync(updaterIndex >= 0 ? args[updaterIndex + 1] : null);
 Console.WriteLine($"PASS: {checks} checks. No hardware, registry, microphone, or network operations were performed.");
 
 static byte[] Icc(string serial, string panel, int brightness, string machineType = "TEST")

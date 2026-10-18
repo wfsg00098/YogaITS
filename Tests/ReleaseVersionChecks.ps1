@@ -1,32 +1,30 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$versionScript = Join-Path $PSScriptRoot '..\scripts\Get-ReleaseVersion.ps1'
-$commitSha = 'ABCDEF1234567890ABCDEF1234567890ABCDEF12'
-$cases = @(
-    @{ Branches = @('main', '1.0', '2.0'); Expected = '3.0-abcdef12' },
-    @{ Branches = @('main', '2.0', '1.0'); Expected = '3.0-abcdef12' },
-    @{ Branches = @('main', '2.0', '10.0'); Expected = '11.0-abcdef12' },
-    @{ Branches = @('main'); Expected = '1.0-abcdef12' },
-    @{ Branches = @(); Expected = '1.0-abcdef12' },
-    @{ Branches = @('main', 'HEAD', 'ui/review', 'backup/20.0'); Expected = '1.0-abcdef12' },
-    @{ Branches = @('1.0', '2.5'); Expected = '3.5-abcdef12' },
-    @{ Branches = @('1', '2'); Expected = '3.0-abcdef12' },
-    @{ Branches = @('2.0', 'v20.0', '3.0-abcdef12', '2.0.1'); Expected = '3.0-abcdef12' },
-    @{ Branches = @('2.0', '2,5', '-10', 'feature/30'); Expected = '3.0-abcdef12' }
-)
-foreach ($case in $cases) {
-    $result = & $versionScript -BranchNames $case.Branches -CommitSha $commitSha
-    if ($result.Version -ne $case.Expected) {
-        throw "Unexpected release version: $($result.Version), expected $($case.Expected)"
+$script = Join-Path $PSScriptRoot '..\scripts\Get-ReleaseVersion.ps1'
+$temporary = Join-Path ([IO.Path]::GetTempPath()) ('YogaITS-Version-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $temporary | Out-Null
+$file = Join-Path $temporary 'VERSION'
+$sha = 'ABCDEF1234567890ABCDEF1234567890ABCDEF12'
+try {
+    foreach ($series in @('5.0', '5.1', '5.10', '10.0', '0.1')) {
+        Set-Content -LiteralPath $file -Value $series
+        $result = & $script -VersionFile $file -CommitSha $sha -CommitTime ([DateTimeOffset]'2026-10-18T13:31:20+08:00')
+        if ($result.Version -ne "$series-20261018053120-abcdef12") { throw 'Version or UTC conversion mismatch.' }
+        if ($result.ArchiveName -ne "YogaITS-$($result.Version)-win-x64.zip") { throw 'Archive name mismatch.' }
+        if ($result.CommitSha -ne $sha.ToLowerInvariant()) { throw 'Commit identity mismatch.' }
     }
-    if ($result.ArchiveName -ne "YogaITS-$($case.Expected)-win-x64.zip") {
-        throw 'Unexpected archive name.'
+    foreach ($series in @('', '5', '5.0.1', '05.0', '5.01', '-1.0', '5.0-extra')) {
+        Set-Content -LiteralPath $file -Value $series
+        $rejected = $false
+        try { & $script -VersionFile $file -CommitSha $sha -CommitTime ([DateTimeOffset]::UtcNow) | Out-Null }
+        catch { $rejected = $true }
+        if (-not $rejected) { throw "Invalid VERSION accepted: $series" }
     }
-}
-foreach ($invalidSha in @('', 'abcdef12', ('z' * 40))) {
-    $rejected = $false
-    try { & $versionScript -BranchNames @('2.0') -CommitSha $invalidSha | Out-Null }
-    catch { $rejected = $true }
-    if (-not $rejected) { throw 'Invalid commit SHA was accepted.' }
-}
-Write-Host 'PASS: 10 version scenarios, archive names, and 3 invalid SHA checks.'
+    foreach ($invalid in @('', 'abcdef12', ('z' * 40))) {
+        $rejected = $false
+        try { & $script -VersionFile $file -CommitSha $invalid | Out-Null }
+        catch { $rejected = $true }
+        if (-not $rejected) { throw 'Invalid SHA accepted.' }
+    }
+} finally { Remove-Item -LiteralPath $temporary -Recurse -Force }
+Write-Host 'PASS: version series, UTC commit time, archive names, and invalid inputs.'

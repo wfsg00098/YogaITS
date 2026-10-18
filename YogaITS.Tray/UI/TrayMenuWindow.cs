@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.UI;
 using YogaITS.Tray.Services;
+using YogaITS.Tray.Services.Updates;
 
 namespace YogaITS.Tray.UI;
 
@@ -67,6 +68,9 @@ public sealed class TrayMenuWindow : Window
     private bool _updatingNightCharge;
     private bool _updatingFlipToStart;
     private bool _updatingStartup;
+    private Border? _updateHost;
+    private Button? _updateButton;
+    private Func<Task>? _installUpdate;
 
     private sealed class TileVisual
     {
@@ -470,6 +474,18 @@ public sealed class TrayMenuWindow : Window
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
             Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
                 OptionTileHeightDip, divider: false);
+            _updateButton = CreateOptionTile("", false, true, OptionTileHeightDip, ControlCenterButtonFontSize);
+            _updateButton.Click += async (_, _) =>
+            {
+                if (_installUpdate is not null) await _installUpdate();
+            };
+            _updateHost = new Border
+            {
+                Padding = new Thickness(8, 0, 8, 0),
+                Visibility = Visibility.Collapsed,
+                Child = CreateTileGrid(new UIElement[] { _updateButton }, 1, OptionTileHeightDip)
+            };
+            stack.Children.Add(_updateHost);
         }
         else stack.Children.Add(new Border
         {
@@ -478,6 +494,32 @@ public sealed class TrayMenuWindow : Window
             Padding = new Thickness(4, 0, 4, 0),
             Child = CreateTileGrid(new UIElement[] { CreateExitButton() }, 1, 28)
         });
+    }
+
+    internal void SetAvailableUpdate(UpdateRelease? release, bool busy, Func<Task> install)
+    {
+        if (_closed || !_fullWindow || _updateHost is null || _updateButton is null) return;
+        _installUpdate = install;
+        _updateHost.Visibility = release is null ? Visibility.Collapsed : Visibility.Visible;
+        if (release is null) return;
+        string text = $"新版本可用，点击进行更新\n{UpdatePolicy.CurrentVersion} -> {release.Version}";
+        ((OptionTileState)_updateButton.Tag).Label.Text = text;
+        AutomationProperties.SetName(_updateButton, "软件更新：" + text);
+        RefreshOptionTile(_updateButton, false, pending: busy);
+    }
+
+    internal async Task<bool> ConfirmUpdateAsync(string version)
+    {
+        if (_closed || _contentRoot?.XamlRoot is null) return false;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _contentRoot.XamlRoot,
+            Title = "更新 Yoga控制中心",
+            Content = $"是否下载并安装 {version}？下载并验证完成后，程序将退出、更新并重新启动。配置与校色文件会保留。\n\n优先从 GitHub 下载，连接不畅时使用 gh-proxy.org 加速。",
+            PrimaryButtonText = "更新", CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 
     public void ApplyRefreshedState(AppRuntimeSnapshot state)

@@ -51,7 +51,7 @@ jobs:
 
       - name: Run hardware-free policy checks
         run: |
-          dotnet run --project ./Tests/YogaITS.PolicyChecks -c Release -- --icon-executable ./dist/YogaITS.Tray.exe
+          dotnet run --project ./Tests/YogaITS.PolicyChecks -c Release -- --icon-executable ./dist/YogaITS.Tray.exe --updater-executable ./dist/YogaITS.Updater.exe
           if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed.' }
 
       - name: Package complete publish directory
@@ -92,6 +92,12 @@ jobs:
           ARCHIVE_NAME: ${{ needs.build.outputs.archive_name }}
         run: |
           $archive = Join-Path ./release-assets $env:ARCHIVE_NAME
+          $mainSha = gh api "repos/$env:GH_REPO/git/ref/heads/main" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to check current main.' }
+          if ($mainSha -ne $env:GITHUB_SHA) {
+            Write-Host 'A newer main commit exists; skip stale release publication.'
+            exit 0
+          }
           if (-not (Test-Path -LiteralPath $archive)) { throw 'Release archive is missing.' }
           gh release view $env:RELEASE_VERSION --json tagName > $null 2> $null
           if ($LASTEXITCODE -eq 0) {
@@ -101,6 +107,13 @@ jobs:
             }
             gh release upload $env:RELEASE_VERSION $archive --clobber
           } else {
-            gh release create $env:RELEASE_VERSION $archive --target $env:GITHUB_SHA --title $env:RELEASE_VERSION --generate-notes --notes 'Windows x64 framework-dependent build. Extract the complete ZIP; .NET 10 Desktop Runtime and compatible Windows App Runtime are required.'
+            gh release create $env:RELEASE_VERSION $archive --latest=false --target $env:GITHUB_SHA --title $env:RELEASE_VERSION --generate-notes --notes 'Windows x64 framework-dependent build. Extract the complete ZIP; .NET 10 Desktop Runtime and compatible Windows App Runtime are required. Version timestamps use UTC commit time.'
           }
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+          # Re-check after upload, so a slow older build cannot become latest.
+          $mainSha = gh api "repos/$env:GH_REPO/git/ref/heads/main" --jq '.object.sha'
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to recheck current main.' }
+          if ($mainSha -eq $env:GITHUB_SHA) {
+            gh release edit $env:RELEASE_VERSION --latest
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to mark current release latest.' }
+          }

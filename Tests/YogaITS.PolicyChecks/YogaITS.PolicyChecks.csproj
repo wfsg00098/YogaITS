@@ -6,6 +6,10 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateRelease.cs" Link="Updates/UpdateRelease.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Updates/GitHubUpdateClient.cs" Link="Updates/GitHubUpdateClient.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Updates/UpdatePackage.cs" Link="Updates/UpdatePackage.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateInstallation.cs" Link="Updates/UpdateInstallation.cs" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <Compile Include="../../YogaITS.Tray/Services/NvidiaGpuHelper.cs" Link="NvidiaGpuHelper.cs" />
     <Compile Include="../../YogaITS.Tray/UI/WindowSizing.cs" Link="WindowSizing.cs" />
