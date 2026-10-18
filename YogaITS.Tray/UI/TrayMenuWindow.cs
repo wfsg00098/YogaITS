@@ -70,6 +70,7 @@ public sealed class TrayMenuWindow : Window
     private bool _updatingStartup;
     private Border? _updateHost;
     private Button? _updateButton;
+    private Grid? _updateFollowingTiles;
     private Func<Task>? _installUpdate;
 
     private sealed class TileVisual
@@ -380,7 +381,7 @@ public sealed class TrayMenuWindow : Window
         else stack.Children.Add(CreateWindowHeader(modelName));
 
         TextBlock? Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
-            string? description = null, bool divider = true, StackPanel? host = null)
+            string? description = null, bool divider = true, StackPanel? host = null, UIElement? leadingContent = null)
         {
             foreach (var button in items.OfType<Button>())
                 if (button.Tag is OptionTileState option)
@@ -398,7 +399,19 @@ public sealed class TrayMenuWindow : Window
             var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
             SettingsMotion.Reposition(section);
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
-            section.Children.Add(CreateTileGrid(items, columns, height));
+            var tiles = CreateTileGrid(items, columns, height);
+            if (leadingContent is null) section.Children.Add(tiles);
+            else
+            {
+                // Separate entrance from repositioning: only the existing tiles
+                // move, while the new card fades in at its arranged position.
+                var body = new StackPanel();
+                body.Children.Add(leadingContent);
+                body.Children.Add(tiles);
+                _updateFollowingTiles = tiles;
+                SettingsMotion.RevealBefore(leadingContent, tiles);
+                section.Children.Add(body);
+            }
             TextBlock? note = null;
             if (_fullWindow && description is not null)
             {
@@ -472,8 +485,6 @@ public sealed class TrayMenuWindow : Window
                     SettingsOptionText.FlipToStartDescription(_flipToStartOperated));
             }
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
-            Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
-                OptionTileHeightDip, divider: false);
             _updateButton = CreateOptionTile("", false, true, OptionTileHeightDip, ControlCenterButtonFontSize);
             _updateButton.Click += async (_, _) =>
             {
@@ -481,11 +492,11 @@ public sealed class TrayMenuWindow : Window
             };
             _updateHost = new Border
             {
-                Padding = new Thickness(8, 0, 8, 0),
                 Visibility = Visibility.Collapsed,
                 Child = CreateTileGrid(new UIElement[] { _updateButton }, 1, OptionTileHeightDip)
             };
-            stack.Children.Add(_updateHost);
+            Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
+                OptionTileHeightDip, divider: false, leadingContent: _updateHost);
         }
         else stack.Children.Add(new Border
         {
@@ -500,12 +511,19 @@ public sealed class TrayMenuWindow : Window
     {
         if (_closed || !_fullWindow || _updateHost is null || _updateButton is null) return;
         _installUpdate = install;
-        _updateHost.Visibility = release is null ? Visibility.Collapsed : Visibility.Visible;
-        if (release is null) return;
+        if (_updateFollowingTiles is { } following)
+            SettingsMotion.RevealBefore(_updateHost, following);
+        if (release is null)
+        {
+            _updateHost.Visibility = Visibility.Collapsed;
+            return;
+        }
         string text = $"新版本可用，点击进行更新\n{UpdatePolicy.CurrentVersion} -> {release.Version}";
         ((OptionTileState)_updateButton.Tag).Label.Text = text;
-        AutomationProperties.SetName(_updateButton, "软件更新：" + text);
+        AutomationProperties.SetName(_updateButton, UiAccessibility.GroupedName("杂项", text));
         RefreshOptionTile(_updateButton, false, pending: busy);
+        // Populate content before making it participate in layout.
+        _updateHost.Visibility = Visibility.Visible;
     }
 
     internal async Task<bool> ConfirmUpdateAsync(string version)

@@ -53,7 +53,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 ## 自动更新链路
 
-`AppUpdateService` 启动后延迟 3 秒检查一次，此后每 24 小时检查；仅大窗口出现单个更新卡片。后台检查静默失败，不接触硬件或私有配置。点击后使用默认取消的 ContentDialog 确认；确认的版本固定，检查与下载串行，不重复安装。
+`AppUpdateService` 启动后延迟 3 秒检查一次，此后每 24 小时检查；仅大窗口“杂项”分组出现单个更新卡片，位于分组标题下、开机自启/退出上方。内层不统一施加位移过渡，而由 `SettingsMotion.RevealBefore` 分别控制：更新卡片填充文字后以零偏移 EntranceThemeTransition 原地淡入，已有按钮行使用 RepositionThemeTransition 平滑移动，避免首次显现从窗口原点滑入或下方按钮瞬移；遵循系统动画开关。后台检查静默失败，不接触硬件或私有配置。点击后使用默认取消的 ContentDialog 确认；确认的版本固定，检查与下载串行，不重复安装。
 
 `GitHubUpdateClient` 请求固定仓库 `wfsg00098/YogaITS` 的 `/releases/latest`。优先直连，元数据直连 8 秒、代理 20 秒；下载有响应头/读取空闲/总时限，直连持续低于 32 KiB/s 时回退。唯一回退前缀为 `https://gh-proxy.org/`，不发送凭证、序列号或配置。只接收正式版、预期仓库/文件名的 x64 ZIP、合理大小及 GitHub SHA-256 digest；直连损坏也回退，最终仍校验 digest。第三方代理同时承载元数据与包时仍存在代理信任边界，SHA-256 并不等价于发行者数字签名。
 

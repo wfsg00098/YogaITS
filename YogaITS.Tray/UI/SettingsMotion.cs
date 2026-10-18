@@ -67,6 +67,27 @@ internal static class SettingsMotion
             panel.ChildrenTransitions.Clear();
     }
 
+    public static void RevealBefore(UIElement appearing, UIElement following)
+    {
+        // Only existing content moves. Newly visible content fades at its final
+        // position instead of repositioning from its previously unarranged origin.
+        appearing.Transitions ??= new TransitionCollection();
+        following.Transitions ??= new TransitionCollection();
+        if (!Settings.AnimationsEnabled)
+        {
+            appearing.Transitions.Clear();
+            following.Transitions.Clear();
+            return;
+        }
+        if (appearing.Transitions.Count == 0)
+            appearing.Transitions.Add(new EntranceThemeTransition
+            {
+                FromHorizontalOffset = 0, FromVerticalOffset = 0, IsStaggeringEnabled = false
+            });
+        if (following.Transitions.Count == 0)
+            following.Transitions.Add(new RepositionThemeTransition { IsStaggeringEnabled = false });
+    }
+
     public static void SeparateDivider(Border group)
     {
         // A bottom border follows resized bounds immediately; a distinct child
