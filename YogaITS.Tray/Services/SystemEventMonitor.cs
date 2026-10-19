@@ -9,15 +9,18 @@ internal sealed class SystemEventMonitor : IDisposable
 {
     private const nuint SubclassId = 0x59475055;
     private static readonly Guid AcDcSource = new("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+    private static readonly Guid SessionDisplayStatus = new("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
     private readonly nint _hwnd;
     private readonly SubclassProc _callback;
     private nint _powerNotification;
+    private nint _displayPowerNotification;
     private CancellationTokenSource? _displayDebounce;
     private bool _disposed;
     public event Action? PowerChanged;
     public event Action? DisplayChanged;
     public event Action? AppearanceChanged;
     public event Action<bool>? SleepStateChanged;
+    public event Action<bool>? DisplayPowerChanged;
 
     public SystemEventMonitor(nint hwnd)
     {
@@ -38,6 +41,17 @@ internal sealed class SystemEventMonitor : IDisposable
         return _powerNotification != 0;
     }
 
+    public bool EnableDisplayPowerNotifications()
+    {
+        if (_disposed) return false;
+        if (_displayPowerNotification != 0) return true;
+        Guid guid = SessionDisplayStatus;
+        _displayPowerNotification = RegisterPowerSettingNotification(_hwnd, ref guid, 0);
+        if (_displayPowerNotification == 0)
+            System.Diagnostics.Debug.WriteLine("Display power notification registration failed.");
+        return _displayPowerNotification != 0;
+    }
+
     private nint OnMessage(nint hwnd, uint message, nint wParam, nint lParam, nuint id, nuint data)
     {
         if (_disposed) return DefSubclassProc(hwnd, message, wParam, lParam);
@@ -46,6 +60,11 @@ internal sealed class SystemEventMonitor : IDisposable
             if (ReadSleepState(message, wParam) is { } suspended) SleepStateChanged?.Invoke(suspended);
             Guid? setting = message == 0x0218 && wParam == 0x8013 && lParam != 0
                 ? Marshal.PtrToStructure<Guid>(lParam) : null;
+            // POWERBROADCAST_SETTING: GUID (16 bytes), DWORD length, then data.
+            // This is independent of topology changes and must not be debounced.
+            if (setting == SessionDisplayStatus && Marshal.ReadInt32(lParam, 16) == sizeof(uint) &&
+                ReadDisplayState(setting, sizeof(uint), unchecked((uint)Marshal.ReadInt32(lParam, 20))) is { } displayOn)
+                DisplayPowerChanged?.Invoke(displayOn);
             var change = ClassifyMessage(message, wParam, setting);
             if ((change & SystemStateChange.Power) != 0) PowerChanged?.Invoke();
             if ((change & SystemStateChange.Appearance) != 0) AppearanceChanged?.Invoke();
@@ -81,6 +100,10 @@ internal sealed class SystemEventMonitor : IDisposable
     internal static bool? ReadSleepState(uint message, nint wParam) => message != 0x0218 ? null :
         wParam == 4 ? true : wParam == 7 || wParam == 0x12 ? false : null;
 
+    internal static bool? ReadDisplayState(Guid? setting, uint length, uint value) =>
+        setting != SessionDisplayStatus || length != sizeof(uint) ? null :
+        value switch { 0 => false, 1 or 2 => true, _ => null }; // Dimmed is still on.
+
     private async Task NotifyDisplayAsync(CancellationToken token)
     {
         try
@@ -101,6 +124,7 @@ internal sealed class SystemEventMonitor : IDisposable
         _displayDebounce?.Cancel();
         _displayDebounce?.Dispose();
         if (_powerNotification != 0) UnregisterPowerSettingNotification(_powerNotification);
+        if (_displayPowerNotification != 0) UnregisterPowerSettingNotification(_displayPowerNotification);
         RemoveWindowSubclass(_hwnd, _callback, SubclassId);
     }
 

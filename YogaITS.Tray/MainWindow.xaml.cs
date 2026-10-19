@@ -65,6 +65,8 @@ public sealed partial class MainWindow : Window
             _systemEvents.PowerChanged += () => _ = RefreshKeepAwakeForSystemChangeAsync();
             _systemEvents.DisplayChanged += () => _ = RefreshKeepAwakeForSystemChangeAsync();
             _systemEvents.SleepStateChanged += suspended => _ = RefreshKeepAwakeForSystemChangeAsync(suspended);
+            _systemEvents.DisplayPowerChanged += displayOn => _ = RefreshKeepAwakeForSystemChangeAsync(displayOn: displayOn);
+            _systemEvents.EnableDisplayPowerNotifications();
             _systemEvents.PowerChanged += () => _ = RefreshGpuForSystemChangeAsync("电源事件");
             _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件");
             _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
@@ -301,12 +303,13 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RefreshKeepAwakeForSystemChangeAsync(bool? suspended = null)
+    private async Task RefreshKeepAwakeForSystemChangeAsync(bool? suspended = null, bool? displayOn = null)
     {
         if (_exiting) return;
         try
         {
             if (suspended is { } sleeping) await _keepAwake.SetSuspendedAsync(sleeping);
+            else if (displayOn is { } on) await _keepAwake.SetDisplayOnAsync(on);
             else await _keepAwake.RefreshEnvironmentAsync();
         }
         catch (Exception ex)

@@ -13,6 +13,7 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
     private TaskCompletionSource<bool>? _healthReply;
     private bool _disposed, _present, _modeBlocked, _switching, _active, _configured;
     private bool _suspended;
+    private bool _displayOn = true;
     private int _powerSource = -1;
     private bool _enabled = UserSettingsStore.Get("KeepDGpuAwake", false);
     private string _message = "";
@@ -60,6 +61,13 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         await ReconcileAsync(checkHealth: !suspended);
     });
 
+    public Task SetDisplayOnAsync(bool displayOn) => RunAsync(async () =>
+    {
+        if (_displayOn == displayOn) return;
+        _displayOn = displayOn;
+        await ReconcileAsync(checkHealth: displayOn);
+    });
+
     public Task PauseForModeSwitchAsync() => RunAsync(async () =>
     {
         _switching = true;
@@ -93,11 +101,12 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
     {
         _powerSource = SystemEventMonitor.ReadPowerSource();
         if (!GpuKeepAwakePolicy.MayRun(_enabled, _present, true, _modeBlocked ? 1 : 0,
-            _powerSource, _suspended) || _switching)
+            _powerSource, _suspended, _displayOn) || _switching)
         {
             await StopAsync();
             _message = !_enabled ? "" : _powerSource != 0
                 ? "未连接交流电源，已暂停保持唤醒；接通电源后将自动恢复。"
+                : !_displayOn ? "屏幕已关闭，已暂停保持唤醒；亮屏后将按条件自动恢复。"
                 : "当前暂不保持唤醒，条件恢复后将自动恢复。";
             return;
         }

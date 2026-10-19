@@ -16,7 +16,7 @@ internal static class GpuKeepAwakePolicy
         name.Equals("YogaITS.Tray", StringComparison.OrdinalIgnoreCase);
 
     public static bool MayRun(bool enabled, bool present, bool modeSupported, int effectiveMode,
-        int powerSource, bool suspended = false) => enabled && present && powerSource == 0 && !suspended &&
+        int powerSource, bool suspended = false, bool displayOn = true) => enabled && present && powerSource == 0 && !suspended && displayOn &&
         (!modeSupported || effectiveMode != 1);
 
     public static bool IsHelperName(string name)

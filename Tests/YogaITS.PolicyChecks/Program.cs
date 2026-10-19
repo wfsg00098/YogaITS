@@ -137,9 +137,22 @@ foreach (bool present in new[] { false, true })
 foreach (bool supported in new[] { false, true })
 foreach (int effective in new[] { -1, 0, 1 })
 foreach (bool suspended in new[] { false, true })
+foreach (bool displayOn in new[] { false, true })
 foreach (int power in new[] { -1, 0, 1 })
-    Check(GpuKeepAwakePolicy.MayRun(enabled, present, supported, effective, power, suspended) ==
-        (enabled && present && power == 0 && !suspended && (!supported || effective != 1)), "All modes stop on battery, unknown power, suspend or IGPU-only without clearing the preference");
+    Check(GpuKeepAwakePolicy.MayRun(enabled, present, supported, effective, power, suspended, displayOn) ==
+        (enabled && present && power == 0 && !suspended && displayOn && (!supported || effective != 1)), "All modes stop on battery, unknown power, suspend, screen-off or IGPU-only without clearing the preference");
+var sessionDisplayStatus = new Guid("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
+Check(SystemEventMonitor.ReadDisplayState(sessionDisplayStatus, 4, 0) == false, "Screen-off pauses keep-awake independently of suspend");
+foreach (uint state in new uint[] { 1, 2 })
+    Check(SystemEventMonitor.ReadDisplayState(sessionDisplayStatus, 4, state) == true, "On and dimmed displays permit re-evaluation, not unconditional helper startup");
+foreach (uint state in new uint[] { 3, uint.MaxValue })
+    Check(SystemEventMonitor.ReadDisplayState(sessionDisplayStatus, 4, state) is null, "Unknown display states do not overwrite the last confirmed state");
+foreach (uint length in new uint[] { 0, 1, 3, 5, uint.MaxValue })
+    Check(SystemEventMonitor.ReadDisplayState(sessionDisplayStatus, length, 0) is null, "Malformed display payloads are ignored");
+Check(SystemEventMonitor.ReadDisplayState(null, 4, 0) is null &&
+    SystemEventMonitor.ReadDisplayState(Guid.Empty, 4, 0) is null, "Unrelated power notifications cannot change screen state");
+Check(SystemEventMonitor.ClassifyMessage(0x0218, 0x8013, sessionDisplayStatus) == SystemStateChange.None,
+    "Screen power notifications do not trigger topology, WMI or color refreshes");
 Check(SystemEventMonitor.ReadSleepState(0x0218, 4) == true, "Suspend is forwarded to the main keep-awake controller");
 foreach (nint resume in new nint[] { 7, 0x12 })
     Check(SystemEventMonitor.ReadSleepState(0x0218, resume) == false, "Resume permits the main controller to re-evaluate keep-awake");
