@@ -18,6 +18,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
     private bool _hasPreference = UserSettingsStore.Get<int?>("GpuWorkingMode", null) is >= 0 and <= 2;
     public GpuWorkingSnapshot Snapshot { get; private set; } = GpuWorkingSnapshot.Unavailable;
     public bool AutoEventsAvailable { get; set; }
+    public Func<bool, Task>? KeepAwakeModeChange { get; set; }
 
     private static ManagementObjectSearcher Search(string className) => new(
         new ManagementScope(@"\\.\root\WMI", new ConnectionOptions
@@ -133,9 +134,17 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             if (!Snapshot.Supported || Snapshot.ExternalPath != 0)
                 throw new InvalidOperationException("独显显示路径不可安全释放。");
         }
-        Set(target);
-        await Task.Delay(1500).ConfigureAwait(false);
-        Read();
+        if (target == 1 && KeepAwakeModeChange is { } before) await before(true);
+        try
+        {
+            Set(target);
+            await Task.Delay(1500).ConfigureAwait(false);
+            Read();
+        }
+        finally
+        {
+            if (target == 1 && KeepAwakeModeChange is { } after) await after(false);
+        }
     }
 
     private async Task ApplyPolicyAsync(bool allowRetry)

@@ -49,11 +49,31 @@ internal static class UpdatePolicy
         return new(version, commit, new(expectedUrl), size, digest[7..]);
     }
 
-    public static bool IsDifferent(UpdateRelease release, string currentIdentity)
+    public static bool IsNewer(UpdateRelease release, string currentIdentity)
     {
         string[] parts = currentIdentity.Split('+', 2);
         if (parts[0].Equals(release.Version, StringComparison.OrdinalIgnoreCase)) return false;
-        // Compare source identity, not hash ordering or the spelling of the release name.
-        return parts.Length != 2 || !parts[1].StartsWith(release.Commit, StringComparison.OrdinalIgnoreCase);
+        if (parts.Length == 2 && parts[1].StartsWith(release.Commit, StringComparison.OrdinalIgnoreCase)) return false;
+        if (!TryVersion(release.Version, out var offered, out var offeredTime) ||
+            !TryVersion(parts[0], out var current, out var currentTime) || offeredTime is null) return false;
+        // Both dimensions must move forward: never offer a lower series, nor an
+        // older/equal timestamp with another hash (including a delayed release).
+        int series = offered.CompareTo(current);
+        return series >= 0 && (currentTime is { } time ? offeredTime > time : series > 0);
+    }
+
+    private static bool TryVersion(string value, out Version series, out DateTime? timestamp)
+    {
+        series = new Version(0, 0);
+        timestamp = null;
+        var match = Regex.Match(value, @"^(?<series>\d+\.\d+)(?:-(?:(?<time>\d{14})-)?[0-9a-f]{8})?$",
+            RegexOptions.CultureInvariant);
+        if (!match.Success || !Version.TryParse(match.Groups["series"].Value, out var parsed)) return false;
+        series = parsed;
+        if (!match.Groups["time"].Success) return true;
+        if (!DateTime.TryParseExact(match.Groups["time"].Value, "yyyyMMddHHmmss", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var time)) return false;
+        timestamp = time;
+        return true;
     }
 }

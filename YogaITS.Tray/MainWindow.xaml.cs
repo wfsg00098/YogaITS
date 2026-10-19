@@ -20,6 +20,8 @@ public sealed partial class MainWindow : Window
     private readonly HpdService _hpd = new();
     private readonly ColorGamutService _color = new();
     private readonly ElevocService _audio = new();
+    private readonly GpuKeepAwakeService _keepAwake = new();
+    private bool _gpuInitializationComplete;
     private readonly AppUpdateService _updates = new();
     private bool _updateRequested;
     private SystemEventMonitor? _systemEvents;
@@ -42,6 +44,10 @@ public sealed partial class MainWindow : Window
         // independent of WMI / EnergyDrv / schtasks latency.
         _stateCache = AppStateCache.Initialize();
         _stateCache.Changed += () => DispatcherQueue.TryEnqueue(ApplyCoreState);
+        _keepAwake.Changed += () => DispatcherQueue.TryEnqueue(RefreshKeepAwakeCards);
+        _gpu.KeepAwakeModeChange = suppressed => suppressed
+            ? _keepAwake.PauseForModeSwitchAsync()
+            : _keepAwake.ConfigureAsync(_stateCache.Snapshot.NvidiaGpuSupported, _gpu.Snapshot, endSwitch: true);
 
         Closed += MainWindow_Closed;
         InitializeHiddenTrayHost();
@@ -55,6 +61,9 @@ public sealed partial class MainWindow : Window
         {
             // Color management needs AC/DC events even on machines without GPU modes.
             _systemEvents.EnablePowerNotifications();
+            _systemEvents.PowerChanged += () => _ = RefreshKeepAwakeForSystemChangeAsync();
+            _systemEvents.DisplayChanged += () => _ = RefreshKeepAwakeForSystemChangeAsync();
+            _systemEvents.SleepStateChanged += suspended => _ = RefreshKeepAwakeForSystemChangeAsync(suspended);
             _systemEvents.PowerChanged += () => _ = RefreshGpuForSystemChangeAsync("电源事件");
             _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件");
             _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
@@ -81,8 +90,9 @@ public sealed partial class MainWindow : Window
                 _stateCache.UpdateNvidiaPresence(_gpu.Snapshot.NvidiaPresent);
             }
             _featurePanels?.Render();
+            _ = ConfigureKeepAwakeAsync();
         });
-        _ = _gpu.InitializeAsync(() => _systemEvents?.EnablePowerNotifications() ?? false);
+        _ = InitializeGpuAndKeepAwakeAsync();
         _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _hpd.RefreshAsync();
         _color.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
@@ -204,7 +214,9 @@ public sealed partial class MainWindow : Window
                 showInfo: (title, message) =>
                     ShowChild(new InfoWindow(title, message)),
                 exitApp: ExitApplication,
-                fullWindow: fullWindow);
+                fullWindow: fullWindow,
+                keepAwake: _keepAwake.Snapshot,
+                setKeepAwake: _keepAwake.SetEnabledAsync);
 
             if (fullWindow)
             {
@@ -299,6 +311,20 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async Task RefreshKeepAwakeForSystemChangeAsync(bool? suspended = null)
+    {
+        if (_exiting) return;
+        try
+        {
+            if (suspended is { } sleeping) await _keepAwake.SetSuspendedAsync(sleeping);
+            else await _keepAwake.RefreshEnvironmentAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("Keep-awake event handling failed: " + ex.GetType().Name);
+        }
+    }
+
     private async Task RefreshGpuForSystemChangeAsync(string trigger)
     {
         if (_exiting) return;
@@ -326,7 +352,29 @@ public sealed partial class MainWindow : Window
         _trayIcon?.SetTooltip(BuildTooltip(state));
         _trayMenuWindow?.ApplyRefreshedState(state);
         _controlCenterWindow?.ApplyRefreshedState(state);
+        RefreshKeepAwakeCards();
+        _ = ConfigureKeepAwakeAsync();
         RefreshUpdateCard();
+    }
+
+    private async Task InitializeGpuAndKeepAwakeAsync()
+    {
+        try { await _gpu.InitializeAsync(() => _systemEvents?.EnablePowerNotifications() ?? false); }
+        finally { _gpuInitializationComplete = true; await ConfigureKeepAwakeAsync(); }
+    }
+
+    private async Task ConfigureKeepAwakeAsync()
+    {
+        if (_exiting || !_gpuInitializationComplete) return;
+        try { await _keepAwake.ConfigureAsync(_stateCache.Snapshot.NvidiaGpuSupported, _gpu.Snapshot); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Keep-awake setup failed: " + ex.GetType().Name); }
+    }
+
+    private void RefreshKeepAwakeCards()
+    {
+        if (_exiting) return;
+        _trayMenuWindow?.ApplyKeepAwakeState(_keepAwake.Snapshot);
+        _controlCenterWindow?.ApplyKeepAwakeState(_keepAwake.Snapshot);
     }
 
     private async Task RefreshCoreAsync()
@@ -469,6 +517,7 @@ public sealed partial class MainWindow : Window
 
     private async Task RestartGpuDirectAsync()
     {
+        if (_keepAwake.Snapshot.Enabled) return;
         try
         {
             GpuActionResult result =
@@ -536,7 +585,7 @@ public sealed partial class MainWindow : Window
         _systemEvents = null;
         try
         {
-            await Task.WhenAll(_gpu.DisposeAsync().AsTask(), _hpd.DisposeAsync().AsTask(),
+            await Task.WhenAll(_keepAwake.DisposeAsync().AsTask(), _gpu.DisposeAsync().AsTask(), _hpd.DisposeAsync().AsTask(),
                 _color.DisposeAsync().AsTask(), _audio.DisposeAsync().AsTask());
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Feature cleanup: " + ex.Message); }

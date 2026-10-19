@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../YogaITS.Tray/Services/GpuKeepAwakePolicy.cs" Link="GpuKeepAwakePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateRelease.cs" Link="Updates/UpdateRelease.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/GitHubUpdateClient.cs" Link="Updates/GitHubUpdateClient.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/UpdatePackage.cs" Link="Updates/UpdatePackage.cs" />

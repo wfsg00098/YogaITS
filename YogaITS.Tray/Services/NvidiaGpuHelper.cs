@@ -150,10 +150,11 @@ public static class NvidiaGpuHelper
 
     public static IReadOnlyList<GpuProcessInfo> GetKillCandidates(IEnumerable<GpuProcessInfo> apps)
     {
-        // LLT excludes only these two desktop processes; NVIDIA containers and
-        // Session 0/SYSTEM processes are not excluded. Retain invalid/self guards.
+        // Retain LLT's desktop-process exclusions plus our dedicated keep-awake
+        // helper. NVIDIA containers and Session 0/SYSTEM processes remain targets.
         return apps.Where(app => app.Pid > 0 && app.Pid != Environment.ProcessId)
-            .Where(app => !ExcludedProcessNames.Contains(app.Name))
+            .Where(app => !ExcludedProcessNames.Contains(app.Name) && !GpuKeepAwakePolicy.IsHelperName(app.Name) &&
+                !GpuKeepAwakePolicy.IsHelperName(app.ExecutablePath ?? ""))
             .DistinctBy(app => app.Pid).ToArray();
     }
 
@@ -170,6 +171,8 @@ public static class NvidiaGpuHelper
             try
             {
                 using Process p = Process.GetProcessById(pid);
+
+                if (GpuKeepAwakePolicy.IsHelperName(p.ProcessName)) continue;
 
                 // LLT terminates the process tree and waits for the root to exit.
                 // Do not toggle the process-wide debug privilege between targets.

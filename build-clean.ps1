@@ -32,10 +32,18 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dotnet publish (Join-Path $root 'YogaITS.Updater\YogaITS.Updater.csproj') -c Release -r win-x64 --self-contained false -o $dist
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+dotnet publish (Join-Path $root 'YogaITS.dGPUKeepAwake\YogaITS.dGPUKeepAwake.csproj') -c Release -r win-x64 --self-contained false -o $dist
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 # Unpackaged WinUI 3 needs the application's PRI in the publish directory.
 $projectPri = Join-Path $dist "YogaITS.Tray.pri"
 if (-not (Test-Path $projectPri)) {
     throw "Publish failed validation: YogaITS.Tray.pri is missing from dist."
+}
+foreach ($extension in 'exe', 'dll', 'deps.json', 'runtimeconfig.json') {
+    if (-not (Test-Path (Join-Path $dist "YogaITS.dGPUKeepAwake.$extension"))) {
+        throw "Publish failed validation: YogaITS.dGPUKeepAwake.$extension is missing from dist."
+    }
 }
 
 # The app does not ship debugging symbols or XML documentation.

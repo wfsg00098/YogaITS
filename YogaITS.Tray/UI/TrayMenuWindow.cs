@@ -27,6 +27,11 @@ public sealed class TrayMenuWindow : Window
     private readonly Func<Task> _killGpuApps;
     private readonly Func<Task> _restartGpu;
     private bool _updatingGpuAction;
+    private GpuKeepAwakeSnapshot _keepAwake = new(false, false, "");
+    private readonly Func<bool, Task<GpuKeepAwakeSnapshot>>? _setKeepAwake;
+    private Button? _keepAwakeButton, _restartGpuButton;
+    private TextBlock? _gpuDescription;
+    private bool _updatingKeepAwake;
     private readonly Func<bool, Task<StartupTaskResult>> _setStartup;
     private readonly Action<string, string> _showInfo;
     private readonly Action _exitApp;
@@ -104,7 +109,9 @@ public sealed class TrayMenuWindow : Window
         Func<bool, Task<StartupTaskResult>> setStartup,
         Action<string, string> showInfo,
         Action exitApp,
-        bool fullWindow = false)
+        bool fullWindow = false,
+        GpuKeepAwakeSnapshot? keepAwake = null,
+        Func<bool, Task<GpuKeepAwakeSnapshot>>? setKeepAwake = null)
     {
         _fullWindow = fullWindow;
         _ownerHwnd = ownerHwnd;
@@ -113,6 +120,8 @@ public sealed class TrayMenuWindow : Window
         _setFlipToStart = setFlipToStart;
         _killGpuApps = killGpuApps;
         _restartGpu = restartGpu;
+        _keepAwake = keepAwake ?? _keepAwake;
+        _setKeepAwake = setKeepAwake;
         _setStartup = setStartup;
         _showInfo = showInfo;
         _exitApp = exitApp;
@@ -372,7 +381,7 @@ public sealed class TrayMenuWindow : Window
         _nightChargeVisual = _flipToStartVisual = _startupVisual = null;
         _nightChargeSupported = night.Supported;
         _flipToStartSupported = flip.Supported;
-        _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia);
+        _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia || _keepAwake.Enabled);
 
         if (_fullWindow)
         {
@@ -381,7 +390,8 @@ public sealed class TrayMenuWindow : Window
         else stack.Children.Add(CreateWindowHeader(modelName));
 
         TextBlock? Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
-            string? description = null, bool divider = true, StackPanel? host = null, UIElement? leadingContent = null)
+            string? description = null, bool divider = true, StackPanel? host = null, UIElement? leadingContent = null,
+            bool stretchLastRow = false)
         {
             foreach (var button in items.OfType<Button>())
                 if (button.Tag is OptionTileState option)
@@ -400,6 +410,8 @@ public sealed class TrayMenuWindow : Window
             SettingsMotion.Reposition(section);
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
             var tiles = CreateTileGrid(items, columns, height);
+            if (stretchLastRow && items.Count % columns == 1 && tiles.Children.Count > 0)
+                Grid.SetColumnSpan((FrameworkElement)tiles.Children[tiles.Children.Count - 1], columns);
             if (leadingContent is null) section.Children.Add(tiles);
             else
             {
@@ -466,14 +478,28 @@ public sealed class TrayMenuWindow : Window
                 SettingsOptionText.ChargeDescription(battery.Mode.ToString(), night.Supported && night.Enabled));
         }
 
-        if (nvidia)
-            Section("独显休眠", new UIElement[]
+        _keepAwakeButton = _restartGpuButton = null;
+        _gpuDescription = null;
+        if (nvidia || _keepAwake.Enabled)
+        {
+            _restartGpuButton = CreateActionTile("重启独显设备", _restartGpu);
+            var gpuItems = new List<UIElement>
             {
                 CreateActionTile(_fullWindow ? "结束独显占用进程" : "结束独显\n占用进程", _killGpuApps,
                     delayBeforeActionMilliseconds: 500),
-                CreateActionTile("重启独显设备", _restartGpu)
-            }, 2, 62,
-                "结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁；实际休眠还取决于外接显示器及其他占用。");
+                _restartGpuButton
+            };
+            if (_fullWindow)
+            {
+                _keepAwakeButton = CreateOptionTile("保持独显唤醒", _keepAwake.Enabled, false,
+                    OptionTileHeightDip, ControlCenterButtonFontSize);
+                _keepAwakeButton.Click += async (_, _) => await SetKeepAwakeAsync();
+                gpuItems.Add(_keepAwakeButton);
+            }
+            _gpuDescription = Section("独显控制", gpuItems, 2, 62,
+                GpuDescription(), stretchLastRow: true);
+            ApplyKeepAwakeState(_keepAwake);
+        }
 
         if (_fullWindow)
         {
@@ -505,6 +531,34 @@ public sealed class TrayMenuWindow : Window
             Padding = new Thickness(4, 0, 4, 0),
             Child = CreateTileGrid(new UIElement[] { CreateExitButton() }, 1, 28)
         });
+    }
+
+    public void ApplyKeepAwakeState(GpuKeepAwakeSnapshot state)
+    {
+        if (_closed) return;
+        _keepAwake = state;
+        if (_restartGpuButton is { } restart) restart.IsEnabled = !state.Enabled && !_updatingKeepAwake;
+        if (_keepAwakeButton is { } keep)
+        {
+            keep.IsEnabled = _setKeepAwake is not null;
+            if (!_updatingKeepAwake) RefreshOptionTile(keep, state.Enabled);
+        }
+        if (_gpuDescription is { } description) description.Text = GpuDescription();
+    }
+
+    private string GpuDescription() =>
+        "结束进程可能丢失未保存内容，重启设备可能导致屏幕短暂闪烁。保持唤醒可减少独显休眠后唤醒的卡顿，但会增加功耗；实际空闲功耗状态由驱动决定。" +
+        (_keepAwake.Enabled && _keepAwake.Message.Length > 0 ? "\n" + _keepAwake.Message : "");
+
+    private async Task SetKeepAwakeAsync()
+    {
+        if (_closed || _updatingKeepAwake || _updatingGpuAction || _setKeepAwake is null || _keepAwakeButton is null) return;
+        _updatingKeepAwake = true;
+        RefreshOptionTile(_keepAwakeButton, _keepAwake.Enabled, pending: true);
+        if (_restartGpuButton is { } restart) restart.IsEnabled = false;
+        try { _keepAwake = await _setKeepAwake(!_keepAwake.Enabled); }
+        catch (Exception ex) { if (!_closed) _showInfo("保持独显唤醒设置失败", ex.Message); }
+        finally { _updatingKeepAwake = false; ApplyKeepAwakeState(_keepAwake); }
     }
 
     internal void SetAvailableUpdate(UpdateRelease? release, bool busy, Func<Task> install)
@@ -552,7 +606,7 @@ public sealed class TrayMenuWindow : Window
         SettingsMotion.Reposition(AdditionalSections);
 
         var capabilities = (state.ItsCapabilities.Supported, state.ItsCapabilities.GeekModeSupported,
-            state.BatteryCharge.Supported, state.NightCharge.Supported, state.FlipToStart.Supported, state.NvidiaGpuSupported);
+            state.BatteryCharge.Supported, state.NightCharge.Supported, state.FlipToStart.Supported, state.NvidiaGpuSupported || _keepAwake.Enabled);
         if (_capabilities != capabilities && _coreStack is not null &&
             !_updatingItsMode && !_updatingChargeMode && !_updatingNightCharge && !_updatingFlipToStart && !_updatingStartup)
         {

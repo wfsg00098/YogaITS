@@ -121,6 +121,32 @@ foreach (string preference in new[] { "GpuPreference=0;", "GpuPreference=1;", "G
 Check(AppGpuPreference.PowerSavingDefault("AutoHDREnable=1;") == "AutoHDREnable=1;GpuPreference=1;", "Default GPU preference preserves other graphics options");
 Check(AppGpuPreference.PowerSavingDefault("VRROptimizeEnable=0") == "VRROptimizeEnable=0;GpuPreference=1;", "Default GPU preference handles missing separator");
 Check(AppGpuPreference.PowerSavingDefault("NotGpuPreference=2;") == "NotGpuPreference=2;GpuPreference=1;", "GPU option matching is exact");
+Check(AppGpuPreference.HighPerformancePreference(null) == "GpuPreference=2;", "Keep-awake helper defaults to high-performance GPU");
+Check(AppGpuPreference.HighPerformancePreference("GpuPreference=1;AutoHDREnable=1;") == "AutoHDREnable=1;GpuPreference=2;", "Only the helper replaces a conflicting GPU preference and preserves other options");
+Check(GpuKeepAwakePolicy.CheckInterval == TimeSpan.FromMinutes(10), "Keep-awake health and parent checks use ten-minute intervals");
+foreach (uint vendor in new uint[] { 0x10DE, 0x8086, 0x1002, 0x1414, 0 })
+foreach (uint flags in new uint[] { 0, 1, 2, 3 })
+    Check(GpuKeepAwakePolicy.IsNvidiaHardware(vendor, flags) == (vendor == 0x10DE && (flags & 2) == 0), "Explicit NVIDIA vendor selection never chooses Intel/AMD/software adapters");
+foreach (bool enabled in new[] { false, true })
+foreach (bool present in new[] { false, true })
+foreach (bool supported in new[] { false, true })
+foreach (int effective in new[] { -1, 0, 1 })
+foreach (bool suspended in new[] { false, true })
+foreach (int power in new[] { -1, 0, 1 })
+    Check(GpuKeepAwakePolicy.MayRun(enabled, present, supported, effective, power, suspended) ==
+        (enabled && present && power == 0 && !suspended && (!supported || effective != 1)), "All modes stop on battery, unknown power, suspend or IGPU-only without clearing the preference");
+Check(SystemEventMonitor.ReadSleepState(0x0218, 4) == true, "Suspend is forwarded to the main keep-awake controller");
+foreach (nint resume in new nint[] { 7, 0x12 })
+    Check(SystemEventMonitor.ReadSleepState(0x0218, resume) == false, "Resume permits the main controller to re-evaluate keep-awake");
+Check(SystemEventMonitor.ReadSleepState(0x0218, 0xA) is null && SystemEventMonitor.ReadSleepState(0x0007, 4) is null,
+    "Power-source and focus changes do not overwrite suspend state");
+foreach (bool exists in new[] { false, true })
+foreach (int removed in new[] { 0, unchecked((int)0x887A0005), unchecked((int)0x887A0006), unchecked((int)0x887A0007) })
+    Check(GpuKeepAwakePolicy.IsDeviceUsable(exists, removed) == (exists && removed >= 0), "Device reset/removal/hang invalidates the retained context for recreation");
+Check(GpuKeepAwakePolicy.ParentMatches(123, 456, 123, 456, "YogaITS.Tray", false), "Keep-awake owner matches PID and start time");
+Check(!GpuKeepAwakePolicy.ParentMatches(123, 456, 123, 457, "YogaITS.Tray", false), "Reused parent PID is rejected");
+Check(!GpuKeepAwakePolicy.ParentMatches(123, 456, 123, 456, "YogaITS.Tray", true), "Exited parent is rejected");
+Check(!GpuKeepAwakePolicy.ParentMatches(123, 456, 123, 456, "other", false), "Foreign parent is rejected before creating a GPU context");
 var gpuOccupants = new[]
 {
     new GpuProcessInfo(int.MaxValue, "nvcontainer.exe"),
@@ -129,6 +155,10 @@ var gpuOccupants = new[]
     new GpuProcessInfo(int.MaxValue - 3, "explorer.exe"),
     new GpuProcessInfo(int.MaxValue - 4, "DWM.EXE"),
     new GpuProcessInfo(int.MaxValue - 5, "EXPLORER.EXE"),
+    new GpuProcessInfo(int.MaxValue - 6, "YogaITS.dGPUKeepAwake.exe"),
+    new GpuProcessInfo(int.MaxValue - 7, "YOGAITS.DGPUKEEPAWAKE"),
+    new GpuProcessInfo(int.MaxValue - 8, @"C:\Data\YogaITS\YogaITS.dGPUKeepAwake.exe"),
+    new GpuProcessInfo(int.MaxValue - 9, "alias", @"C:\Data\YogaITS\YogaITS.dGPUKeepAwake.exe"),
     new GpuProcessInfo(int.MaxValue, "duplicate"),
     new GpuProcessInfo(Environment.ProcessId, "YogaITS.Tray.exe"),
     new GpuProcessInfo(0, "idle"),

@@ -36,9 +36,18 @@ internal static class UpdateChecks
             });
         var release = UpdatePolicy.ParseRelease(Json());
         Check(release.Version == tag && release.Commit == commit && release.Sha256 == hash, "release identity and digest parsed");
-        Check(!UpdatePolicy.IsDifferent(release, tag + "+" + commit), "same release is hidden");
-        Check(!UpdatePolicy.IsDifferent(release, "5.0+" + commit), "same source in local build is hidden");
-        Check(UpdatePolicy.IsDifferent(release, "4.0+" + new string('f', 40)), "different GitHub latest source is offered without sorting hashes");
+        Check(!UpdatePolicy.IsNewer(release, tag + "+" + commit), "same release is hidden");
+        Check(!UpdatePolicy.IsNewer(release, "5.0+" + commit), "same source in local build is hidden");
+        Check(UpdatePolicy.IsNewer(release, "4.0+" + new string('f', 40)), "dated higher series can update a legacy build");
+        foreach (string current in new[] { "5.1-20261017000000-ffffffff", "6.0-20261019000000-ffffffff",
+            "5.0-20261018053120-ffffffff", "5.0-20261019000000-ffffffff", "5.0", "invalid" })
+            Check(!UpdatePolicy.IsNewer(release, current), "no downgrade, equal/older date, or ambiguous same-series local update: " + current);
+        foreach (string current in new[] { "5.0-20261017000000-ffffffff", "4.9-20261017000000-ffffffff" })
+            Check(UpdatePolicy.IsNewer(release, current), "newer date with equal/higher numeric series is offered: " + current);
+        Check(!UpdatePolicy.IsNewer(release, "4.9-20261019000000-ffffffff"), "higher series with older date is hidden");
+        Check(!UpdatePolicy.IsNewer(UpdatePolicy.ParseRelease(Json("6.0-abcdef12")), tag), "undated remote release cannot bypass date ordering");
+        Check(UpdatePolicy.IsNewer(UpdatePolicy.ParseRelease(Json("5.10-20261019000000-abcdef12")),
+            "5.9-20261018000000-ffffffff"), "minor version comparison is numeric, not lexical");
         Check(UpdatePolicy.ParseRelease(Json("4.0-abcdef12")).Version == "4.0-abcdef12", "old release names remain readable");
         Reject(() => UpdatePolicy.ParseRelease(Json(draft: true)), "draft rejected");
         Reject(() => UpdatePolicy.ParseRelease(Json(prerelease: true)), "prerelease rejected");

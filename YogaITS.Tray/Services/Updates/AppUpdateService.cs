@@ -27,7 +27,7 @@ internal sealed class AppUpdateService : IDisposable
                 try
                 {
                     var release = await _client.GetLatestAsync(_lifetime.Token);
-                    Available = UpdatePolicy.IsDifferent(release, UpdatePolicy.CurrentIdentity) ? release : null;
+                    Available = UpdatePolicy.IsNewer(release, UpdatePolicy.CurrentIdentity) ? release : null;
                     Changed?.Invoke();
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { Debug.WriteLine("Update check unavailable: " + ex.GetType().Name); }

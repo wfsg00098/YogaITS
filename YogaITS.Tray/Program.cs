@@ -12,7 +12,8 @@ internal static class Program
         ProcessComSecurity.InitializeEarly();
         try
         {
-            // Register only this executable's default before WinUI creates graphics resources.
+            // Keep the UI on its existing/power-saving GPU and the dedicated
+            // keep-awake executable on the high-performance GPU.
             // Windows can still require a subsequent launch to apply a new preference.
             AppGpuPreference.TrySetPowerSavingDefault();
             // Preserve the SDK's ComWrappers, dispatcher context and XAML startup.

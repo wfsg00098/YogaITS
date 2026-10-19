@@ -17,6 +17,7 @@ internal sealed class SystemEventMonitor : IDisposable
     public event Action? PowerChanged;
     public event Action? DisplayChanged;
     public event Action? AppearanceChanged;
+    public event Action<bool>? SleepStateChanged;
 
     public SystemEventMonitor(nint hwnd)
     {
@@ -42,6 +43,7 @@ internal sealed class SystemEventMonitor : IDisposable
         if (_disposed) return DefSubclassProc(hwnd, message, wParam, lParam);
         try
         {
+            if (ReadSleepState(message, wParam) is { } suspended) SleepStateChanged?.Invoke(suspended);
             Guid? setting = message == 0x0218 && wParam == 0x8013 && lParam != 0
                 ? Marshal.PtrToStructure<Guid>(lParam) : null;
             var change = ClassifyMessage(message, wParam, setting);
@@ -75,6 +77,9 @@ internal sealed class SystemEventMonitor : IDisposable
             return SystemStateChange.Display; // WM_DISPLAYCHANGE / DBT_DEVNODES_CHANGED.
         return SystemStateChange.None;
     }
+
+    internal static bool? ReadSleepState(uint message, nint wParam) => message != 0x0218 ? null :
+        wParam == 4 ? true : wParam == 7 || wParam == 0x12 ? false : null;
 
     private async Task NotifyDisplayAsync(CancellationToken token)
     {

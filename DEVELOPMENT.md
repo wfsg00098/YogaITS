@@ -43,7 +43,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 `.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
 
-根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.1`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，更新比较使用 GitHub latest 的版本/提交身份而非字符串排序，兼容旧 tag。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证规则。
+根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.1`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
 
 版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`；`5.0` 已封存至 `4ece4e7`（包含双路更新竞速）。
 
@@ -63,7 +63,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 ## 架构与刷新
 
-四组 probe 后端整合为独立服务，无常驻辅助进程，不依赖厂商 RPC 客户端 DLL。`SerializedFeatureService` 串行执行同一服务的读、写和关闭；首次检测及不同服务之间可并行。只由用户操作或已选择的显卡智能策略触发写入，不通过试写检测能力，无常态轮询。
+四组 probe 后端整合为独立服务，不依赖厂商 RPC 客户端 DLL。`SerializedFeatureService` 串行执行同一服务的读、写和关闭；首次检测及不同服务之间可并行。只由用户操作或已选择的显卡智能策略触发写入，不通过试写检测能力。保活 helper 只在用户启用且当前模式允许时驻留；其低频检查独立于原有硬件状态刷新。
 
 `MainWindow` 是隐藏的常驻消息宿主。`TrayMenuWindow` 共用完整/迷你窗口的核心功能；`FeatureCard`、`FeaturePanels` 提供新增功能。开窗读取缓存，获得焦点时刷新，避免重复叠加刷新批次。后台刷新不抢焦点。
 
@@ -145,6 +145,16 @@ G7+ 的初次集成反馈日志显示类和方法存在，但实例枚举 Next�
 每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。按用户要求仅将探针的无限枚举/mutex 等待替换为 30 秒后台等待；其他 native WMI/transport/protocol 代码保持探针原样。初始化结果、gate OFF、bytesReturned/bytesWritten 不额外阻断，仍由原探针的 live capability、GET、WriteFile 成功和最终回读判定。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
 
 独立探针在 ThinkBook 14 G6+ AHP、G7+ IAH 上验证 P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。集成版需对应 ThinkBook 再验收，不将原先 Yoga UI 全通过记录当作新增 TCON 写入已通过。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
+
+## 保持 NVIDIA 独显唤醒
+
+实现核对了 2026-10-19 查询到的 LLT 最新 dev [`9baf5a01`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/9baf5a01a95155a36aab7b48e7296316499cee52/LenovoLegionToolkit.Lib/System/DgpuAwakeManager.cs)（2026-10-17），而非首次引入版本；当前 master 为 `d0c57bfc`。重点保留 [`0bb32908`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/commit/0bb32908) 修正的 Vendor ID 选择和 GetDeviceRemovedReason 重建，以及最新 HybridMode/电源策略。最新 GPUController 对 RTX 50 的 GC6/GcOff 与 GpuNotPowered 状态处理用于核对边界，本功能不移植其遥测轮询，不根据一次 NVAPI 休眠回读反复销毁/创建 context，也不引入 P-State 锁定或超频。
+
+`YogaITS.dGPUKeepAwake` 是单独的 WinExe：枚举 DXGI 的硬件 NVIDIA（VendorId=0x10DE、排除软件适配器），以显式 adapter + D3D_DRIVER_TYPE_UNKNOWN + BGRA_SUPPORT 创建 D3D11 device/context；不创建窗口或 swap chain、不提交渲染，不在 Tray 进程加载这些图形调用。助手仅创建一次 context、等待停止/查询命令并释放资源，不监听电源、不定时检查设备、不自行重建。主程序每 10 分钟请求 GetDeviceRemovedReason 健康回读；失效、助手退出或 3 秒无响应时停止旧助手并重新启动，由新助手重新枚举 NVIDIA adapter。PnP/显示变化、恢复和供电事件另行即时触发主程序协调；睡眠由主程序停止助手、恢复后按条件启动。P8/Idle 是驱动决定的空闲状态，不保证固定 P8。
+
+父进程传入 PID、启动时间及私有停止/健康查询事件。helper 创建图形资源前检查 parent 名称/PID/启动时间，保留进程句柄避免 PID 复用；其唯一自主周期任务是每 10 分钟检查父进程是否已退出。正常关闭发停止事件、等待退出，超时仅结束自己创建的 helper；异常父进程退出时 helper 自动终止，OS 释放 context。主程序通过 stdout 的 ACTIVE/INVALID 状态更新 UI，健康回复先完成等待再异步更新 UI，避免串行门锁互相等待；不查询独显功耗，不因打开窗口或托盘悬停而轮询设备健康。
+
+偏好保存为 settings.json 的 `KeepDGpuAwake`，默认 false。与 LLT 仅在 Auto 离电暂停的条件不同，本项目所有模式都必须接 AC 才保活；离电或电源状态未知时一律停止助手但不清除偏好。主程序独立订阅电源事件并直接读取供电状态，不等待显卡模式 WMI 回读；十分钟监督也再次检查供电，作为事件丢失时的兜底。NVIDIA 不可用、集显模式或睡眠时同样暂停；条件允许后恢复。切集显前先停 helper 并等待释放，模式操作结束后按实际模式恢复。开启时两窗口禁用重启独显；批量过滤及执行前均保护 helper 名称，不改变 DWM/Explorer 及其他 LLT 终止规则。Main 的核显偏好保留用户选择；helper 的 GPU=2 偏好单独设置且保留其他图形选项。完整发布另包含 helper 的 exe/dll/deps/runtimeconfig，不要仅复制主 EXE。新增功能仍需混合显卡和重置/睡眠实机验收，既有机型测试记录不代表该新增功能已验收。
 
 ## 音频与声纹安全
 
