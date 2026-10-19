@@ -10,6 +10,8 @@
 - `Services/Color/LenovoTcon/`：最终 TCON 探针的 native WMI、SPB session 和色域回读路径。
 - `YogaITS.Tray/UI/`：完整/迷你窗口、信息窗口、功能卡片、原生动画、滚动条和辅助功能。
 - `YogaITS.Tray/Assets/YogaITS.ico`：编译进 EXE 的图标源，不单独复制到发布目录。
+- `YogaITS.dGPUKeepAwake/`：独立 NVIDIA 空闲 context 助手，不承载保活策略。
+- `YogaITS.Updater/`：等待主程序退出、校验/安装及失败回滚的更新助手。
 - `Tests/YogaITS.PolicyChecks/`：不操作硬件的逻辑检查。
 - `Tests/YogaITS.ReadOnlyProbe/`：能力与状态的只读诊断。
 - `main.png`、`mini.png`：README 使用的用户界面截图。
@@ -29,9 +31,9 @@ dotnet build .\YogaITS.Tray\YogaITS.Tray.csproj -c Debug
 .\dist\YogaITS.Tray.exe
 ```
 
-`build-clean.ps1` 删除本项目的 `bin/`、`obj/`、`dist/`，还原并发布 Release，验证 `YogaITS.Tray.pri`，移除 PDB/XML 和中间产物。执行前退出程序，避免发布文件被占用；`dist/` 中如有需要保留的诊断日志，先备份。
+`build-clean.ps1` 删除主项目的 `bin/`、`obj/`、`dist/`，还原并发布主程序及两个助手的 Release，验证 `YogaITS.Tray.pri` 和保活助手文件，移除 PDB/XML 和主项目中间产物。执行前退出程序，避免发布文件被占用；不要在 `dist/` 内存放需要保留的个人文件。
 
-仅编译主程序（不包含可交付的更新助手）：
+仅编译主程序（不包含可交付的更新/保活助手，不可用作完整交付）：
 
 ```powershell
 dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-contained false -o .\dist
@@ -47,7 +49,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`；`5.0` 已封存至 `4ece4e7`（包含双路更新竞速）。
 
-`5.1` 本地封存至 `56b725e`，包含独显保活、离电暂停及集显隐藏分组；用户已完成上一轮保活测试。5.2 的调度/异常恢复优化须重新验收，既有机型验证不自动视为本轮验收通过。
+`5.1` 封存分支固定在 `56b725e`，包含独显保活、离电暂停及集显隐藏分组；用户已完成上一轮保活测试。5.2 的调度/异常恢复优化须重新验收，既有机型验证不自动视为本轮验收通过。
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
@@ -71,7 +73,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 `GitHubUpdateClient` 同时请求固定仓库 `wfsg00098/YogaITS` 的 `/releases/latest` 与 `https://gh-proxy.org/` 对应代理地址，采用最先解析校验成功的结果，随即取消另一条请求。一条线路失败不抢占另一条仍在进行的有效请求；两条均失败才报错。元数据请求上限均为 20 秒。下载也双路同时进行，各用独立随机 `.part` 文件，先完整下载且通过大小与 SHA-256 校验的包胜出；取消并等待另一条释放文件句柄后发布获胜包、清理临时文件。下载响应头/读取空闲上限均为 20 秒，总时限各 8 分钟，不再按低速阈值切换线路。保留 HttpClient 默认系统代理行为，不发送凭证、序列号或配置。只接收正式版、预期仓库/文件名的 x64 ZIP、合理大小及 GitHub SHA-256 digest。第三方代理同时承载元数据与包时仍存在代理信任边界，SHA-256 并不等价于发行者数字签名。确认对话框不展示下载线路说明。
 
-更新暂存与旧文件备份位于 `%LOCALAPPDATA%\YogaITS\Updates\<GUID>\`，不写 Logs。拒绝 ZIP 路径穿越、重复路径、缺少必需文件及过大展开内容。助手从暂存目录运行，按 PID 和启动时间等待原进程退出，再从原 ZIP 重新验 hash/解压、备份被覆盖文件、复制及逐文件验 hash，最后重新启动原路径。复制、校验或启动失败回滚；回滚不完整时保留备份并明确提示。未运行常驻更新服务，不修改计划任务或硬件设置。
+更新暂存与旧文件备份位于 `%LOCALAPPDATA%\YogaITS\Updates\<GUID>\`，不写 Logs。拒绝 ZIP 路径穿越、重复路径、缺少必需文件及过大展开内容；必需清单包括主程序、PRI 和两个助手的 exe/dll/deps/runtimeconfig。助手从暂存目录运行，按 PID 和启动时间等待原进程退出，再从原 ZIP 重新验 hash/解压、备份被覆盖文件、复制及逐文件验 hash，最后重新启动原路径。复制、校验或启动失败回滚；回滚不完整时保留备份并明确提示。成功重启才写入 `completed` 标记，后续仅清理超过 7 天、标记内容正确且不含链接的 GUID 暂存。失败或未知目录保留。未运行常驻更新服务，不修改计划任务或硬件设置。
 
 自动检查覆盖模拟 HTTP 双路竞速/取消/坏包、版本身份、ZIP 路径安全、临时目录安装/配置保留及回滚。完整 UI 更新和真实程序重启仍需实机验收。
 
@@ -83,7 +85,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 普通启动打开完整窗口；独立 `--startup` 参数只驻留托盘。单实例通过当前用户会话的命名事件传递普通启动的开窗请求；再次 `--startup` 不影响当前窗口。旧版与集成版共用单实例标识和启动任务名称。
 
-开机自启查询 `Yoga ITS Tray` 任务 XML，任务必须启用且 Exec 路径与当前 EXE 一致；忽略大小写，规范化引号及绝对路径，旧安装路径或不可读任务显示关闭。开启时串行执行删除旧任务 → 创建当前路径任务（保留 `--startup`、最高权限、交互登录）→ 回读。删除失败只在 HRESULT 确认任务不存在时继续，创建不用 `/F` 覆盖竞态出现的任务。关闭也删除路径不匹配的旧任务；任何结果按实际回读更新 UI/缓存，避免删除成功、重建失败后错误保留开启状态。查询等待限 10 秒，异步操作限 30 秒；逻辑测试仅解析样例 XML，不改真实任务。
+开机自启查询 `Yoga ITS Tray` 任务 XML，任务必须启用且 Exec 路径与当前 EXE 一致；忽略大小写，规范化引号及绝对路径，任务不存在或旧安装路径显示关闭。查询失败为未知：保留已确认状态并禁用操作，不伪装为关闭。开启时串行执行删除旧任务 → 创建当前路径任务（保留 `--startup`、最高权限、交互登录）→ 回读。删除失败只在 HRESULT 确认任务不存在时继续，创建不用 `/F` 覆盖竞态出现的任务。关闭也删除路径不匹配的旧任务；任何结果按实际回读更新 UI/缓存，无法回读时返回 nullable unknown，避免重建失败或查询失败后错误更新开关。同步查询上限 10 秒，单次异步 schtasks 上限 30 秒；UI 操作由共享串行服务提供 20 秒等待边界，不提前释放后台任务。逻辑测试不改真实任务。
 
 创建任务使用显式 XML：允许电池供电启动、切到电池不停止，无空闲/网络前提，空闲结束不停止；任务和登录触发器的 `ExecutionTimeLimit` 均为 `PT0S`（无限制）。只在当前用户交互登录时启动并保持最高权限；不依赖 schtasks 默认的交流电条件或 72 小时上限。临时 XML 创建完成后才删除旧任务，注册后清理临时文件。
 
@@ -110,11 +112,11 @@ ITS 校验参考 [LLT ITSModeFeature](https://github.com/LenovoLegionToolkit-Tea
 
 旧版第四档按 LLT 查询 10 的 `0x00020001` 位检测，不要求现代 `ITS_CurrentSettingV`。开启时先设性能再发 `0x001F100B`，其他模式前尽力发 `0x000F100B` 清除旧极客覆盖；仍要求插电才能开启第四档。旧服务本身只回读三档，第四档标记与 LLT 一样仅在进程内跟踪，重启后或管家外部切换无法可靠区分，不宣称硬件独立回读第四档已验证。
 
-`dotnet run --project Tests/YogaITS.ReadOnlyProbe -- --its-only` 仅输出机型、后端、版本及模式/旧字段，便于在 IAH7 上比较管家切换前后；不发送任何设置命令。纯逻辑测试覆盖路径边界、指令顺序、双字段组合和第四档能力差异。2026-10-18：用户确认旧路径性能选项切换已在小新 Pro IAH7 实机测试成功；不据此扩大为该机型全部功能或所有旧款机型均已验证。
+`dotnet run --project Tests/YogaITS.ReadOnlyProbe -- --its-only` 仅输出机型、后端、版本及模式/旧字段，便于在 IAH7 上比较管家切换前后；不发送任何设置命令。纯逻辑测试覆盖路径边界、指令顺序、双字段组合和第四档能力差异。2026-10-18：用户确认小新 Pro 16 IAH7 的旧路径性能选项切换成功；完整机型验收范围以文末表格为准，不推广到所有旧款机型。
 
-显卡 WMI 直接对枚举实例调用方法，不依赖 ReturnValue，设置后等待并回读。NVIDIA 存在性随后台刷新更新，切至集显后独显休眠分组可动态隐藏；独显操作返回 Task，执行期间显示强调色并防止重复点击，结束后清除。
+显卡 WMI 直接对枚举实例调用方法，不依赖 ReturnValue，设置后等待并回读。NVIDIA 存在性随后台刷新更新；独显控制分组还检查实际集显模式，即使设备节点暂未消失或保存了保活开启配置也隐藏。显卡工作模式分组仍按 WMI 能力显示，允许切回双显。独显操作返回 Task，执行期间显示强调色并防止重复点击，结束后清除。
 
-结束独显占用进程对齐 LLT 的批量路径：NVAPI V2 活动进程列表按原始进程名忽略大小写排除 `dwm.exe`、`explorer.exe`，没有 NVIDIA 容器、SYSTEM 或 Session 0 排除；另保留本程序与无效 PID 的防护、PID 去重。逐个 `Kill(entireProcessTree: true)` 后异步等待根进程退出，单项异常不中断后续目标；撤销额外的 Enter/LeaveDebugMode 和 10 秒退出超时。NVAPI 查询失败按异常处理，不伪装为空列表。大小窗口保留 500 ms 执行前强调色提示。只有 LLT 的单项强制结束菜单允许直接操作桌面进程，本项目不提供该入口。
+结束独显占用进程保留 LLT 的批量路径：NVAPI V2 活动进程列表排除 `dwm.exe`、`explorer.exe`，并保护本程序、保活助手及无效 PID；没有 NVIDIA 容器、SYSTEM 或 Session 0 排除。枚举时保存进程启动时间，执行前再次检查当前进程名和 PID+启动时间，身份未知或复用则跳过。逐个 `Kill(entireProcessTree: true)` 后最多等待 5 秒，单项异常不中断后续目标；不切换进程级 debug privilege。设备重启的 pnputil 子进程等待上限 30 秒，超时提示结果待确认、不重复发送命令。NVAPI 查询失败按异常处理，不伪装为空列表。大小窗口保留 500 ms 执行前强调色提示；不提供直接强制结束桌面进程入口。
 
 参考固定版本 [LLT GPUController](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/d0c57bfc7ecc26d4ccf15bb3835fed7ac28a259f/LenovoLegionToolkit.Lib/Controllers/GPUController.cs) 与 [PhyscialGPUExtensions](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/d0c57bfc7ecc26d4ccf15bb3835fed7ac28a259f/LenovoLegionToolkit.Lib/Extensions/PhyscialGPUExtensions.cs)。NVAPIWrapper 的 V2 结构大小、容量 128 和查询失败语义也已核对。逻辑检查覆盖桌面进程大小写排除及容器保留，不实际结束进程；SYSTEM 容器与进程树处理需实机验收。NVAPI 返回数量不等同于 NVIDIA 托盘的可见应用数量，不能据此断言应全部结束。
 
@@ -154,27 +156,27 @@ TCON 模式位为 `0x0100=P3`、`0x0200=sRGB`、`0x0400=Adobe RGB`，必须同�
 
 应用入口先执行最终探针的 `ProcessComSecurity.InitializeEarly()`，以 DEFAULT/IMPERSONATE/EOAC_NONE 配置进程级 COM 安全，再启动 SDK 生成的 WinUI 主循环，退出时平衡主线程 COM。只读诊断入口同样在任何 WMI 之前初始化。不能仅在 TCON worker 中补调：此时 RPC_E_TOO_LATE 只说明进程安全已经固定，不能证明原设置适合实例枚举。
 
-G7+ 的初次集成反馈日志显示类和方法存在，但实例枚举 Next（含 enum blanket 重试）返回 `WBEM_E_ACCESS_DENIED`，尚未访问 SPB；排查发现遗漏了探针入口的早期初始化。补齐后，本机主程序及只读诊断日志均确认进程级 `CoInitializeSecurity=S_OK`，Yoga ICC 检测仍正常；G7+ 修正后需再次实机验收。
+G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 enum blanket 重试）返回 `WBEM_E_ACCESS_DENIED`，尚未访问 SPB；排查发现遗漏了探针入口的早期初始化。补齐后，主程序及只读诊断确认进程级 `CoInitializeSecurity=S_OK`，Yoga ICC 检测仍正常。后续用户已将 ThinkBook 14 G7+ IAH 列入完善测试机型，重点验证 TCON P3/sRGB 路径；5.2 的新增状态保持和调度仍需回归。
 
 每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。按用户要求仅将探针的无限枚举/mutex 等待替换为 30 秒后台等待；其他 native WMI/transport/protocol 代码保持探针原样。初始化结果、gate OFF、bytesReturned/bytesWritten 不额外阻断，仍由原探针的 live capability、GET、WriteFile 成功和最终回读判定。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
 
-独立探针在 ThinkBook 14 G6+ AHP、G7+ IAH 上验证 P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。集成版需对应 ThinkBook 再验收，不将原先 Yoga UI 全通过记录当作新增 TCON 写入已通过。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
+用户确认的集成版完善测试机型包含 ThinkBook 14 G6+ AHP、G6+ IMH、G7+ IAH，重点验证 TCON P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。这些是既有版本的验证记录，不替代 5.2 回归。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
 
 ## 保持 NVIDIA 独显唤醒
 
-实现核对了 2026-10-19 查询到的 LLT 最新 dev [`9baf5a01`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/9baf5a01a95155a36aab7b48e7296316499cee52/LenovoLegionToolkit.Lib/System/DgpuAwakeManager.cs)（2026-10-17），而非首次引入版本；当前 master 为 `d0c57bfc`。重点保留 [`0bb32908`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/commit/0bb32908) 修正的 Vendor ID 选择和 GetDeviceRemovedReason 重建，以及最新 HybridMode/电源策略。最新 GPUController 对 RTX 50 的 GC6/GcOff 与 GpuNotPowered 状态处理用于核对边界，本功能不移植其遥测轮询，不根据一次 NVAPI 休眠回读反复销毁/创建 context，也不引入 P-State 锁定或超频。
+实现核对了 2026-10-19 查询到的 LLT 最新 dev [`9baf5a01`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/9baf5a01a95155a36aab7b48e7296316499cee52/LenovoLegionToolkit.Lib/System/DgpuAwakeManager.cs)（2026-10-17），而非首次引入版本；核对时 master 为 `d0c57bfc`。重点参考 [`0bb32908`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/commit/0bb32908) 修正的 Vendor ID 选择和 GetDeviceRemovedReason 重建，以及该版本的 HybridMode/电源策略。该版本 GPUController 对 RTX 50 的 GC6/GcOff 与 GpuNotPowered 状态处理用于核对边界，本功能不移植其遥测轮询，不根据一次 NVAPI 休眠回读反复销毁/创建 context，也不引入 P-State 锁定或超频。
 
 `YogaITS.dGPUKeepAwake` 是单独的 WinExe：枚举 DXGI 的硬件 NVIDIA（VendorId=0x10DE、排除软件适配器），以显式 adapter + D3D_DRIVER_TYPE_UNKNOWN + BGRA_SUPPORT 创建 D3D11 device/context；不创建窗口或 swap chain、不提交渲染，不在 Tray 进程加载这些图形调用。助手仅创建一次 context、等待停止/查询命令并释放资源，不监听电源、不定时检查设备、不自行重建。主程序每 10 分钟请求 GetDeviceRemovedReason 健康回读；失效、助手退出或 3 秒无响应时停止旧助手并重新启动，由新助手重新枚举 NVIDIA adapter。PnP/显示变化、恢复和供电事件另行即时触发主程序协调；睡眠由主程序停止助手、恢复后按条件启动。P8/Idle 是驱动决定的空闲状态，不保证固定 P8。
 
 父进程传入 PID、启动时间及私有停止/健康查询事件。helper 创建图形资源前检查 parent 名称/PID/启动时间，保留进程句柄避免 PID 复用；其唯一自主周期任务是每 10 分钟检查父进程是否已退出。正常关闭发停止事件、等待退出，超时仅结束自己创建的 helper；异常父进程退出时 helper 自动终止，OS 释放 context。主程序通过 stdout 的 ACTIVE/INVALID 状态更新 UI，健康回复先完成等待再异步更新 UI，避免串行门锁互相等待；不查询独显功耗，不因打开窗口或托盘悬停而轮询设备健康。
 
-偏好保存为 settings.json 的 `KeepDGpuAwake`，默认 false。与 LLT 仅在 Auto 离电暂停的条件不同，本项目所有模式都必须接 AC 才保活；离电或电源状态未知时一律停止助手但不清除偏好。主程序独立订阅电源事件并直接读取供电状态，不等待显卡模式 WMI 回读；十分钟监督也再次检查供电，作为事件丢失时的兜底。NVIDIA 不可用、集显模式或睡眠时同样暂停；条件允许后恢复。切集显前先停 helper 并等待释放，模式操作结束后按实际模式恢复。开启时两窗口禁用重启独显；批量过滤及执行前均保护 helper 名称，不改变 DWM/Explorer 及其他 LLT 终止规则。Main 的核显偏好保留用户选择；helper 的 GPU=2 偏好单独设置且保留其他图形选项。完整发布另包含 helper 的 exe/dll/deps/runtimeconfig，不要仅复制主 EXE。新增功能仍需混合显卡和重置/睡眠实机验收，既有机型测试记录不代表该新增功能已验收。
+偏好保存为 settings.json 的 `KeepDGpuAwake`，默认 false。与 LLT 仅在 Auto 离电暂停的条件不同，本项目所有模式都必须接 AC 才保活；离电或电源状态未知时一律停止助手但不清除偏好。主程序独立订阅电源事件并直接读取供电状态，不等待显卡模式 WMI 回读；十分钟监督也再次检查供电，作为事件丢失时的兜底。NVIDIA 不可用、集显模式、状态未知或睡眠时暂停；条件允许后恢复。切集显前先停 helper 并等待释放，模式操作结束后按实际模式恢复；停止失败保留进程所有权，不启动第二份。集显模式下独显控制分组隐藏，开启配置保留；只有完整窗口提供保活卡片，两窗口均按保活开启配置禁用重启独显。Main 的核显偏好保留用户选择；helper 的 GPU=2 偏好单独设置且保留其他图形选项。完整发布另包含 helper 的 exe/dll/deps/runtimeconfig，不要仅复制主 EXE。5.1 保活已获用户测试完成确认；不据此宣称所有混合显卡、RTX 50 或重置/睡眠组合均已验证，5.2 调度优化另需回归。
 
 ## 音频与声纹安全
 
 Elevoc 使用自建 Direct RPC：RPCRT4、`ncalrpc:ElevocRpcEndpoint`、NDR32，启动执行只读 ABI 自检。不加载 ElevocUAPO.dll，不依赖版本、SHA256 或 RVA。Core Audio 使用完整 x64 PROPVARIANT（24 字节，指针偏移 8），内置阵列按 JackSubType 的 MIC_ARRAY/PROCESSING_MIC_ARRAY 判断，不靠设备名猜测。
 
-麦克风模式为 `environmental/private/shared/special/voiceid`。关闭统一写入 `environmental`，不区分耳机/内置；`off` 仅保留旧状态恢复兼容。设置后等待 150 ms 并回读，不匹配提示请求/实际模式和设备。耳机不提供多人通话；仅听机主只在 private/voiceid 下显示，人声定位只在 shared/special 下显示，且均要求内置麦克风及对应能力。未注册声纹时仅听机主禁用。
+麦克风模式为 `environmental/private/shared/special/voiceid`。关闭统一写入 `environmental`，不区分耳机/内置；`off` 仅保留旧状态恢复兼容。设置后先等待 150 ms，再通过有限回读确认；扬声器同样不因一次迟延回读就立即报错。回读只查询、不重发设置命令；最终不匹配提示请求/实际模式和设备。耳机不提供多人通话；仅听机主只在 private/voiceid 下显示，人声定位只在 shared/special 下显示，且均要求内置麦克风及对应能力。未注册声纹时仅听机主禁用。
 
 声纹注册顺序：保存原模式 → private → 48 kHz/20 秒录音 → mono FLOAT32 WAV → SetSpeakerID(file) → registered → voiceid → 有效 data[192] → 最终复核。不修改 timestamp，不依赖 debug PCM 或声纹磁盘格式；private 返回 metadata-only 不视为声纹丢失。
 
@@ -187,7 +189,7 @@ WinMM 清理按 Stop → Reset → Unprepare → Close → 释放内存；任一
 ## UI 与辅助功能
 
 - 大窗口为可滚动纵向分组，默认宽度 492 DIP；四周 Padding 8 DIP，组标题 14 DIP SemiBold，卡片最小高 48 DIP、字体 12.5 DIP。同排按钮 Stretch、允许换行，不固定高度截断文字。
-- 小窗口提供性能、充电、独显休眠和独立退出；无型号、杂项、自启、开盖开机。退出最小高 28 DIP，宽度与功能组总宽度对齐。
+- 小窗口提供性能、充电、独显控制的结束进程/重启设备和独立退出；不提供保活卡片，无型号、杂项、自启、开盖开机。退出最小高 28 DIP，宽度与功能组总宽度对齐。
 - 分组只用独立灰色分割线，按钮无静态填充，灰色/强调色边框表示状态。原生指针各状态共享同一个 Outline 画刷，修改 Color 即时刷新，不替换 Style。等待回读保留原选中项，给请求项加待确认边框，说明确认后才切换。
 - 复用按钮、网格、说明容器及最新回调，操作期间保留状态行，不临时禁用普通按钮导致焦点跳转；通过忙碌标志阻止重复执行。真实能力/录制限制仍禁用。开盖开机只有操作后追加重启提示。
 - 两窗口使用原生 MicaBackdrop、透明根背景，由系统处理获焦/失焦过渡和纯色回退；大窗口只获焦时强制强调色细边框，失焦恢复系统默认，小窗口保持原有边框行为。
@@ -200,7 +202,7 @@ WinMM 清理按 Stop → Reset → Unprepare → Close → 释放内存；任一
 
 ## 配置与隐私
 
-- `%LOCALAPPDATA%\YogaITS\settings.json`：显卡逻辑模式及色域亮度偏好。
+- `%LOCALAPPDATA%\YogaITS\settings.json`：`GpuWorkingMode` 显卡策略、`GamutApplyBrightness` 色域亮度偏好及默认关闭的 `KeepDGpuAwake` 保活配置。保活暂停不会清除开启配置。
 - `%LOCALAPPDATA%\YogaITS\ColorCalibration\Factory\`：验证后的工厂 ICC 源文件。
 - 程序不创建 `Logs` 目录或写入日志文件；错误仍通过界面提示，原生 TCON 诊断回调采用无输出适配，不改变探针链路行为。
 - 在线恢复弹确认框，默认取消；仅确认后向 Lenovo 发送序列号。下载使用 `Accept: */*`，下载与暂存副本均校验后替换缓存。不能给 ZIP 强制使用 JSON-only Accept。
@@ -210,7 +212,7 @@ WinMM 清理按 Stop → Reset → Unprepare → Close → 释放内存；任一
 
 ```powershell
 dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release
-dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executable .\dist\YogaITS.Tray.exe
+dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executable .\dist\YogaITS.Tray.exe --updater-executable .\dist\YogaITS.Updater.exe
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 
@@ -230,7 +232,18 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 
 ## 实机验收记录
 
-**验收设备：Yoga Pro 16 IPH11。用户确认本机全部实机验收项目通过。** 以下为用户实测结论，不是自动化测试的硬件操作记录；其他机型尚未验收，不将本机结果推广为全系列兼容性承诺。
+以下是用户确认的既有版本完善测试记录；除基准机型外，重点验证与 Yoga Pro 16 IPH11 不同的实现路径，而非仅测试表中一项功能。
+
+| 已完善测试的机型 | 重点验证路径 |
+| --- | --- |
+| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证。 |
+| 小新 Pro 16 IAH7 | 旧版 ITS 服务的性能选项切换。 |
+| 小新 Pro 16 IAH10 | 不同屏幕配置下的 ICC 色域切换。 |
+| ThinkBook 14 G6+ AHP | TCON 硬件色域控制，P3/sRGB 切换。 |
+| ThinkBook 14 G6+ IMH | TCON 硬件色域控制，P3/sRGB 切换。 |
+| ThinkBook 14 G7+ IAH | TCON 硬件色域控制，P3/sRGB 切换。 |
+
+**Yoga Pro 16 IPH11 的既有实机验收清单如下，用户已确认全部通过。** 这些不是自动化测试的硬件操作记录，也不自动代表 5.2 新调度及异常恢复已回归通过。其他机型仍需确认，不承诺全系列兼容。
 
 - [x] 启动/UAC、单实例、普通启动与开机静默启动、托盘左右键、左右窗口同步及 Explorer 重启恢复。
 - [x] 大小窗口首次/反复打开、关闭/退出、前台焦点、标题拖动/最大化及控制按钮，不报错、不闪退。
@@ -246,7 +259,7 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 - [x] 20 秒声纹录制、停止丢弃、设备变化取消、重新注册/读取/删除、录制期间降噪禁用及提示保留。
 - [x] 本机能力动态显示/隐藏、恢复后重新检测、焦点刷新不叠加、失焦/最小化/关闭后的后台状态刷新。
 
-跨机型验收仍须由对应硬件用户执行；ThinkBook 等不同平台需重点复核 ITS 扩展模式、传感器、面板及音频端点能力。
+2026-10-19：5.2 优化提交 `959e4a8` 的主程序与只读探针编译通过，完整发布检查为 **1111 项通过**；另运行仅使用自建父/子进程的进程树测试及版本命名检查。dev 版已按用户要求启动，尚未收到 5.2 完整实机回归通过的确认。后续更改或其他机型仍须由对应硬件用户验收。
 
 ## 提交与维护
 
