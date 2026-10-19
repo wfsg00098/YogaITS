@@ -381,7 +381,7 @@ public sealed class TrayMenuWindow : Window
         _nightChargeVisual = _flipToStartVisual = _startupVisual = null;
         _nightChargeSupported = night.Supported;
         _flipToStartSupported = flip.Supported;
-        _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia || _keepAwake.Enabled);
+        _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia);
 
         if (_fullWindow)
         {
@@ -480,7 +480,7 @@ public sealed class TrayMenuWindow : Window
 
         _keepAwakeButton = _restartGpuButton = null;
         _gpuDescription = null;
-        if (nvidia || _keepAwake.Enabled)
+        if (nvidia)
         {
             _restartGpuButton = CreateActionTile("重启独显设备", _restartGpu);
             var gpuItems = new List<UIElement>
@@ -606,7 +606,7 @@ public sealed class TrayMenuWindow : Window
         SettingsMotion.Reposition(AdditionalSections);
 
         var capabilities = (state.ItsCapabilities.Supported, state.ItsCapabilities.GeekModeSupported,
-            state.BatteryCharge.Supported, state.NightCharge.Supported, state.FlipToStart.Supported, state.NvidiaGpuSupported || _keepAwake.Enabled);
+            state.BatteryCharge.Supported, state.NightCharge.Supported, state.FlipToStart.Supported, state.NvidiaGpuSupported);
         if (_capabilities != capabilities && _coreStack is not null &&
             !_updatingItsMode && !_updatingChargeMode && !_updatingNightCharge && !_updatingFlipToStart && !_updatingStartup)
         {

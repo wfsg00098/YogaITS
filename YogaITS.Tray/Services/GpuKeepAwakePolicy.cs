@@ -9,6 +9,8 @@ internal static class GpuKeepAwakePolicy
 
     public static bool IsNvidiaHardware(uint vendor, uint flags) => vendor == 0x10DE && (flags & 2) == 0;
     public static bool IsDeviceUsable(bool exists, int removedReason) => exists && removedReason >= 0;
+    public static bool ShowGpuControls(bool present, bool modeSupported, int effectiveMode) =>
+        present && (!modeSupported || effectiveMode != 1);
     public static bool ParentMatches(int expectedPid, long expectedTicks, int pid, long ticks, string name, bool exited) =>
         expectedPid > 0 && expectedTicks > 0 && !exited && pid == expectedPid && ticks == expectedTicks &&
         name.Equals("YogaITS.Tray", StringComparison.OrdinalIgnoreCase);

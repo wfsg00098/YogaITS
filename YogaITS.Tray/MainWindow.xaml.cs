@@ -90,7 +90,9 @@ public sealed partial class MainWindow : Window
                 _stateCache.UpdateNvidiaPresence(_gpu.Snapshot.NvidiaPresent);
             }
             _featurePanels?.Render();
-            _ = ConfigureKeepAwakeAsync();
+            // The mode may change before PnP removes the NVIDIA device. Update
+            // visibility even when UpdateNvidiaPresence did not raise Changed.
+            ApplyCoreState();
         });
         _ = InitializeGpuAndKeepAwakeAsync();
         _hpd.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
@@ -181,7 +183,7 @@ public sealed partial class MainWindow : Window
     {
         // Critical path: cache only. No WMI, EnergyDrv, registry/service state
         // probing, or schtasks query is performed before the window is shown.
-        AppRuntimeSnapshot state = _stateCache.Snapshot;
+        AppRuntimeSnapshot state = GetWindowState();
         _trayIcon?.SetTooltip(BuildTooltip(state));
 
         try
@@ -346,9 +348,19 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private AppRuntimeSnapshot GetWindowState()
+    {
+        var state = _stateCache.Snapshot;
+        var mode = _gpu.Snapshot;
+        // UI-only projection: leave actual presence and the persisted keep-awake
+        // preference untouched so a paused preference can resume later.
+        return state with { NvidiaGpuSupported = GpuKeepAwakePolicy.ShowGpuControls(
+            state.NvidiaGpuSupported, mode.Supported, mode.EffectiveMode) };
+    }
+
     private void ApplyCoreState()
     {
-        AppRuntimeSnapshot state = _stateCache.Snapshot;
+        AppRuntimeSnapshot state = GetWindowState();
         _trayIcon?.SetTooltip(BuildTooltip(state));
         _trayMenuWindow?.ApplyRefreshedState(state);
         _controlCenterWindow?.ApplyRefreshedState(state);

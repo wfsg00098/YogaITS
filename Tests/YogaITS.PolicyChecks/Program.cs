@@ -124,6 +124,11 @@ Check(AppGpuPreference.PowerSavingDefault("NotGpuPreference=2;") == "NotGpuPrefe
 Check(AppGpuPreference.HighPerformancePreference(null) == "GpuPreference=2;", "Keep-awake helper defaults to high-performance GPU");
 Check(AppGpuPreference.HighPerformancePreference("GpuPreference=1;AutoHDREnable=1;") == "AutoHDREnable=1;GpuPreference=2;", "Only the helper replaces a conflicting GPU preference and preserves other options");
 Check(GpuKeepAwakePolicy.CheckInterval == TimeSpan.FromMinutes(10), "Keep-awake health and parent checks use ten-minute intervals");
+foreach (bool present in new[] { false, true })
+foreach (bool supported in new[] { false, true })
+foreach (int effective in new[] { -1, 0, 1 })
+    Check(GpuKeepAwakePolicy.ShowGpuControls(present, supported, effective) ==
+        (present && (!supported || effective != 1)), "GPU controls hide in integrated-only mode even before NVIDIA disappears; persisted keep-awake does not override visibility");
 foreach (uint vendor in new uint[] { 0x10DE, 0x8086, 0x1002, 0x1414, 0 })
 foreach (uint flags in new uint[] { 0, 1, 2, 3 })
     Check(GpuKeepAwakePolicy.IsNvidiaHardware(vendor, flags) == (vendor == 0x10DE && (flags & 2) == 0), "Explicit NVIDIA vendor selection never chooses Intel/AMD/software adapters");
