@@ -43,9 +43,9 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 `.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
 
-根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.0`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，更新比较使用 GitHub latest 的版本/提交身份而非字符串排序，兼容旧 tag。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证规则。
+根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.1`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，更新比较使用 GitHub latest 的版本/提交身份而非字符串排序，兼容旧 tag。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证规则。
 
-版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`。
+版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`；`5.0` 已封存至 `4ece4e7`（包含双路更新竞速）。
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 

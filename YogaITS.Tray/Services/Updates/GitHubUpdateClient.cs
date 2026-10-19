@@ -10,7 +10,8 @@ internal sealed class GitHubUpdateClient : IDisposable
     {
         _http = handler is null ? new HttpClient() : new HttpClient(handler);
         _http.Timeout = Timeout.InfiniteTimeSpan;
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("YogaITS-Updater/5.0");
+        var version = typeof(GitHubUpdateClient).Assembly.GetName().Version ?? new Version(1, 0);
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"YogaITS-Updater/{version.Major}.{version.Minor}");
     }
 
     public async Task<UpdateRelease> GetLatestAsync(CancellationToken cancellationToken)
