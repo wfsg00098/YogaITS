@@ -533,7 +533,7 @@ public sealed class TrayMenuWindow : Window
         {
             XamlRoot = _contentRoot.XamlRoot,
             Title = "更新 Yoga控制中心",
-            Content = $"是否下载并安装 {version}？下载并验证完成后，程序将退出、更新并重新启动。配置与校色文件会保留。\n\n优先从 GitHub 下载，连接不畅时使用 gh-proxy.org 加速。",
+            Content = $"是否下载并安装 {version}？下载并验证完成后，程序将退出、更新并重新启动。配置与校色文件会保留。",
             PrimaryButtonText = "更新", CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Close
         };

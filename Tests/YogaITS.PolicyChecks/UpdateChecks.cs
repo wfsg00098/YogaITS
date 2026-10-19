@@ -51,7 +51,8 @@ internal static class UpdateChecks
         using (var client = new GitHubUpdateClient(handler))
         {
             Check((await client.GetLatestAsync(default)).Version == tag, "direct metadata succeeds");
-            Check(handler.Requests.Count == 1 && handler.Requests[0].Host == "api.github.com", "no proxy when direct works");
+            Check(handler.Requests.Count == 2 && handler.Requests[0].Host == "api.github.com" &&
+                handler.Requests[1].Host == "gh-proxy.org", "both metadata routes start even if direct finishes immediately");
         }
         foreach (bool invalidJson in new[] { false, true })
         {
@@ -59,13 +60,39 @@ internal static class UpdateChecks
                 ? invalidJson ? Response("<html>gateway</html>") : new HttpResponseMessage(HttpStatusCode.Forbidden)
                 : Response(Json())));
             using var client = new GitHubUpdateClient(handler);
-            Check((await client.GetLatestAsync(default)).Version == tag, "metadata errors fall back");
-            Check(handler.Requests.Count == 2 && handler.Requests[1].Host == "gh-proxy.org", "metadata fallback uses requested proxy");
+            Check((await client.GetLatestAsync(default)).Version == tag, "invalid first metadata does not defeat the other route");
+            Check(handler.Requests.Count == 2 && handler.Requests[1].Host == "gh-proxy.org", "both metadata routes participate");
         }
         using (var handler = new FakeHttp((index, _) => index == 1
             ? Task.FromException<HttpResponseMessage>(new TaskCanceledException()) : Task.FromResult(Response(Json()))))
         using (var client = new GitHubUpdateClient(handler))
-            Check((await client.GetLatestAsync(default)).Version == tag, "direct timeout falls back");
+            Check((await client.GetLatestAsync(default)).Version == tag, "one route timeout does not cancel the other");
+        foreach (bool proxyWins in new[] { false, true })
+        {
+            var responses = new[] { new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously),
+                new TaskCompletionSource<HttpResponseMessage>(TaskCreationOptions.RunContinuationsAsynchronously) };
+            var canceled = new bool[2];
+            using var handler = new FakeHttp(async (index, token) =>
+            {
+                try { return await responses[index - 1].Task.WaitAsync(token); }
+                catch (OperationCanceledException) { canceled[index - 1] = token.IsCancellationRequested; throw; }
+            });
+            using var client = new GitHubUpdateClient(handler);
+            Task<UpdateRelease> checking = client.GetLatestAsync(default);
+            Check(handler.Requests.Count == 2 && !checking.IsCompleted, "both metadata requests start before either response arrives");
+            int winner = proxyWins ? 1 : 0;
+            string version = proxyWins ? "5.1-20261019000000-abcdef12" : tag;
+            responses[winner].SetResult(Response(Json(version)));
+            Check((await checking.WaitAsync(TimeSpan.FromSeconds(5))).Version == version, "first valid metadata wins regardless of route");
+            Check(canceled[1 - winner], "losing metadata request is canceled and observed before return");
+        }
+        using (var handler = new FakeHttp((_, _) => Task.FromResult(Response("invalid JSON"))))
+        using (var client = new GitHubUpdateClient(handler))
+        {
+            bool rejected = false;
+            try { await client.GetLatestAsync(default); } catch (HttpRequestException) { rejected = true; }
+            Check(rejected && handler.Requests.Count == 2, "two failed metadata routes report failure");
+        }
         using (var stop = new CancellationTokenSource())
         using (var handler = new FakeHttp((_, _) => { stop.Cancel(); return Task.FromCanceled<HttpResponseMessage>(stop.Token); }))
         using (var client = new GitHubUpdateClient(handler))
@@ -84,8 +111,49 @@ internal static class UpdateChecks
             using (var client = new GitHubUpdateClient(handler))
             {
                 await client.DownloadAsync(release, download, default);
-                Check(File.ReadAllBytes(download).SequenceEqual(bytes), "corrupt direct data retries and replaces file from proxy");
-                Check(handler.Requests.Count == 2 && handler.Requests[1].Host == "gh-proxy.org", "download fallback reaches proxy");
+                Check(File.ReadAllBytes(download).SequenceEqual(bytes), "corrupt direct data cannot defeat the valid proxy package");
+                Check(handler.Requests.Count == 2 && handler.Requests[1].Host == "gh-proxy.org", "both download routes start");
+            }
+            foreach (bool proxyWins in new[] { false, true })
+            {
+                var slow = new PartialDownloadStream(bytes[..4]);
+                using var handler = new FakeHttp(async (index, token) =>
+                {
+                    bool winner = (index == 2) == proxyWins;
+                    if (winner) await slow.Waiting.Task.WaitAsync(token);
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = winner ? new ByteArrayContent(bytes) : new StreamContent(slow) };
+                });
+                using var client = new GitHubUpdateClient(handler);
+                await client.DownloadAsync(release, download, default).WaitAsync(TimeSpan.FromSeconds(5));
+                Check(handler.Requests.Count == 2 && slow.Canceled && slow.Disposed, "winning download cancels and disposes the other partially downloaded response");
+                Check(File.ReadAllBytes(download).SequenceEqual(bytes), "separate temporary files prevent partial data from corrupting the winner");
+                Check(!Directory.EnumerateFiles(temporary, "*.part").Any(), "both partial download files are cleaned after success");
+            }
+            File.WriteAllText(download, "existing archive");
+            using (var handler = new FakeHttp((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                   { Content = new ByteArrayContent(new byte[bytes.Length]) })))
+            using (var client = new GitHubUpdateClient(handler))
+            {
+                bool rejected = false;
+                try { await client.DownloadAsync(release, download, default); } catch (HttpRequestException) { rejected = true; }
+                Check(rejected && handler.Requests.Count == 2, "neither invalid package may win");
+                Check(File.ReadAllText(download) == "existing archive", "failed race does not replace an existing archive");
+                Check(!Directory.EnumerateFiles(temporary, "*.part").Any(), "partial files are cleaned when both hashes fail");
+            }
+            using (var stop = new CancellationTokenSource())
+            {
+                var streams = new[] { new PartialDownloadStream(bytes[..4]), new PartialDownloadStream(bytes[..4]) };
+                using var handler = new FakeHttp((index, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new StreamContent(streams[index - 1]) }));
+                using var client = new GitHubUpdateClient(handler);
+                Task downloading = client.DownloadAsync(release, download, stop.Token);
+                await Task.WhenAll(streams.Select(stream => stream.Waiting.Task)).WaitAsync(TimeSpan.FromSeconds(5));
+                stop.Cancel();
+                bool canceled = false;
+                try { await downloading.WaitAsync(TimeSpan.FromSeconds(5)); } catch (OperationCanceledException) { canceled = true; }
+                Check(canceled && streams.All(stream => stream.Canceled && stream.Disposed), "caller cancellation stops and disposes both active downloads");
+                Check(File.ReadAllText(download) == "existing archive" && !Directory.EnumerateFiles(temporary, "*.part").Any(), "canceled downloads preserve the destination and remove partial files");
             }
             Reject(() => UpdatePackage.VerifyArchive(download, new string('0', 64)), "bad archive digest rejected");
             foreach (string bad in new[] { "../outside", "/absolute", "C:/Windows/test", "sub/../../escape", "a\\..\\escape", "NUL.txt", "CON", "dir./file", "space /file" })
@@ -162,6 +230,37 @@ internal static class UpdateChecks
     }
 
     private static HttpResponseMessage Response(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
+
+    private sealed class PartialDownloadStream(byte[] prefix) : Stream
+    {
+        private bool _sentPrefix;
+        public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Canceled { get; private set; }
+        public bool Disposed { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!_sentPrefix)
+            {
+                _sentPrefix = true;
+                prefix.AsMemory().CopyTo(buffer);
+                return prefix.Length;
+            }
+            Waiting.TrySetResult();
+            try { await Task.Delay(Timeout.Infinite, cancellationToken); return 0; }
+            catch (OperationCanceledException) { Canceled = cancellationToken.IsCancellationRequested; throw; }
+        }
+        protected override void Dispose(bool disposing) { Disposed = true; base.Dispose(disposing); }
+        public override void Flush() => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 
     private sealed class FakeHttp(Func<int, CancellationToken, Task<HttpResponseMessage>> respond) : HttpMessageHandler
     {
