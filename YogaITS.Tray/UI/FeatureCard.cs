@@ -23,6 +23,7 @@ internal sealed class FeatureCard : IDisposable
     };
     private bool _busy;
     private bool _visible;
+    private bool _available = true;
     private bool _closed;
     private string? _lastError;
     private int _nextChild;
@@ -44,11 +45,13 @@ internal sealed class FeatureCard : IDisposable
         SettingsMotion.SeparateDivider(View);
     }
 
-    public void Update(bool visible, Action<StackPanel> render)
+    public void Update(bool visible, Action<StackPanel> render, bool available = true, bool preserveError = false)
     {
         if (_closed) return;
         _render = render;
         _visible = visible;
+        _available = available;
+        if (available && !preserveError) _lastError = null;
         if (_busy)
             return;
         View.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
@@ -60,7 +63,8 @@ internal sealed class FeatureCard : IDisposable
         while (_body.Children.Count > _nextChild)
             _body.Children.RemoveAt(_body.Children.Count - 1);
         RefreshFooterVisibility();
-        if (_lastError is not null)
+        if (!available) SetStatus("暂时无法读取状态，请稍后重试。已禁用操作，未更改设置。");
+        else if (_lastError is not null)
             SetStatus(_lastError);
     }
 
@@ -90,11 +94,11 @@ internal sealed class FeatureCard : IDisposable
     }
 
     public Button Option(string label, bool selected, Func<Task> action, bool enabled = true,
-        bool keepInteractive = false, bool isAction = false)
+        bool keepInteractive = false, bool isAction = false, bool allowWhenUnavailable = false)
     {
         Button button = TrayMenuWindow.CreateOptionTile(label, selected, isAction, TrayMenuWindow.OptionTileHeightDip,
             TrayMenuWindow.ControlCenterButtonFontSize);
-        button.IsEnabled = enabled;
+        button.IsEnabled = enabled && (_available || allowWhenUnavailable);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button,
             UiAccessibility.GroupedName(_title.Text, label));
         _bindings.Add(button, new OptionBinding(action, keepInteractive, selected));
@@ -193,7 +197,7 @@ internal sealed class FeatureCard : IDisposable
             {
                 TrayMenuWindow.RefreshOptionTile(button, binding.Selected);
                 if (_render is not null)
-                    Update(_visible, _render);
+                    Update(_visible, _render, _available, preserveError: true);
                 if (_lastError is not null)
                     SetStatus(_lastError, announce: true);
                 else UiAccessibility.Announce(_title, "操作完成。" + _status.Text);

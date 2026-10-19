@@ -11,22 +11,21 @@ public static class StartupTaskHelper
     private const int TaskNotFound = unchecked((int)0x80070002);
     private static readonly SemaphoreSlim MutationGate = new(1, 1);
 
-    public static bool IsEnabled()
+    public static bool IsEnabled() => ReadEnabled() ?? false;
+
+    public static bool? ReadEnabled()
     {
         try
         {
-            // IMPORTANT:
-            // This method is called from the WinUI UI thread when the tray menu
-            // opens. Do not call an async method and block on GetResult() here,
-            // because its continuation may need the same DispatcherQueue and
-            // deadlock the UI before the Mica window is created.
+            // Background cache refresh only; a failed query is unknown, not off.
             ProcessResult result = QueryTaskSync();
-            return result.ExitCode == 0 &&
-                StartupTaskPolicy.IsEnabledForExecutable(result.StdOut, Environment.ProcessPath);
+            if (result.ExitCode == TaskNotFound) return false;
+            return result.ExitCode == 0
+                ? StartupTaskPolicy.IsEnabledForExecutable(result.StdOut, Environment.ProcessPath) : null;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 
@@ -66,12 +65,12 @@ public static class StartupTaskHelper
             {
                 result = new(false, $"开机自启操作失败：{ex.Message}");
             }
-            bool actual = false;
+            bool? actual = null;
             try
             {
                 ProcessResult query = await QueryTaskAsync().ConfigureAwait(false);
-                actual = query.ExitCode == 0 &&
-                    StartupTaskPolicy.IsEnabledForExecutable(query.StdOut, Environment.ProcessPath);
+                actual = query.ExitCode == TaskNotFound ? false : query.ExitCode == 0
+                    ? StartupTaskPolicy.IsEnabledForExecutable(query.StdOut, Environment.ProcessPath) : null;
             }
             catch { /* Unknown/unreadable does not count as enabled. */ }
             if (result.Success && actual != enabled)

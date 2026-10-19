@@ -29,6 +29,9 @@ internal static class Program
             // Re-extract the authenticated archive instead of trusting the earlier staging copy.
             UpdatePackage.ExtractAndVerify(plan.Archive, verified, plan.Sha256);
             UpdateInstallation.Apply(verified, plan.TargetDirectory, () => Restart(plan.TargetDirectory));
+            // Failed/partial rollback directories never receive this marker.
+            try { await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(plan.Archive)!, "completed"), "YogaITS.Update.Completed.v1"); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
         }
         catch (Exception ex)
         {

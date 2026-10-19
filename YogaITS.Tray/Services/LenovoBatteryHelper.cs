@@ -53,6 +53,9 @@ public static class LenovoBatteryHelper
     private const uint FileAttributeNormal = 0x00000080;
 
     public static BatteryChargeSnapshot ReadChargeMode()
+        => BatteryDriverAccess.Read(ReadChargeModeCore);
+
+    private static BatteryChargeSnapshot ReadChargeModeCore()
     {
         try
         {
@@ -68,6 +71,9 @@ public static class LenovoBatteryHelper
     }
 
     public static BatteryToggleSnapshot ReadNightCharge()
+        => BatteryDriverAccess.Read(ReadNightChargeCore);
+
+    private static BatteryToggleSnapshot ReadNightChargeCore()
     {
         try
         {
@@ -82,7 +88,7 @@ public static class LenovoBatteryHelper
     }
 
     public static Task<BatteryActionResult> SetChargeModeAsync(BatteryChargeMode mode) =>
-        Task.Run(async () =>
+        BatteryDriverAccess.WriteAsync(async () =>
         {
             try
             {
@@ -123,7 +129,7 @@ public static class LenovoBatteryHelper
         });
 
     public static Task<BatteryToggleResult> SetNightChargeAsync(bool enabled) =>
-        Task.Run(async () =>
+        BatteryDriverAccess.WriteAsync(async () =>
         {
             try
             {

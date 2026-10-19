@@ -240,6 +240,9 @@ internal sealed class DirectHpdRpcTransport : IDisposable
             status = RpcBindingFromStringBindingW(stringBinding, out _binding);
             if (status != 0 || _binding == 0)
                 throw new Win32Exception((int)status, $"RpcBindingFromStringBindingW failed: {status}");
+            // Local RPC may ignore/reject this option. The service queue bounds
+            // caller waiting without freeing an in-flight context or retrying it.
+            _ = RpcBindingSetOption(_binding, 12, 2000); // RPC_C_OPT_CALL_TIMEOUT, best effort only.
         }
         finally
         {
@@ -247,6 +250,9 @@ internal sealed class DirectHpdRpcTransport : IDisposable
                 _ = RpcStringFreeW(ref stringBinding);
         }
     }
+
+    [DllImport("Rpcrt4.dll")]
+    private static extern uint RpcBindingSetOption(nint binding, uint option, nuint value);
 
     private void BuildNdrMetadata()
     {

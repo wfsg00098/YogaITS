@@ -68,7 +68,7 @@ internal sealed class FeaturePanels : IDisposable
             });
             string effective = current.EffectiveMode switch { 0 => "双显", 1 => "集显", _ => "未知" };
             _gpuCard.SetStatus($"当前实际状态：{effective}。{current.Message}");
-        });
+        }, gpu.Available && _gpu.IsResponsive);
         RenderHpd();
         RenderColor();
         RenderAudio();
@@ -110,7 +110,7 @@ internal sealed class FeaturePanels : IDisposable
                     () => _audio.SetMicrophoneAsync(current.MicrophoneMode == "special" ? "shared" : "special"), !_audio.IsRegistering));
             _micCard.Note(body, SettingsOptionText.MicrophoneDescription(current.MicrophoneMode));
             _micCard.SetStatus($"当前麦克风设备：{current.CaptureName}");
-        });
+        }, audio.Available && _audio.IsResponsive);
         _speakerCard.Update(audio.Downlink, body =>
         {
             var current = _audio.Snapshot;
@@ -124,7 +124,7 @@ internal sealed class FeaturePanels : IDisposable
                 _ => ""
             });
             _speakerCard.SetStatus($"当前扬声器设备：{current.RenderName}");
-        });
+        }, audio.Available && _audio.IsResponsive);
         bool voiceCompleted = _voiceWasRegistering && !_audio.IsRegistering;
         _voiceWasRegistering = _audio.IsRegistering;
         if (!_audio.IsRecording) _voiceRemainingSeconds = 0;
@@ -155,7 +155,8 @@ internal sealed class FeaturePanels : IDisposable
                         await _audio.RegisterVoiceAsync(progress);
                     }
                     finally { _voiceStartPending = false; }
-                }, !_audio.IsRegistering || _audio.IsRecording, keepInteractive: true, isAction: true),
+                }, !_audio.IsRegistering || _audio.IsRecording, keepInteractive: true, isAction: true,
+                    allowWhenUnavailable: _audio.IsRecording),
                 _voiceCard.Option("读取声纹状态", false, _audio.InspectVoiceAsync,
                     current.VoiceIdRegistered && !_audio.IsRegistering, isAction: true),
                 _voiceCard.Option("删除声纹", false, async () =>
@@ -167,7 +168,7 @@ internal sealed class FeaturePanels : IDisposable
                     _audio.RegistrationStatus, _audio.IsRecording, _voiceRemainingSeconds),
                 _audio.IsRecording ? VoiceReadingExample : null,
                 announce: voiceCompleted);
-        });
+        }, audio.Available && _audio.IsResponsive);
     }
 
     private async Task<bool> ConfirmAsync(string title, string message, string primary)
@@ -228,7 +229,7 @@ internal sealed class FeaturePanels : IDisposable
             _colorCard.SetStatus(SettingsOptionText.ColorStatus(current.CurrentMode, current.Message,
                 current.AdvancedColor?.HdrActive == true,
                 current.AdvancedColor?.AcmActive == true));
-        });
+        }, _color.Snapshot.Available && _color.IsResponsive);
     }
 
     private void RenderHpd()
@@ -259,7 +260,7 @@ internal sealed class FeaturePanels : IDisposable
                 state.LeaveEnabled ? "检测到人员离开后，按所选速度自动进入睡眠。" : ""
             }.Where(text => text.Length > 0)));
             _wakeCard.SetStatus("");
-        });
+        }, snapshot.Available && _hpd.IsResponsive);
         _videoCard.Update(snapshot.Features.AutoVideoPause, body =>
         {
             if (_hpd.Snapshot.State is not { } state) return;
@@ -269,6 +270,6 @@ internal sealed class FeaturePanels : IDisposable
                 ? "检测到人员离开时暂停播放，返回时恢复播放。"
                 : "");
             _videoCard.SetStatus("");
-        });
+        }, snapshot.Available && _hpd.IsResponsive);
     }
 }

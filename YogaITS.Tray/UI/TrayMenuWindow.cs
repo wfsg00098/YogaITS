@@ -266,6 +266,7 @@ public sealed class TrayMenuWindow : Window
     }
 
     private StackPanel? _coreStack;
+    private bool _itsAvailable = true;
     private (bool Its, bool Fourth, bool Battery, bool Night, bool Flip, bool Gpu)? _capabilities;
 
     private UIElement BuildContent(
@@ -598,7 +599,9 @@ public sealed class TrayMenuWindow : Window
     {
         if (_closed)
             return;
+        if (_modelLabel is not null) _modelLabel.Text = state.MachineInfo.DisplayModel;
         _powerSource = SystemEventMonitor.ReadPowerSource();
+        _itsAvailable = state.ItsAvailable;
         if (_coreStack is not null) SettingsMotion.Reposition(_coreStack);
         if (_coreStack is not null)
             foreach (var group in _coreStack.Children.OfType<Border>())
@@ -650,6 +653,16 @@ public sealed class TrayMenuWindow : Window
             _startupEnabled = state.StartupEnabled;
             RefreshToggleVisual(_startupVisual, _startupEnabled);
         }
+        // Retain last confirmed selections on transient read failures, but never
+        // let keyboard or pointer input operate using a stale hardware snapshot.
+        foreach (var (mode, button) in _modeTiles)
+            button.IsEnabled = state.ItsAvailable &&
+                (mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource));
+        foreach (var button in _chargeModeTiles.Values)
+            button.IsEnabled = state.BatteryAvailable && (!state.NightCharge.Supported || state.NightAvailable);
+        if (_nightChargeVisual is { } night) night.Button.IsEnabled = state.BatteryAvailable && state.NightAvailable;
+        if (_flipToStartVisual is { } flip) flip.Button.IsEnabled = state.FlipAvailable;
+        if (_startupVisual is { } startup) startup.Button.IsEnabled = state.StartupAvailable;
     }
 
     private Grid CreateWindowHeader(string modelName)
@@ -841,7 +854,7 @@ public sealed class TrayMenuWindow : Window
         RefreshPerformanceDescription(_currentItsMode);
         foreach ((ItsMode mode, Button button) in _modeTiles)
         {
-            bool available = mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource);
+            bool available = _itsAvailable && (mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource));
             button.IsEnabled = available;
             RefreshOptionTile(
                 button,

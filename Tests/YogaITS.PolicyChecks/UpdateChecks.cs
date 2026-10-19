@@ -169,7 +169,7 @@ internal static class UpdateChecks
                 Reject(() => UpdatePackage.SafeEntryPath(temporary, bad), "ZIP traversal rejected: " + bad);
             string archive = Path.Combine(temporary, "valid.zip");
             using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create))
-                foreach (string name in new[] { "YogaITS.Tray.exe", "YogaITS.Tray.dll", "YogaITS.Tray.pri", "YogaITS.Tray.runtimeconfig.json", "YogaITS.Tray.deps.json" })
+                foreach (string name in UpdatePackage.RequiredFiles)
                 {
                     using var writer = new StreamWriter(zip.CreateEntry(name).Open());
                     writer.Write("fixture " + name);

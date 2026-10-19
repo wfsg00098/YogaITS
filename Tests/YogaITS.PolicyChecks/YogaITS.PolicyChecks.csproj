@@ -6,6 +6,14 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../YogaITS.Tray/Services/SnapshotRevisions.cs" Link="SnapshotRevisions.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/SerializedActionService.cs" Link="SerializedActionService.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/AsyncOperationQueue.cs" Link="AsyncOperationQueue.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/ReadbackPolicy.cs" Link="ReadbackPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/BoundedProbe.cs" Link="BoundedProbe.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/BoundedFileTransfer.cs" Link="BoundedFileTransfer.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/BatteryDriverAccess.cs" Link="BatteryDriverAccess.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateStaging.cs" Link="Updates/UpdateStaging.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuKeepAwakePolicy.cs" Link="GpuKeepAwakePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateRelease.cs" Link="Updates/UpdateRelease.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/GitHubUpdateClient.cs" Link="Updates/GitHubUpdateClient.cs" />

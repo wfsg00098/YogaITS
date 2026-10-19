@@ -26,24 +26,25 @@ public sealed partial class MainWindow : Window
     private bool _updateRequested;
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
-    private readonly SemaphoreSlim _coreRefreshGate = new(1, 1);
-    private readonly SemaphoreSlim _chargeSelectionGate = new(1, 1);
+    private readonly AsyncOperationQueue _coreRefreshQueue = new();
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly SerializedActionService _itsActions = new(), _chargeActions = new(), _flipActions = new(), _startupActions = new();
     private bool _exiting;
     private bool _controlCenterRefreshing;
     private CancellationTokenSource? _colorRefreshDebounce;
 
     private nint _mainHwnd;
-    private DateTime _lastTrayHoverRefresh = DateTime.MinValue;
 
     public MainWindow()
     {
         InitializeComponent();
 
-        // Do all capability discovery and the first state read at application
-        // startup. This hidden host is never shown, so menu opening later is
-        // independent of WMI / EnergyDrv / schtasks latency.
+        // Establish the hidden message host and tray before background probes.
+        // Opening a window always uses a cache, never synchronous hardware I/O.
         _stateCache = AppStateCache.Initialize();
         _stateCache.Changed += () => DispatcherQueue.TryEnqueue(ApplyCoreState);
+        foreach (var actions in new[] { _itsActions, _chargeActions, _flipActions, _startupActions })
+            actions.Changed += () => DispatcherQueue.TryEnqueue(ApplyCoreState);
         _keepAwake.Changed += () => DispatcherQueue.TryEnqueue(RefreshKeepAwakeCards);
         _gpu.KeepAwakeModeChange = suppressed => suppressed
             ? _keepAwake.PauseForModeSwitchAsync()
@@ -82,7 +83,7 @@ public sealed partial class MainWindow : Window
         _gpu.Changed += () => DispatcherQueue.TryEnqueue(() =>
         {
             if (_exiting) return;
-            if (_gpu.Snapshot.Supported)
+            if (_gpu.Snapshot.Supported && _gpu.Snapshot.Available)
             {
                 _gpu.AutoEventsAvailable = _systemEvents?.EnablePowerNotifications() ?? false;
                 // Publish the completed GPU read directly, including Auto retries.
@@ -102,6 +103,7 @@ public sealed partial class MainWindow : Window
         _audio.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _audio.RefreshAsync();
         _updates.Changed += () => DispatcherQueue.TryEnqueue(RefreshUpdateCard);
+        _ = InitializeCoreAsync();
     }
 
     private void InitializeHiddenTrayHost()
@@ -114,7 +116,6 @@ public sealed partial class MainWindow : Window
             _mainHwnd,
             BuildTooltip(state));
 
-        _trayIcon.MouseMove += TrayIcon_MouseMove;
         _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ToggleControlCenter);
         _trayIcon.RightClick += TrayIcon_Click;
 
@@ -131,20 +132,6 @@ public sealed partial class MainWindow : Window
 
         AppWindow.Hide();
         _ = ShowWindow(_mainHwnd, SW_HIDE);
-    }
-
-    private void TrayIcon_MouseMove()
-    {
-        // Tooltip response is cache-only. A throttled background read then
-        // refreshes the cached ITS state for the next hover/menu open.
-        _trayIcon?.SetTooltip(BuildTooltip(_stateCache.Snapshot));
-
-        DateTime now = DateTime.UtcNow;
-        if ((now - _lastTrayHoverRefresh).TotalMilliseconds < 750)
-            return;
-
-        _lastTrayHoverRefresh = now;
-        _ = RefreshItsTooltipInBackgroundAsync();
     }
 
     private void TrayIcon_Click()
@@ -219,6 +206,7 @@ public sealed partial class MainWindow : Window
                 fullWindow: fullWindow,
                 keepAwake: _keepAwake.Snapshot,
                 setKeepAwake: _keepAwake.SetEnabledAsync);
+            menu.ApplyRefreshedState(state);
 
             if (fullWindow)
             {
@@ -355,11 +343,17 @@ public sealed partial class MainWindow : Window
         // UI-only projection: leave actual presence and the persisted keep-awake
         // preference untouched so a paused preference can resume later.
         return state with { NvidiaGpuSupported = GpuKeepAwakePolicy.ShowGpuControls(
-            state.NvidiaGpuSupported, mode.Supported, mode.EffectiveMode) };
+            state.NvidiaGpuSupported, mode.Supported, mode.EffectiveMode),
+            ItsAvailable = state.ItsAvailable && _itsActions.IsResponsive,
+            BatteryAvailable = state.BatteryAvailable && _chargeActions.IsResponsive,
+            NightAvailable = state.NightAvailable && _chargeActions.IsResponsive,
+            FlipAvailable = state.FlipAvailable && _flipActions.IsResponsive,
+            StartupAvailable = state.StartupAvailable && _startupActions.IsResponsive };
     }
 
     private void ApplyCoreState()
     {
+        if (_exiting) return;
         AppRuntimeSnapshot state = GetWindowState();
         _trayIcon?.SetTooltip(BuildTooltip(state));
         _trayMenuWindow?.ApplyRefreshedState(state);
@@ -378,7 +372,12 @@ public sealed partial class MainWindow : Window
     private async Task ConfigureKeepAwakeAsync()
     {
         if (_exiting || !_gpuInitializationComplete) return;
-        try { await _keepAwake.ConfigureAsync(_stateCache.Snapshot.NvidiaGpuSupported, _gpu.Snapshot); }
+        try
+        {
+            var mode = _gpu.Snapshot;
+            await _keepAwake.ConfigureAsync(_stateCache.Snapshot.NvidiaGpuSupported,
+                mode with { Available = mode.Available && _gpu.IsResponsive });
+        }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Keep-awake setup failed: " + ex.GetType().Name); }
     }
 
@@ -389,37 +388,31 @@ public sealed partial class MainWindow : Window
         _controlCenterWindow?.ApplyKeepAwakeState(_keepAwake.Snapshot);
     }
 
-    private async Task RefreshCoreAsync()
+    private async Task InitializeCoreAsync()
     {
-        await _coreRefreshGate.WaitAsync();
+        try
+        {
+            foreach (int delay in new[] { 0, 5000, 15000 })
+            {
+                await Task.Delay(delay, _lifetime.Token);
+                if (_exiting) return;
+                await RefreshCoreAsync();
+                if (_stateCache.Snapshot.ItsCapabilities.Supported) break;
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private Task RefreshCoreAsync() => _coreRefreshQueue.Enqueue(async () =>
+    {
         try
         {
             if (_exiting) return;
             await _stateCache.RefreshDynamicAsync().ConfigureAwait(false);
             DispatcherQueue.TryEnqueue(ApplyCoreState);
         }
-        catch
-        {
-            // Background refresh is best-effort. The already-visible cached UI
-            // remains valid and responsive if one of the probes fails.
-        }
-        finally { _coreRefreshGate.Release(); }
-    }
-
-    private async Task RefreshItsTooltipInBackgroundAsync()
-    {
-        try
-        {
-            AppRuntimeSnapshot refreshed =
-                await _stateCache.RefreshItsModeAsync().ConfigureAwait(false);
-
-            DispatcherQueue.TryEnqueue(() =>
-                _trayIcon?.SetTooltip(BuildTooltip(refreshed)));
-        }
-        catch
-        {
-        }
-    }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Core refresh: " + ex.GetType().Name); }
+    }, refresh: true);
 
     private static string BuildTooltip(AppRuntimeSnapshot state)
     {
@@ -434,9 +427,12 @@ public sealed partial class MainWindow : Window
                 _stateCache.Snapshot.ItsCapabilities;
 
             ItsSetResult result =
-                await LenovoItsHelper.SetModeAsync(mode, capabilities);
-
-            _stateCache.UpdateItsMode(result.Snapshot);
+                await _itsActions.ExecuteAsync(async () =>
+                {
+                    var actual = await LenovoItsHelper.SetModeAsync(mode, capabilities);
+                    _stateCache.UpdateItsMode(actual.Snapshot);
+                    return actual;
+                });
             _trayIcon?.SetTooltip(BuildTooltip(_stateCache.Snapshot));
 
             if (!result.Verified)
@@ -461,30 +457,26 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task<BatterySelectionResult> SetChargeOptionAsync(BatteryChargeMode mode, bool night)
-    {
-        await _chargeSelectionGate.WaitAsync();
-        try
+    private Task<BatterySelectionResult> SetChargeOptionAsync(BatteryChargeMode mode, bool night) =>
+        _chargeActions.ExecuteAsync(async () =>
         {
-            var result = await Task.Run(() => BatteryChargeSelection.ApplyAsync(mode, night,
+            var result = await BatteryChargeSelection.ApplyAsync(mode, night,
                 LenovoBatteryHelper.ReadNightCharge, LenovoBatteryHelper.ReadChargeMode,
-                LenovoBatteryHelper.SetNightChargeAsync, LenovoBatteryHelper.SetChargeModeAsync));
+                LenovoBatteryHelper.SetNightChargeAsync, LenovoBatteryHelper.SetChargeModeAsync);
             _stateCache.UpdateBatterySelection(result.Charge, result.Night);
             return result;
-        }
-        finally { _chargeSelectionGate.Release(); }
-    }
+        });
 
-    private async Task<FlipToStartResult> SetFlipToStartAsync(bool enabled)
+    private Task<FlipToStartResult> SetFlipToStartAsync(bool enabled) => _flipActions.ExecuteAsync(async () =>
     {
         FlipToStartResult result =
             await LenovoFlipToStartHelper.SetAsync(enabled);
 
         _stateCache.UpdateFlipToStart(result.Snapshot);
         return result;
-    }
+    });
 
-    private async Task<StartupTaskResult> SetStartupAsync(bool enabled)
+    private Task<StartupTaskResult> SetStartupAsync(bool enabled) => _startupActions.ExecuteAsync(async () =>
     {
         StartupTaskResult result =
             await StartupTaskHelper.SetEnabledAsync(enabled);
@@ -493,7 +485,7 @@ public sealed partial class MainWindow : Window
             _stateCache.UpdateStartup(actual);
 
         return result;
-    }
+    });
 
     private async Task KillGpuAppsDirectAsync()
     {
@@ -510,7 +502,7 @@ public sealed partial class MainWindow : Window
 
             GpuActionResult result =
                 await NvidiaGpuHelper.KillProcessesAsync(
-                    candidates.Select(p => p.Pid));
+                    candidates);
 
             if (!result.Success)
             {
@@ -588,17 +580,21 @@ public sealed partial class MainWindow : Window
     {
         if (_exiting) return;
         _exiting = true;
+        _lifetime.Cancel();
         _colorRefreshDebounce?.Cancel();
         _colorRefreshDebounce?.Dispose();
         _gpu.CancelRetry();
         _audio.CancelRegistration();
+        _color.CancelPendingOperations();
         _updates.Dispose();
         _systemEvents?.Dispose();
         _systemEvents = null;
         try
         {
             await Task.WhenAll(_keepAwake.DisposeAsync().AsTask(), _gpu.DisposeAsync().AsTask(), _hpd.DisposeAsync().AsTask(),
-                _color.DisposeAsync().AsTask(), _audio.DisposeAsync().AsTask());
+                _color.DisposeAsync().AsTask(), _audio.DisposeAsync().AsTask(), _itsActions.DisposeAsync().AsTask(),
+                _chargeActions.DisposeAsync().AsTask(), _flipActions.DisposeAsync().AsTask(),
+                _startupActions.DisposeAsync().AsTask()).WaitAsync(TimeSpan.FromSeconds(10));
         }
         catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Feature cleanup: " + ex.Message); }
         DisposeTray();

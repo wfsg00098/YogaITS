@@ -5,6 +5,12 @@ namespace YogaITS.Tray.Services.Updates;
 
 internal static class UpdatePackage
 {
+    internal static readonly string[] RequiredFiles =
+    [
+        "YogaITS.Tray.exe", "YogaITS.Tray.dll", "YogaITS.Tray.pri", "YogaITS.Tray.runtimeconfig.json", "YogaITS.Tray.deps.json",
+        "YogaITS.Updater.exe", "YogaITS.Updater.dll", "YogaITS.Updater.runtimeconfig.json", "YogaITS.Updater.deps.json",
+        "YogaITS.dGPUKeepAwake.exe", "YogaITS.dGPUKeepAwake.dll", "YogaITS.dGPUKeepAwake.runtimeconfig.json", "YogaITS.dGPUKeepAwake.deps.json"
+    ];
     public static void VerifyArchive(string archive, string expectedHash)
     {
         using var stream = File.OpenRead(archive);
@@ -47,7 +53,7 @@ internal static class UpdatePackage
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             entry.ExtractToFile(path, overwrite: false);
         }
-        foreach (string name in new[] { "YogaITS.Tray.exe", "YogaITS.Tray.dll", "YogaITS.Tray.pri", "YogaITS.Tray.runtimeconfig.json", "YogaITS.Tray.deps.json" })
+        foreach (string name in RequiredFiles)
             if (!File.Exists(Path.Combine(directory, name))) throw new InvalidDataException("更新包缺少文件：" + name);
     }
 }

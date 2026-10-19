@@ -8,14 +8,25 @@ public sealed record AppRuntimeSnapshot(
     BatteryToggleSnapshot NightCharge,
     FlipToStartSnapshot FlipToStart,
     bool NvidiaGpuSupported,
-    bool StartupEnabled);
+    bool StartupEnabled,
+    bool ItsAvailable = true, bool BatteryAvailable = true, bool NightAvailable = true,
+    bool FlipAvailable = true, bool StartupAvailable = true);
 
 public sealed class AppStateCache
 {
     public event Action? Changed;
     private readonly object _gate = new();
     private AppRuntimeSnapshot _snapshot;
-    private long _mutationGeneration;
+    private const int ItsField = 0, ChargeField = 1, NightField = 2, FlipField = 3, StartupField = 4, GpuField = 5;
+    private readonly SnapshotRevisions _revisions = new(6);
+    private int _capabilityAttempts;
+    private readonly BoundedProbe<MachineInfoSnapshot> _machineProbe = new();
+    private readonly BoundedProbe<ItsCapabilitySnapshot> _capabilityProbe = new();
+    private readonly BoundedProbe<ItsModeSnapshot> _itsProbe = new();
+    private readonly BoundedProbe<BatteryPair> _batteryProbe = new();
+    private readonly BoundedProbe<FlipToStartSnapshot> _flipProbe = new();
+    private readonly BoundedProbe<bool?> _startupProbe = new();
+    private readonly BoundedProbe<bool?> _gpuProbe = new();
 
     private sealed record BatteryPair(
         BatteryChargeSnapshot Charge,
@@ -37,62 +48,43 @@ public sealed class AppStateCache
 
     public static AppStateCache Initialize()
     {
-        // Capability discovery and the first state read happen once while the
-        // hidden tray host is starting. The tray menu never has to wait for
-        // these reads before it can be shown.
-        MachineInfoSnapshot machine = LenovoMachineInfoHelper.Read();
-        ItsCapabilitySnapshot itsCapabilities =
-            LenovoItsHelper.ReadCapabilities(machine.Model);
-
-        Task<ItsModeSnapshot> itsTask = Task.Run(() =>
-            LenovoItsHelper.ReadMode(itsCapabilities));
-        Task<BatteryPair> batteryTask = Task.Run(ReadBatteryPair);
-        Task<FlipToStartSnapshot> flipTask = Task.Run(
-            LenovoFlipToStartHelper.Read);
-        Task<bool> gpuTask = Task.Run(SafeHasNvidiaDisplayDevice);
-        Task<bool> startupTask = Task.Run(StartupTaskHelper.IsEnabled);
-
-        Task.WaitAll(
-            itsTask,
-            batteryTask,
-            flipTask,
-            gpuTask,
-            startupTask);
-
-        BatteryPair battery = batteryTask.Result;
-        var snapshot = new AppRuntimeSnapshot(
-            MachineInfo: machine,
-            ItsCapabilities: itsCapabilities,
-            ItsMode: itsTask.Result,
-            BatteryCharge: battery.Charge,
-            NightCharge: battery.NightCharge,
-            FlipToStart: flipTask.Result,
-            NvidiaGpuSupported: gpuTask.Result,
-            StartupEnabled: startupTask.Result);
-
-        return new AppStateCache(snapshot);
+        // No hardware, WMI or schtasks work on the XAML startup thread.
+        return new AppStateCache(new(new("", "", ""), default, new(null, null, "正在检测"),
+            new(false, BatteryChargeMode.Normal, "正在检测"), new(false, false), new(false, false, ""),
+            false, false, false, false, false, false, false));
     }
 
     public async Task<AppRuntimeSnapshot> RefreshDynamicAsync()
     {
         AppRuntimeSnapshot basis;
-        long generation;
+        long[] observed;
 
         lock (_gate)
         {
             basis = _snapshot;
-            generation = _mutationGeneration;
+            observed = _revisions.Capture();
         }
 
-        Task<ItsModeSnapshot> itsTask = basis.ItsCapabilities.Supported
-            ? Task.Run(() => LenovoItsHelper.ReadMode(basis.ItsCapabilities))
-            : Task.FromResult(basis.ItsMode);
-
-        Task<BatteryPair> batteryTask = Task.Run(ReadBatteryPair);
-        Task<FlipToStartSnapshot> flipTask = Task.Run(LenovoFlipToStartHelper.Read);
-
-        Task<bool> startupTask = Task.Run(StartupTaskHelper.IsEnabled);
-        Task<bool> gpuTask = Task.Run(SafeHasNvidiaDisplayDevice);
+        var batteryTask = _batteryProbe.ReadAsync(ReadBatteryPair);
+        var flipTask = _flipProbe.ReadAsync(LenovoFlipToStartHelper.Read);
+        var startupTask = _startupProbe.ReadAsync(StartupTaskHelper.ReadEnabled);
+        var gpuTask = _gpuProbe.ReadAsync(SafeHasNvidiaDisplayDevice);
+        var machine = basis.MachineInfo;
+        if (string.IsNullOrWhiteSpace(machine.Model))
+        {
+            var result = await _machineProbe.ReadAsync(LenovoMachineInfoHelper.Read);
+            if (result.Success) machine = result.Value;
+        }
+        var capabilities = basis.ItsCapabilities;
+        if (!capabilities.Supported && _capabilityAttempts < 3)
+        {
+            _capabilityAttempts++;
+            var result = await _capabilityProbe.ReadAsync(() => LenovoItsHelper.ReadCapabilities(machine.Model));
+            if (result.Success) capabilities = result.Value;
+        }
+        var itsTask = capabilities.Supported
+            ? _itsProbe.ReadAsync(() => LenovoItsHelper.ReadMode(capabilities))
+            : Task.FromResult(new ProbeResult<ItsModeSnapshot>(true, basis.ItsMode));
 
         await Task.WhenAll(
             itsTask,
@@ -101,61 +93,41 @@ public sealed class AppStateCache
             startupTask,
             gpuTask).ConfigureAwait(false);
 
-        ItsModeSnapshot its = itsTask.Result;
-        BatteryPair battery = batteryTask.Result;
-        FlipToStartSnapshot flip = flipTask.Result;
-        bool startup = startupTask.Result;
+        ItsModeSnapshot its = itsTask.Result.Success ? itsTask.Result.Value : new(null, null, "暂不可读");
+        BatteryPair battery = batteryTask.Result.Success ? batteryTask.Result.Value
+            : new(new(false, BatteryChargeMode.Normal, "暂不可读"), new(false, false));
+        FlipToStartSnapshot flip = flipTask.Result.Success ? flipTask.Result.Value : new(false, false, "");
+        bool? startup = startupTask.Result.Success ? startupTask.Result.Value : null;
+        bool? gpuPresent = gpuTask.Result.Success ? gpuTask.Result.Value : null;
 
         lock (_gate)
         {
-            // A user action completed while these reads were in flight. Do not
-            // overwrite that newer user-selected state with stale probe data.
-            if (_mutationGeneration != generation)
-                return _snapshot;
-
-            ItsModeSnapshot mergedIts = its.Mode is not null
+            bool useIts = _revisions.IsCurrent(ItsField, observed);
+            bool useCharge = _revisions.IsCurrent(ChargeField, observed);
+            bool useNight = _revisions.IsCurrent(NightField, observed);
+            bool useFlip = _revisions.IsCurrent(FlipField, observed);
+            bool useStartup = _revisions.IsCurrent(StartupField, observed);
+            bool useGpu = _revisions.IsCurrent(GpuField, observed);
+            ItsModeSnapshot mergedIts = useIts && its.Mode is not null
                 ? its
                 : _snapshot.ItsMode;
 
             _snapshot = _snapshot with
             {
                 ItsMode = mergedIts,
-                BatteryCharge = battery.Charge,
-                NightCharge = battery.NightCharge,
-                FlipToStart = flip,
-                NvidiaGpuSupported = gpuTask.Result,
-                StartupEnabled = startup
+                MachineInfo = machine,
+                ItsCapabilities = capabilities,
+                BatteryCharge = useCharge && battery.Charge.Supported ? battery.Charge : _snapshot.BatteryCharge,
+                NightCharge = useNight && battery.NightCharge.Supported ? battery.NightCharge : _snapshot.NightCharge,
+                FlipToStart = useFlip && flip.Supported ? flip : _snapshot.FlipToStart,
+                NvidiaGpuSupported = useGpu ? gpuPresent ?? _snapshot.NvidiaGpuSupported : _snapshot.NvidiaGpuSupported,
+                StartupEnabled = useStartup ? startup ?? _snapshot.StartupEnabled : _snapshot.StartupEnabled,
+                ItsAvailable = useIts ? its.Mode is not null : _snapshot.ItsAvailable,
+                BatteryAvailable = useCharge ? battery.Charge.Supported : _snapshot.BatteryAvailable,
+                NightAvailable = useNight ? battery.NightCharge.Supported : _snapshot.NightAvailable,
+                FlipAvailable = useFlip ? flip.Supported : _snapshot.FlipAvailable,
+                StartupAvailable = useStartup ? startup is not null : _snapshot.StartupAvailable
             };
-            return _snapshot;
-        }
-    }
-
-    public async Task<AppRuntimeSnapshot> RefreshItsModeAsync()
-    {
-        AppRuntimeSnapshot basis;
-        long generation;
-
-        lock (_gate)
-        {
-            basis = _snapshot;
-            generation = _mutationGeneration;
-        }
-
-        if (!basis.ItsCapabilities.Supported)
-            return basis;
-
-        ItsModeSnapshot refreshed = await Task.Run(() =>
-            LenovoItsHelper.ReadMode(basis.ItsCapabilities)).ConfigureAwait(false);
-
-        if (refreshed.Mode is null)
-            return Snapshot;
-
-        lock (_gate)
-        {
-            if (_mutationGeneration != generation)
-                return _snapshot;
-
-            _snapshot = _snapshot with { ItsMode = refreshed };
             return _snapshot;
         }
     }
@@ -165,7 +137,7 @@ public sealed class AppStateCache
         if (snapshot.Mode is null)
             return;
 
-        Update(current => current with { ItsMode = snapshot });
+        Update(current => current with { ItsMode = snapshot, ItsAvailable = true }, ItsField);
     }
 
     public void UpdateBatteryCharge(BatteryChargeSnapshot snapshot)
@@ -173,22 +145,23 @@ public sealed class AppStateCache
         if (!snapshot.Supported)
             return;
 
-        Update(current => current with { BatteryCharge = snapshot });
+        Update(current => current with { BatteryCharge = snapshot, BatteryAvailable = true }, ChargeField);
     }
 
     public void UpdateBatterySelection(BatteryChargeSnapshot charge, BatteryToggleSnapshot night) =>
         Update(current => current with
         {
             BatteryCharge = charge.Supported ? charge : current.BatteryCharge,
-            NightCharge = night.Supported ? night : current.NightCharge
-        });
+            NightCharge = night.Supported ? night : current.NightCharge,
+            BatteryAvailable = charge.Supported, NightAvailable = night.Supported
+        }, ChargeField, NightField);
 
     public void UpdateNightCharge(BatteryToggleSnapshot snapshot)
     {
         if (!snapshot.Supported)
             return;
 
-        Update(current => current with { NightCharge = snapshot });
+        Update(current => current with { NightCharge = snapshot, NightAvailable = true }, NightField);
     }
 
     public void UpdateFlipToStart(FlipToStartSnapshot snapshot)
@@ -196,11 +169,11 @@ public sealed class AppStateCache
         if (!snapshot.Supported)
             return;
 
-        Update(current => current with { FlipToStart = snapshot });
+        Update(current => current with { FlipToStart = snapshot, FlipAvailable = true }, FlipField);
     }
 
     public void UpdateStartup(bool enabled) =>
-        Update(current => current with { StartupEnabled = enabled });
+        Update(current => current with { StartupEnabled = enabled, StartupAvailable = true }, StartupField);
 
     public void UpdateNvidiaPresence(bool present)
     {
@@ -208,17 +181,17 @@ public sealed class AppStateCache
         {
             if (_snapshot.NvidiaGpuSupported == present) return;
             _snapshot = _snapshot with { NvidiaGpuSupported = present };
-            _mutationGeneration++;
+            _revisions.Changed(GpuField);
         }
         Changed?.Invoke();
     }
 
-    private void Update(Func<AppRuntimeSnapshot, AppRuntimeSnapshot> update)
+    private void Update(Func<AppRuntimeSnapshot, AppRuntimeSnapshot> update, params int[] fields)
     {
         lock (_gate)
         {
             _snapshot = update(_snapshot);
-            _mutationGeneration++;
+            _revisions.Changed(fields);
         }
         Changed?.Invoke();
     }
@@ -233,7 +206,7 @@ public sealed class AppStateCache
         return new BatteryPair(charge, night);
     }
 
-    private static bool SafeHasNvidiaDisplayDevice()
+    private static bool? SafeHasNvidiaDisplayDevice()
     {
         try
         {
@@ -241,7 +214,7 @@ public sealed class AppStateCache
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 }

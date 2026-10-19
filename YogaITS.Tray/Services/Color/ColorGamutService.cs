@@ -7,28 +7,36 @@ internal sealed record ColorGamutSnapshot(
     bool Supported, bool Blocked, bool FactoryValid, bool ApplyBrightness,
     string CurrentMode, IReadOnlyList<ColorMode> Modes, string Message,
     NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2? AdvancedColor = null,
-    ColorGamutBackend Backend = ColorGamutBackend.Icc)
+    ColorGamutBackend Backend = ColorGamutBackend.Icc, bool Available = true)
 {
     public static ColorGamutSnapshot Unavailable { get; } = new(false, true, false, true, "", [], "", Backend: ColorGamutBackend.None);
 }
 
 internal sealed class ColorGamutService : SerializedFeatureService
 {
+    protected override TimeSpan ReadTimeout => TimeSpan.FromSeconds(90); // Preserve the probe's bounded TCON waits.
+    protected override TimeSpan WriteTimeout => TimeSpan.FromSeconds(210); // Includes the three-minute online recovery.
+    private readonly CancellationTokenSource _shutdown = new();
+    public void CancelPendingOperations() => _shutdown.Cancel();
     private MachineIdentity? _machine;
     private DisplayInfo? _display;
     private FactoryValidationResult? _factory;
+    private FactoryValidationResult? _cachedFactory;
+    private string _factoryFingerprint = "";
+    private IReadOnlyList<ColorMode> _cachedModes = [];
+    private string? _lastPanel;
     private bool _applyBrightness = UserSettingsStore.Get("GamutApplyBrightness", true);
     public ColorGamutSnapshot Snapshot { get; private set; } = ColorGamutSnapshot.Unavailable;
 
-    private void Read()
+    private void Read(bool fullValidation = false)
     {
         try
         {
-            _machine = null;
             _factory = null;
             _display = DisplayService.FindInternal(DisplayService.EnumerateActive());
             if (_display is null)
             {
+                _lastPanel = null;
                 Snapshot = ColorGamutSnapshot.Unavailable;
                 return;
             }
@@ -37,13 +45,36 @@ internal sealed class ColorGamutService : SerializedFeatureService
             {
                 Snapshot = new(true, _display.IsBlocked, false, false, tcon.CurrentMode, tcon.Modes,
                     _display.IsBlocked ? _display.ColorBlockReason : "", _display.AdvancedColor, ColorGamutBackend.Tcon);
+                _lastPanel = _display.HardwareId;
                 return;
             }
+            if (!tcon.Available && Snapshot.Backend == ColorGamutBackend.Tcon && _lastPanel == _display.HardwareId)
+                throw new InvalidOperationException("TCON 暂时无法读取，保留能力但不允许写入。");
             bool iccEligible = !string.IsNullOrWhiteSpace(_display.WcsDeviceId) && LcdBrightnessService.Query().Ok;
+            if (!iccEligible && Snapshot.Backend == ColorGamutBackend.Icc && _lastPanel == _display.HardwareId)
+                throw new InvalidOperationException("ICC 控制通道暂不可读，保留能力但不允许写入。");
             if (iccEligible)
             {
-                _machine = MachineIdentityService.Read();
-                _factory = FactoryRecoveryService.ValidateCurrent(_machine, _display);
+                _machine ??= MachineIdentityService.Read();
+                string fingerprint = _display.HardwareId + "|" + string.Join("|",
+                    Directory.Exists(FactoryRecoveryService.FactoryRoot)
+                        ? Directory.EnumerateFiles(FactoryRecoveryService.FactoryRoot, "*.icm", SearchOption.AllDirectories)
+                            .Order(StringComparer.OrdinalIgnoreCase).Select(path =>
+                            {
+                                var file = new FileInfo(path);
+                                return $"{path}:{file.Length}:{file.LastWriteTimeUtc.Ticks}";
+                            }) : []);
+                if (fullValidation || _cachedFactory is null || fingerprint != _factoryFingerprint)
+                {
+                    _cachedFactory = FactoryRecoveryService.ValidateCurrent(_machine, _display);
+                    _factoryFingerprint = fingerprint;
+                    _cachedModes = _cachedFactory.Ok ? _cachedFactory.Profiles.Select(profile =>
+                    {
+                        var brightness = IccMetaBrightness.Read(profile.Path);
+                        return new ColorMode(profile.Mode, brightness.Ok ? brightness.Brightness : null);
+                    }).ToArray() : [];
+                }
+                _factory = _cachedFactory;
             }
             var backend = ColorBackendPolicy.Select(false, _factory?.Ok == true, tcon.Absent, iccEligible);
             if (backend == ColorGamutBackend.None)
@@ -55,30 +86,27 @@ internal sealed class ColorGamutService : SerializedFeatureService
                     advanced, ColorGamutBackend.None);
                 return;
             }
-            var modes = _factory!.Ok ? _factory.Profiles.Select(profile =>
-            {
-                var brightness = IccMetaBrightness.Read(profile.Path);
-                return new ColorMode(profile.Mode, brightness.Ok ? brightness.Brightness : null);
-            }).ToArray() : [];
+            var modes = _factory!.Ok ? _cachedModes : [];
             string message = _display.IsBlocked
                 ? _display.ColorBlockReason
                 : !_factory.Ok ? "本机校色文件缺失或未通过验证，请在线恢复校色文件。" : "";
             Snapshot = new(true, _display.IsBlocked, _factory.Ok, _applyBrightness,
                 ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display)), modes, message, _display.AdvancedColor);
+            _lastPanel = _display.HardwareId;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine("Color capability read failed: " + ex.GetType().Name);
-            Snapshot = ColorGamutSnapshot.Unavailable;
+            Snapshot = Snapshot with { Available = false, Message = "暂时无法读取色彩状态，请稍后重试。" };
         }
     }
 
-    public Task RefreshAsync() => RunAsync(() => { Read(); return Task.CompletedTask; });
+    public Task RefreshAsync() => RefreshAsyncCore(() => { Read(); return Task.CompletedTask; });
 
     public Task SetAdvancedColorAsync(bool hdr, bool enabled) => RunAsync(async () =>
     {
         Read();
-        if (_display is null || _display.AdvancedColor is not { } state)
+        if (!Snapshot.Available || _display is null || _display.AdvancedColor is not { } state)
             throw new InvalidOperationException("当前无法读取内屏高级颜色能力，请刷新后重试。");
         bool supported = hdr ? state.HighDynamicRangeSupported : state.WideColorSupported;
         // Both switches request preferences only. HDR/power policy affects the
@@ -110,7 +138,7 @@ internal sealed class ColorGamutService : SerializedFeatureService
     public Task SetBrightnessPreferenceAsync(bool enabled) => RunAsync(() =>
     {
         Read();
-        if (Snapshot.Backend != ColorGamutBackend.Icc)
+        if (!Snapshot.Available || Snapshot.Backend != ColorGamutBackend.Icc)
             throw new InvalidOperationException("当前色域控制不支持 ICC 亮度联动。");
         UserSettingsStore.Set("GamutApplyBrightness", enabled);
         _applyBrightness = enabled;
@@ -121,18 +149,19 @@ internal sealed class ColorGamutService : SerializedFeatureService
     public Task RecoverAsync() => RunAsync(async () =>
     {
         Read();
-        if (!Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || _machine is null || _display is null)
+        if (!Snapshot.Available || !Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || _machine is null || _display is null)
             throw new InvalidOperationException("无法确定本机和内屏身份，不能恢复校色文件。");
         var machine = _machine;
-        var result = await FactoryRecoveryService.RecoverAsync(machine, _display).ConfigureAwait(false);
-        Read();
+        var result = await FactoryRecoveryService.RecoverAsync(machine, _display, cancellationToken: _shutdown.Token).ConfigureAwait(false);
+        Read(fullValidation: true);
         if (!result.Ok)
             throw new InvalidOperationException(result.Message.Replace(machine.SerialNumber, "<masked>", StringComparison.OrdinalIgnoreCase));
     });
 
     public Task ApplyAsync(string mode) => RunAsync(() =>
     {
-        Read();
+        Read(fullValidation: true);
+        if (!Snapshot.Available) throw new InvalidOperationException("色彩状态暂不可读，未发送切换命令。");
         if (Snapshot.Backend == ColorGamutBackend.Tcon)
         {
             if (Snapshot.Blocked || !Snapshot.Modes.Any(item => item.Name == mode))

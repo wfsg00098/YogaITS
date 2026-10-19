@@ -20,6 +20,12 @@ internal sealed class AppUpdateService : IDisposable
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(3), _lifetime.Token).ConfigureAwait(false);
+            try
+            {
+                await Task.Run(() => UpdateStaging.RemoveExpiredCompleted(Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YogaITS", "Updates"), DateTime.UtcNow));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Debug.WriteLine("Update cleanup: " + ex.GetType().Name); }
             using var timer = new PeriodicTimer(TimeSpan.FromHours(24));
             do
             {

@@ -4,7 +4,7 @@ namespace YogaITS.Tray.Services;
 
 internal sealed class GpuKeepAwakeService : IAsyncDisposable
 {
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly AsyncOperationQueue _queue = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Task _monitor;
     private Process? _process;
@@ -25,11 +25,10 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         _monitor = MonitorAsync();
     }
 
-    private Task RunAsync(Func<Task> operation) => Task.Run(async () =>
+    private Task RunAsync(Func<Task> operation) => _queue.Enqueue(async () =>
     {
-        await _gate.WaitAsync();
         try { if (!_disposed) await operation(); }
-        finally { try { Publish(); } finally { _gate.Release(); } }
+        finally { Publish(); }
     });
 
     private void Publish()
@@ -42,7 +41,7 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
 
     public Task ConfigureAsync(bool present, GpuWorkingSnapshot mode, bool endSwitch = false) => RunAsync(async () =>
     {
-        bool blocked = mode.Supported && mode.EffectiveMode == 1;
+        bool blocked = !mode.Available || (mode.Supported && mode.EffectiveMode == 1);
         if (_configured && _present == present && _modeBlocked == blocked &&
             _powerSource == SystemEventMonitor.ReadPowerSource() && !endSwitch) return;
         _configured = true;
@@ -64,7 +63,8 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
     public Task PauseForModeSwitchAsync() => RunAsync(async () =>
     {
         _switching = true;
-        await StopAsync();
+        try { await StopAsync(); }
+        catch { _switching = false; throw; }
     });
 
     public async Task<GpuKeepAwakeSnapshot> SetEnabledAsync(bool enabled)
@@ -151,8 +151,8 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
             while (await process.StandardOutput.ReadLineAsync(_lifetime.Token) is { } status)
             {
                 if (status is not ("ACTIVE" or "INVALID")) continue;
-                // The reconciliation awaiting this reply owns _gate. Signal
-                // before queuing a UI state update under that same gate.
+                // The reconciliation awaiting this reply owns the queue. Signal
+                // before queuing a UI state update behind that same operation.
                 if (ReferenceEquals(_process, process))
                     Volatile.Read(ref _healthReply)?.TrySetResult(status == "ACTIVE");
                 _ = RunAsync(() =>
@@ -192,8 +192,8 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
     private async Task StopAsync()
     {
         Process? process = _process;
-        _process = null;
         _active = false;
+        bool stopped = process is null;
         try
         {
             _stop?.Set();
@@ -206,23 +206,27 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
                     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(3));
                 }
             }
+            stopped = true;
         }
         finally
         {
-            process?.Dispose();
-            _stop?.Dispose(); _stop = null;
-            _check?.Dispose(); _check = null;
+            // Do not lose ownership when kill/wait fails on a still-live helper.
+            if (stopped)
+            {
+                _process = null;
+                process?.Dispose();
+                _stop?.Dispose(); _stop = null;
+                _check?.Dispose(); _check = null;
+            }
         }
     }
 
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
-        await _gate.WaitAsync();
-        try { _disposed = true; await StopAsync(); }
-        finally { _gate.Release(); }
+        await _queue.Enqueue(async () => { _disposed = true; await StopAsync(); });
         await _monitor;
         // Status reads use the canceled token and may still finish their final
-        // queued update; retain the small synchronization objects until GC.
+        // queued update; retain the small lifetime object until GC.
     }
 }

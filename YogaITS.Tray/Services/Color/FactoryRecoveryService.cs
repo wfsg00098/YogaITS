@@ -19,7 +19,8 @@ internal static class FactoryRecoveryService
     public static FactoryValidationResult ValidateCurrent(MachineIdentity machine, DisplayInfo d) =>
         IccInspector.ValidateFactoryDirectory(FactoryRoot, machine, d.HardwareId);
 
-    public static async Task<FactoryRecoveryResult> RecoverAsync(MachineIdentity machine, DisplayInfo d, Action<string>? progress = null)
+    public static async Task<FactoryRecoveryResult> RecoverAsync(MachineIdentity machine, DisplayInfo d,
+        Action<string>? progress = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(d.HardwareId))
             return new(false, "Current panel Hardware ID is unavailable.", FactoryRoot, 0, 0);
@@ -35,6 +36,9 @@ internal static class FactoryRecoveryService
             string requestId = "1S" + machine.MachineType + machine.SerialNumber;
             progress?.Invoke($"Requesting Lenovo Factory Calibration package for MT={machine.MachineType}, serial=<masked> ...");
 
+            using var total = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            total.CancelAfter(TimeSpan.FromMinutes(3));
+            var token = total.Token;
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             http.DefaultRequestHeaders.TryAddWithoutValidation("ClientID", ClientId);
             http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "PC_WIN11");
@@ -42,8 +46,9 @@ internal static class FactoryRecoveryService
             // downloads ZIP data. A JSON-only Accept can cause HTTP 406.
             http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
 
-            using var meta = await http.GetAsync(Endpoint + Uri.EscapeDataString(requestId));
-            string body = await meta.Content.ReadAsStringAsync();
+            using var meta = await http.GetAsync(Endpoint + Uri.EscapeDataString(requestId), HttpCompletionOption.ResponseHeadersRead, token);
+            await meta.Content.LoadIntoBufferAsync(2 * 1024 * 1024, token);
+            string body = await meta.Content.ReadAsStringAsync(token);
             if (!meta.IsSuccessStatusCode)
                 return new(false, $"Metadata request failed: HTTP {(int)meta.StatusCode} {meta.ReasonPhrase}.", FactoryRoot, 0, 0);
 
@@ -52,23 +57,28 @@ internal static class FactoryRecoveryService
                 return new(false, "Metadata response did not contain a usable download URL.", FactoryRoot, 0, 0);
 
             progress?.Invoke("Metadata PASS. Downloading calibration ZIP ...");
-            using var dl = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            using var dl = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
             if (!dl.IsSuccessStatusCode)
                 return new(false, $"ZIP download failed: HTTP {(int)dl.StatusCode} {dl.ReasonPhrase}.", FactoryRoot, 0, 0);
-            byte[] zipBytes = await dl.Content.ReadAsByteArrayAsync();
-            if (zipBytes.Length < 4 || zipBytes[0] != (byte)'P' || zipBytes[1] != (byte)'K')
-                return new(false, "Downloaded payload is not a ZIP archive.", FactoryRoot, 0, zipBytes.LongLength);
-            await File.WriteAllBytesAsync(zipTmp, zipBytes);
+            const long maximum = 128L * 1024 * 1024;
+            if (dl.Content.Headers.ContentLength is > maximum) throw new InvalidDataException("校色包超过允许大小。");
+            long zipBytes;
+            await using (var input = await dl.Content.ReadAsStreamAsync(token))
+            await using (var output = new FileStream(zipTmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
+                zipBytes = await BoundedFileTransfer.CopyAsync(input, output, maximum, token);
+            using (var header = File.OpenRead(zipTmp))
+                if (zipBytes < 4 || header.ReadByte() != 'P' || header.ReadByte() != 'K')
+                    return new(false, "Downloaded payload is not a ZIP archive.", FactoryRoot, 0, zipBytes);
 
             Directory.CreateDirectory(extract);
-            ZipFile.ExtractToDirectory(zipTmp, extract, overwriteFiles: true);
+            BoundedFileTransfer.ExtractZip(zipTmp, extract, token);
             string? candidate = FindBestFactoryDirectory(extract);
             if (candidate is null)
-                return new(false, "ZIP extracted, but no directory contained at least two recognized gamut ICC profiles.", FactoryRoot, 0, zipBytes.LongLength);
+                return new(false, "ZIP extracted, but no directory contained at least two recognized gamut ICC profiles.", FactoryRoot, 0, zipBytes);
 
             var valid = IccInspector.ValidateFactoryDirectory(candidate, machine, d.HardwareId);
             if (!valid.Ok)
-                return new(false, "Downloaded Factory package failed validation: " + valid.Message, FactoryRoot, valid.ProfileCount, zipBytes.LongLength);
+                return new(false, "Downloaded Factory package failed validation: " + valid.Message, FactoryRoot, valid.ProfileCount, zipBytes);
 
             progress?.Invoke($"Validation PASS ({valid.ProfileCount} profiles). Replacing YogaITS Factory cache atomically ...");
             string newRoot = Path.Combine(CacheRoot, ".Factory.new." + Guid.NewGuid().ToString("N"));
@@ -78,10 +88,11 @@ internal static class FactoryRecoveryService
             if (!newValid.Ok)
             {
                 Directory.Delete(newRoot, true);
-                return new(false, "Staged cache copy failed re-validation: " + newValid.Message, FactoryRoot, newValid.ProfileCount, zipBytes.LongLength);
+                return new(false, "Staged cache copy failed re-validation: " + newValid.Message, FactoryRoot, newValid.ProfileCount, zipBytes);
             }
 
             string? backup = null;
+            token.ThrowIfCancellationRequested();
             try
             {
                 if (Directory.Exists(FactoryRoot))
@@ -106,7 +117,7 @@ internal static class FactoryRecoveryService
 
             return new(true,
                 $"Online recovery PASS: {valid.ProfileCount} Factory profiles validated and cached. No serial value was written to the log.",
-                FactoryRoot, valid.ProfileCount, zipBytes.LongLength);
+                FactoryRoot, valid.ProfileCount, zipBytes);
         }
         catch (Exception ex)
         {

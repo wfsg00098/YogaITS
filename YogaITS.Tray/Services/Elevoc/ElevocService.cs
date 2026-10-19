@@ -2,6 +2,7 @@ namespace YogaITS.Tray.Services.Elevoc;
 
 internal sealed class ElevocService : SerializedFeatureService
 {
+    protected override TimeSpan WriteTimeout => TimeSpan.FromSeconds(60); // Includes the 20-second recording.
     private ElevocRpcClient? _client;
     private CoreAudioEndpointMonitor? _audio;
     private AudioEndpointInfo? _capture;
@@ -40,6 +41,10 @@ internal sealed class ElevocService : SerializedFeatureService
             string speaker = Safe(_client.GetSpeakerMode);
             string voice = Safe(_client.IsVoiceIdSet);
             string headset = Safe(_client.IsVoiceIdEnabledInHeadset);
+            if ((_capture is not null && (!Ok(captureJson) || (captureFunctions.Contains("uplink") && !Ok(mic)))) ||
+                (render is not null && (!Ok(renderJson) || (renderFunctions.Contains("downlink") && !Ok(speaker)))) ||
+                (Snapshot.VoiceId && captureFunctions.Contains("speaker_extraction") && !Ok(voice)))
+                throw new InvalidOperationException("音频模式暂不可读。");
             bool uplink = _capture is not null && captureFunctions.Contains("uplink") && Ok(mic);
             Snapshot = new(uplink,
                 render is not null && renderFunctions.Contains("downlink") && Ok(speaker),
@@ -55,7 +60,7 @@ internal sealed class ElevocService : SerializedFeatureService
             System.Diagnostics.Debug.WriteLine("Elevoc initialization failed: " + ex.Message);
             _client?.Dispose();
             _client = null;
-            Snapshot = ElevocSnapshot.Unavailable;
+            Snapshot = Snapshot with { Available = false };
         }
     }
 
@@ -67,7 +72,7 @@ internal sealed class ElevocService : SerializedFeatureService
         _ = RefreshAsync();
     }
 
-    public Task RefreshAsync() => RunAsync(() => { Read(); return Task.CompletedTask; });
+    public Task RefreshAsync() => RefreshAsyncCore(() => { Read(); return Task.CompletedTask; });
 
     private static void RequireOk(string response)
     {
@@ -77,14 +82,14 @@ internal sealed class ElevocService : SerializedFeatureService
 
     private void RequireVoice()
     {
-        if (!Snapshot.VoiceId || _capture is null || _client is null)
+        if (!Snapshot.Available || !Snapshot.VoiceId || _capture is null || _client is null)
             throw new InvalidOperationException("当前麦克风没有可用的声纹能力。");
     }
 
     public Task SetMicrophoneAsync(string mode) => RunAsync(async () =>
     {
         Read();
-        if (!Snapshot.Uplink || _client is null ||
+        if (!Snapshot.Available || !Snapshot.Uplink || _client is null ||
             (mode == "shared" && !ElevocMicrophonePolicy.SupportsMultiplePeople(Snapshot.InternalMicrophone)) ||
             (mode == "special" && !ElevocMicrophonePolicy.ShowPosition(Snapshot.InternalMicrophone, Snapshot.Special, Snapshot.MicrophoneMode)) ||
             (mode == "voiceid" && (!ElevocMicrophonePolicy.ShowVoice(Snapshot.InternalMicrophone, Snapshot.VoiceId, Snapshot.MicrophoneMode) || !Snapshot.VoiceIdRegistered)))
@@ -104,23 +109,33 @@ internal sealed class ElevocService : SerializedFeatureService
         finally { Read(); }
         System.Diagnostics.Debug.WriteLine(
             $"Elevoc uplink verify: expected={mode}, actual={Snapshot.MicrophoneMode ?? "<unknown>"}, capture={Snapshot.CaptureName}");
-        if (Snapshot.MicrophoneMode != mode || (mode == "voiceid" && !Snapshot.VoiceIdRegistered))
+        bool confirmed = await ReadbackPolicy.VerifyAsync(() =>
+        {
+            Read();
+            return Snapshot.Available && Snapshot.MicrophoneMode == mode &&
+                (mode != "voiceid" || Snapshot.VoiceIdRegistered);
+        });
+        if (!confirmed)
             throw new InvalidOperationException(
                 $"模式设置已发送，但服务回读未确认生效。请求模式：{mode}；实际模式：{Snapshot.MicrophoneMode ?? "未知"}。" +
                 $"当前麦克风设备：{Snapshot.CaptureName}。" +
                 (mode == "voiceid" && !Snapshot.VoiceIdRegistered ? "服务未确认已注册声纹。" : ""));
     }
 
-    public Task SetSpeakerAsync(bool enabled) => RunAsync(() =>
+    public Task SetSpeakerAsync(bool enabled) => RunAsync(async () =>
     {
         Read();
-        if (!Snapshot.Downlink || _client is null)
+        if (!Snapshot.Available || !Snapshot.Downlink || _client is null)
             throw new InvalidOperationException("当前扬声器不支持降噪。");
         try { RequireOk(_client.SetSpeakerNoiseCancellation(enabled)); }
         finally { Read(); }
-        if (Snapshot.SpeakerMode != (enabled ? "enable" : "disable"))
+        bool confirmed = await ReadbackPolicy.VerifyAsync(() =>
+        {
+            Read();
+            return Snapshot.Available && Snapshot.SpeakerMode == (enabled ? "enable" : "disable");
+        });
+        if (!confirmed)
             throw new InvalidOperationException("扬声器降噪设置未通过回读验证。");
-        return Task.CompletedTask;
     });
 
     public Task RemoveVoiceAsync() => RunAsync(async () =>

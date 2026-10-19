@@ -1,6 +1,7 @@
 namespace YogaITS.Tray.Services.Color.LenovoTcon;
 
-internal sealed record TconGamutSnapshot(bool Absent, bool Supported, string CurrentMode, IReadOnlyList<ColorMode> Modes);
+internal sealed record TconGamutSnapshot(bool Absent, bool Supported, string CurrentMode, IReadOnlyList<ColorMode> Modes,
+    bool Available = true);
 
 internal static class TconGamutBackend
 {
@@ -14,12 +15,14 @@ internal static class TconGamutBackend
             // COM and the mutex must be created, used and disposed on the same worker thread.
             using var wmi = new NativeTconWmi();
             if (!wmi.Ready)
-                return new(wmi.HrGetClass == WbemNative.WBEM_E_NOT_FOUND, false, "未知", []);
+                return new(wmi.HrGetClass == WbemNative.WBEM_E_NOT_FOUND, false, "未知", [],
+                    wmi.HrGetClass == WbemNative.WBEM_E_NOT_FOUND);
             var ability = LenovoManagerPath.ReadAbility(wmi, IgnoreDiagnostic);
-            if (!ability.Success || (ability.AdjustedAbility & 0x08) == 0)
+            if (!ability.Success) return new(false, false, "未知", [], false);
+            if ((ability.AdjustedAbility & 0x08) == 0)
                 return new(false, false, "未知", []);
             var current = LenovoManagerPath.ReadGamut(wmi, IgnoreDiagnostic);
-            if (!current.Success) return new(false, false, "未知", []);
+            if (!current.Success) return new(false, false, "未知", [], false);
             var modes = new byte[] { 0x06, 0x04, 0x08 }
                 .Where(raw => LenovoManagerPath.SupportsMode(ability.AdjustedAbility, raw))
                 .Select(raw => new ColorMode(ColorBackendPolicy.ModeId(raw), null)).ToArray();
@@ -27,7 +30,7 @@ internal static class TconGamutBackend
         }
         catch
         {
-            return new(false, false, "未知", []);
+            return new(false, false, "未知", [], false);
         }
     }
 

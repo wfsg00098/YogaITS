@@ -43,13 +43,27 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 `.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
 
-根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.1`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
+根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.2`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
 
 版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`；`5.0` 已封存至 `4ece4e7`（包含双路更新竞速）。
 
+`5.1` 本地封存至 `56b725e`，包含独显保活、离电暂停及集显隐藏分组；用户已完成上一轮保活测试。5.2 的调度/异常恢复优化须重新验收，既有机型验证不自动视为本轮验收通过。
+
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
-发布前及上传后核对远端 main，只有仍对应 main 的发布才标记 latest，避免旧构建晚完成覆盖最新版。完整交付必须使用 `build-clean.ps1`，该脚本另发布 `YogaITS.Updater`；不要只复制主程序的发布输出。
+发布前及上传后核对远端 main，只有仍对应 main 的发布才标记 latest，避免旧构建晚完成覆盖最新版。完整交付必须使用 `build-clean.ps1`，该脚本另发布两个助手；不要只复制主程序的发布输出。
+
+## 5.2 稳定性优化与验收
+
+- **安全与生命周期**：结束占用进程保留 PID+启动时间，执行前再次保护 DWM、Explorer 和保活助手；身份不明或复用则跳过。等待进程结束上限 5 秒，pnputil 等待上限 30 秒。helper 停止失败不丢弃所有权，不启动第二份。主程序退出先取消录音/网络恢复，清理最多等待 10 秒；超时直接结束进程，不提前释放仍在使用的 native 资源。
+- **刷新调度**：串行队列保留最多一次在途和一次待补刷新，写入优先于未开始的刷新，写入之间保持顺序。充电的读写共用驱动门锁。托盘悬停只使用固定提示，不再查询 ITS。状态缓存启动为空，先建立托盘/窗口再后台探测；ITS 能力失败最多三次探测。核心读探针每次最多等待 5 秒，超时保留在途调用、不重复创建工作线程；晚到结果丢弃，不覆盖之后的设置。
+- **状态与回读**：音频、HPD、显卡和色彩临时异常保留已确认能力，以不可用标志禁用操作；真正检测到端点/内屏消失仍隐藏。核心充电/开盖/自启保留最后确认值并标记可读性，不把读取失败冒充关闭；按功能独立的 mutation revision 防止旧读取覆盖新设置，其他分组仍正常合并。显卡模式未知时暂停保活；非 Auto 选择跟随实际模式。HPD/音频设置在有限窗口内确认，而非只读一次。普通服务读取等待上限 10 秒、写入 20 秒，录音写入 60 秒，色彩读取 90 秒/写入 210 秒以保留 TCON 等待及三分钟恢复；超时不释放在途资源、不并发重试，尚未开始的过期写入直接取消。成功刷新清理旧卡片错误。
+
+- **色彩与更新**：普通刷新按面板与 ICC 文件路径/大小/修改时间缓存校验和亮度元数据；实际 ICC 切换、在线恢复后仍完整校验，TCON transport/能力顺序不变。校色元数据上限 2 MiB、ZIP 128 MiB、实际展开 256 MiB/2048 项，下载空闲 20 秒、总时限 3 分钟，退出可取消。更新包必须含主程序与两个助手的完整文件集。仅清理成功更新且超过 7 天的 GUID 暂存；失败/回滚目录和未知目录、符号链接均保留。
+
+RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本地 `ncalrpc`。微软说明该选项对 local RPC 可忽略：[RpcBindingSetOption](https://learn.microsoft.com/en-us/windows/win32/api/rpcdce/nf-rpcdce-rpcbindingsetoption)。实际调用方边界由串行队列实现，原 native 调用返回前继续占有资源；若最终始终不返回，退出的进程级边界负责释放。停止录音仍可独立取消，不受状态未知时的普通按钮禁用影响。
+
+验收重点：首次启动托盘响应、服务延迟启动后能力恢复、管家外部切换显卡模式、插拔电与设备后不积压刷新、快速操作两窗口的充电设置、录音取消/换设备、HPD/降噪延迟回读、ICC/TCON/HDR/ACM 原路径、更新失败回滚及退出响应。自动检查使用独立临时文件夹与模拟后端，不访问真实驱动或网络；不能替代上述实机验证。
 
 ## 自动更新链路
 
@@ -81,7 +95,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 | --- | --- |
 | ITS 性能选项 | 保留型号筛选；Dispatcher Version ≥8192 走现代服务，查询 2 成功且含 `0x1` 才显示。较低/缺失版本走 LITSSVC，要求旧 MMC 状态键和 EnergyDrv 存在，不套用现代查询 2 门槛。 |
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
-| 显卡工作模式 | `IsSupportIGPUMode.Data > 0`；实际状态来自 `GetIGPUModeStatus`，逻辑模式由应用保存。集显选择要求 `GetIGPUMHDMIStatus == 0`，未知也禁用。 |
+| 显卡工作模式 | `IsSupportIGPUMode.Data > 0`；实际状态来自 `GetIGPUModeStatus`，Auto 策略由应用保存，其余选项跟随实际回读。集显选择要求 `GetIGPUMHDMIStatus == 0`，未知也禁用。 |
 | 显卡智能策略 | 电源通知必须可用；AC 目标双显，DC 且外接独显路径未占用时目标集显，供电未知不切换。DC 临时失败最多重试 5 次、间隔 5 秒；新事件或手动选择取消旧重试。 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配面板及有效的序列号、Machine Type。仅当后两者同时为 `INVALID` 时接受 Lenovo 的面板级配置，不放宽真实身份不匹配或空字段校验；恢复与实际切换共用校验逻辑。 |
 | HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
@@ -200,7 +214,7 @@ dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executabl
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 
-最近一轮带图标验证的 PolicyChecks 为 **564 项通过**。直接复用原探针 SupportsMode 验证目标能力位，并覆盖 ACM 操作能力/设置与有效模式独立性/策略位组合、未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标参数时检查数量不同。
+PolicyChecks 直接复用原探针 SupportsMode 验证目标能力位，并覆盖 ACM 操作能力/设置与有效模式独立性/策略位组合、未知模式/后端选择矩阵、ITS/供电能力、显卡策略、HPD 能力、HDR/ACM 实际状态与偏好、电池策略、结构大小/偏移、ICC 身份与亮度、声纹数据、串行读写/关闭、启动参数、DPI/工作区及录制文案等。5.2 新增 OptimizationChecks 验证刷新合并/写优先、在途超时与过期写入取消、按功能版本合并、充电驱动互斥、进程身份保护、下载上限、ZIP 路径安全、完整更新文件清单及成功暂存保留期。逻辑检查不操作真实硬件、注册表、麦克风或网络；不带图标/助手参数时检查数量不同。
 
 2026-10-13 TCON 集成后，本机只读诊断确认选择 `Icc`，7 个有效工厂模式及 HDR 实际状态读取正常；未执行 TCON/ICC 色域写入、HDR 切换、音频设置、录音或在线下载。非管理员 GPU 探测仍为拒绝访问，不能据此判定能力不存在。
 

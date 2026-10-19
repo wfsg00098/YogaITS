@@ -5,7 +5,7 @@ using System.Text;
 
 namespace YogaITS.Tray.Services;
 
-public sealed record GpuProcessInfo(int Pid, string Name, string? ExecutablePath = null);
+public sealed record GpuProcessInfo(int Pid, string Name, string? ExecutablePath = null, long? StartedUtcTicks = null);
 
 public sealed record GpuActionResult(bool Success, string Message);
 
@@ -118,9 +118,11 @@ public static class NvidiaGpuHelper
                             zero >= 0 ? zero : nameBytes.Length).Trim();
 
                         string? path = null;
+                        long? started = null;
                         try
                         {
                             using Process p = Process.GetProcessById(pid);
+                            started = p.StartTime.ToUniversalTime().Ticks;
                             name = string.IsNullOrWhiteSpace(name) ? p.ProcessName : name;
                             path = p.MainModule?.FileName;
                         }
@@ -129,7 +131,7 @@ public static class NvidiaGpuHelper
                             // Process may be protected or may have exited.
                         }
 
-                        result[pid] = new(pid, string.IsNullOrWhiteSpace(name) ? $"PID {pid}" : name, path);
+                        result[pid] = new(pid, string.IsNullOrWhiteSpace(name) ? $"PID {pid}" : name, path, started);
                     }
                 }
                 finally
@@ -160,11 +162,34 @@ public static class NvidiaGpuHelper
 
     public static async Task<GpuActionResult> KillProcessesAsync(IEnumerable<int> pids)
     {
+        var targets = new List<GpuProcessInfo>();
+        foreach (int pid in pids.Distinct())
+        {
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+                targets.Add(new(pid, process.ProcessName, StartedUtcTicks: process.StartTime.ToUniversalTime().Ticks));
+            }
+            catch (ArgumentException) { }
+        }
+        return await KillProcessesAsync(targets);
+    }
+
+    public static bool IsProtectedProcessName(string name) =>
+        GpuKeepAwakePolicy.IsHelperName(name) || ExcludedProcessNames.Contains(
+            name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name : name + ".exe");
+
+    internal static bool SameProcess(long? expectedStart, long actualStart) =>
+        expectedStart is > 0 && expectedStart == actualStart;
+
+    public static async Task<GpuActionResult> KillProcessesAsync(IEnumerable<GpuProcessInfo> targets)
+    {
         var failed = new List<string>();
         int killed = 0;
 
-        foreach (int pid in pids.Distinct())
+        foreach (var target in GetKillCandidates(targets))
         {
+            int pid = target.Pid;
             if (pid <= 0 || pid == Environment.ProcessId)
                 continue;
 
@@ -172,12 +197,17 @@ public static class NvidiaGpuHelper
             {
                 using Process p = Process.GetProcessById(pid);
 
-                if (GpuKeepAwakePolicy.IsHelperName(p.ProcessName)) continue;
+                if (IsProtectedProcessName(p.ProcessName)) continue;
+                if (!SameProcess(target.StartedUtcTicks, p.StartTime.ToUniversalTime().Ticks))
+                {
+                    failed.Add($"PID {pid}：无法确认进程身份或 PID 已被复用，已跳过。");
+                    continue;
+                }
 
                 // LLT terminates the process tree and waits for the root to exit.
                 // Do not toggle the process-wide debug privilege between targets.
                 p.Kill(entireProcessTree: true);
-                await p.WaitForExitAsync().ConfigureAwait(false);
+                await p.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
                 killed++;
             }
             catch (ArgumentException)
@@ -225,7 +255,12 @@ public static class NvidiaGpuHelper
         Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
         Task<string> stderrTask = process.StandardError.ReadToEndAsync();
 
-        await process.WaitForExitAsync();
+        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
+        catch (TimeoutException)
+        {
+            try { process.Kill(); } catch { }
+            return new(false, "重启设备等待超时，实际状态待确认，请稍后刷新。不会重复发送重启命令。");
+        }
 
         string stdout = (await stdoutTask).Trim();
         string stderr = (await stderrTask).Trim();
