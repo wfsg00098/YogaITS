@@ -11,6 +11,7 @@
 - `YogaITS.Tray/UI/`：完整/迷你窗口、信息窗口、功能卡片、原生动画、滚动条和辅助功能。
 - `YogaITS.Tray/Assets/YogaITS.ico`：编译进 EXE 的图标源，不单独复制到发布目录。
 - `YogaITS.dGPUKeepAwake/`：独立 NVIDIA 空闲 context 助手，不承载保活策略。
+- `YogaITS.Tray/Services/KeyboardBacklight/`：键盘背光协议、EnergyDrv 设备访问、Probe/Get/Set 后端及串行服务，无状态持久化或自动场景。
 - `YogaITS.Updater/`：等待主程序退出、校验/安装及失败回滚的更新助手。
 - `Tests/YogaITS.PolicyChecks/`：不操作硬件的逻辑检查。
 - `Tests/YogaITS.ReadOnlyProbe/`：能力与状态的只读诊断。
@@ -51,7 +52,9 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 `5.1` 封存分支固定在 `56b725e`，包含独显保活、离电暂停及集显隐藏分组；用户已完成上一轮保活测试。用户已于 2026-10-19 确认 5.2 优化后的所有功能在 Yoga Pro 16 IPH11 上重新验证通过；其他机型的既有验证不自动视为本轮验收通过。
 
-2026-10-21：`5.2` 封存分支固定在 `319d7bb`，包含本轮稳定性优化、息屏暂停/亮屏恢复独显保活及完整验收记录。main 开始 `5.3` 开发，尚未添加新功能；5.2 的验收结论不自动覆盖后续 5.3 改动。
+2026-10-21：`5.2` 封存分支固定在 `319d7bb`，包含本轮稳定性优化、息屏暂停/亮屏恢复独显保活及完整验收记录。main 开始 `5.3` 开发；5.2 的验收结论不自动覆盖后续 5.3 改动。
+
+5.3 首个新增功能为 EnergyDrv 键盘背光，按实时 capability 动态显示。用户已于 2026-10-21 确认在 Yoga Pro 16 IPH11 上完成集成版实机测试；自动检查、协议样本与实机验收分别记录，不将此结论扩大至其他机型。
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
@@ -111,6 +114,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 | 播放/暂停 | `GetAll rc=0`，且 `sensor_type` 为 3/4 或 `unAwareAbility` 非零。 |
 | 音频降噪 | 当前 Capture/Render endpoint 声明 `uplink/downlink`，并且对应 `GetMode` 返回 OK。 |
 | 多人/定位/声纹 | 仅内置阵列麦克风；多人模式按端点类型限制，人声定位还要求 `special`，声纹要求 `speaker_extraction` 与声纹查询正常。 |
+| 键盘背光 | EnergyDrv `0x83102144` 查询 `0x01` 返回 bit0=1，`raw >> 1` 为 1/2/3，并且对应 GET 合法才显示；无型号/产品线/年份筛选。unsupported、异常或超时期间隐藏整个分组。 |
 
 ITS 校验参考 [LLT ITSModeFeature](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/master/LenovoLegionToolkit.Lib/Features/ITSModeFeature.cs) 及 [ITSModeFeatureDriver](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/master/LenovoLegionToolkit.Lib/Features/ITSModeFeatureDriver.cs)。只按 `LenovoProcessManagement\Performance\PowerSlider\Version` 的 8192 界限选择路径，现代命令失败不回退旧服务。EnergyDrv 查询返回长度必须是 4 字节；未接入 LLT 的 ThinkBook 实验性整套驱动切换。
 
@@ -178,6 +182,28 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 偏好保存为 settings.json 的 `KeepDGpuAwake`，默认 false。与 LLT 仅在 Auto 离电暂停的条件不同，本项目所有模式都必须接 AC 才保活；离电或电源状态未知时一律停止助手但不清除偏好。主程序独立订阅电源事件并直接读取供电状态，不等待显卡模式 WMI 回读；十分钟监督也再次检查供电，作为事件丢失时的兜底。NVIDIA 不可用、集显模式、状态未知、睡眠或息屏时暂停；条件允许后恢复。切集显前先停 helper 并等待释放，模式操作结束后按实际模式恢复；停止失败保留进程所有权，不启动第二份。集显模式下独显控制分组隐藏，开启配置保留；只有完整窗口提供保活卡片，两窗口均按保活开启配置禁用重启独显。Main 的核显偏好保留用户选择；helper 的 GPU=2 偏好单独设置且保留其他图形选项。完整发布另包含 helper 的 exe/dll/deps/runtimeconfig，不要仅复制主 EXE。5.1 保活已获用户测试完成确认，5.2 调度优化及息屏/亮屏行为亦已在 Yoga Pro 16 IPH11 上重新验证通过；不据此宣称所有混合显卡、RTX 50 或重置/睡眠组合均已验证。
 
+## 键盘背光（5.3）
+
+参考 [SaltwaterC 的 EnergyDrv 配置](https://github.com/SaltwaterC/KeyboardBacklightForLenovo/blob/main/KeyboardBacklightForLenovo.Core/DriversConfig.json)、[设备访问实现](https://github.com/SaltwaterC/KeyboardBacklightForLenovo/blob/main/KeyboardBacklightForLenovo.Core/KeyboardBacklightController.cs) 和 [gonwan 逆向实现](https://github.com/gonwan/ideapad-keyboard-backlight/blob/main/ideapad_keyboard_backlight.c)。仅重用协议知识，独立实现 capability-driven 后端；不移植其持久化、定时恢复、机型判断或 ThinkPad IBMPmDrv。
+
+每次事务以 `GENERIC_READ | GENERIC_WRITE`、`FILE_SHARE_READ | FILE_SHARE_WRITE`、`OPEN_EXISTING` 打开 `\\.\EnergyDrv`，所有命令使用 IOCTL `0x83102144`，DWORD 输入、非空 16 字节输出缓冲，读取至少要求返回 4 字节。句柄在事务结束时释放，不与充电逻辑混用其不同的访问权限。
+
+| capability 的 levels | 可用状态编码 | GET | SET |
+| --- | --- | --- | --- |
+| 1 | 0=关闭，1=开启 | `0x12` | `(state << 16) | 0x13` |
+| 2 | 0=关闭，1=低亮度，2=高亮度 | `0x22` | `(state << 16) | 0x23` |
+| 3 | 0=关闭，1=低亮度，2=高亮度，3=自动 | `0x32` | `(state << 16) | 0x33` |
+
+先查 `0x01`，bit0 必须为 1，levels=`raw >> 1`；未知值停止探测，不盲试其他协议族。GET 同样要求 bit0=1；levels=3 额外要求 `(raw >> 1) & 0x8000`，再取 `(raw >> 1) & 0x7FFF` 为状态；其余族直接取 `raw >> 1`。所有状态须在 capability 范围内。用户提供的 Yoga Pro 16 IPH11 / 83SF 实测样本为 capability `0x07`、GET `0x10001/0x10003/0x10005/0x10007`，测试将这些数据作为协议样本，不用来筛选设备。
+
+`KeyboardBacklightService` 复用 `SerializedFeatureService` 的串行队列及有限等待：启动/完整窗口获焦只 Probe/Get；显式设置时重新 Probe/Get，验证当前族及目标档后才 SET，随后立即 GET，匹配才发布确认状态。SET 返回值不作为档位；失败隐藏分组，不乐观更新、不自动重试写入。下一次成功刷新可恢复分组。UI 仅保存最近一次硬件快照用于渲染，不保存目标偏好，不设定时器，不写 OEM 注册表，不读取 SmartEngine，不与 Hot Keys 通信，不创建自动场景。
+
+完整窗口分组顺序为麦克风降噪、声纹管理、键盘背光、开盖开机，键盘背光复用现有卡片、pending 边框、分组讲述人名称和等高布局；迷你窗口不新增此项。所有档位单行排列，四档 UI 顺序为“关闭、自动、低亮度、高亮度”，对应底层编码 `[0, 3, 1, 2]`，不改变协议编码。Fn+Space 与程序均作用于底层 EC，界面在下一次获焦/操作时重新读取，不使用全局键盘钩子。保留 LenovoFnAndFunctionKeys 正常运行，其 OSD 不由本项目接管。
+
+自动检查仅使用模拟设备，覆盖三族全部档位/命令、extended flag、越界/无效能力、SET 前重新探测、立即回读、失败隐藏、Fn+Space 外部状态变化、句柄释放及 UI 档位排序；不调用真实 EnergyDrv。集成版键盘背光已在 Yoga Pro 16 IPH11 上测试通过。参考项目提供 ThinkBook/IdeaPad（小新）EnergyDrv 支持，因此预期同协议设备兼容；这些机型的本功能仍待实机验证，不增加型号白名单或以文档宣称替代 Probe/Get。
+
+2026-10-21：主程序 Release 编译通过（0 警告、0 错误），完整 dev 发布至 `publish/5.3-keyboard-dev/`，含更新/保活助手及 PRI；最终单行排序版发布文件与无硬件逻辑检查 **1381 项通过**。随后按用户要求启动 dev，用户确认 Yoga Pro 16 IPH11 键盘背光测试完毕；自动检查本身未调用真实背光驱动。
+
 ## 音频与声纹安全
 
 Elevoc 使用自建 Direct RPC：RPCRT4、`ncalrpc:ElevocRpcEndpoint`、NDR32，启动执行只读 ABI 自检。不加载 ElevocUAPO.dll，不依赖版本、SHA256 或 RVA。Core Audio 使用完整 x64 PROPVARIANT（24 字节，指针偏移 8），内置阵列按 JackSubType 的 MIC_ARRAY/PROCESSING_MIC_ARRAY 判断，不靠设备名猜测。
@@ -242,7 +268,7 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 
 | 已完善测试的机型 | 重点验证路径 |
 | --- | --- |
-| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证；5.2 优化后的所有功能均已重新验证通过。 |
+| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证；5.2 全功能回归、5.3 键盘背光均已实机验证通过。 |
 | 小新 Pro 16 IAH7 | 旧版 ITS 服务的性能选项切换。 |
 | 小新 Pro 16 IAH10 | 不同屏幕配置下的 ICC 色域切换。 |
 | ThinkBook 14 G6+ AHP | TCON 硬件色域控制，P3/sRGB 切换。 |
@@ -268,6 +294,8 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 2026-10-19：5.2 优化提交 `959e4a8` 的主程序与只读探针编译通过，完整发布检查为 **1111 项通过**；另运行仅使用自建父/子进程的进程树测试及版本命名检查。用户已确认 5.2 优化后的所有功能在 Yoga Pro 16 IPH11 上完成实机回归并全部通过。后续代码更改或其他机型仍须由对应硬件用户验收。
 
 2026-10-19：提交 `77c8984` 新增息屏暂停、亮屏按条件恢复独显 helper；主程序编译通过，包含两个助手的完整 dev 发布检查 **1267 项通过**。用户先确认该 dev 版息屏/亮屏测试成功，随后进一步确认 5.2 优化后的所有功能在 Yoga Pro 16 IPH11 上均已重新验证成功。
+
+2026-10-21：用户确认 5.3 键盘背光在 Yoga Pro 16 IPH11 上实机测试通过，最终 UI 为单行“关闭、自动、低亮度、高亮度”。ThinkBook、小新仅作为相同 EnergyDrv 协议的预期兼容对象，尚未收到本功能实机验收结果。
 
 ## 提交与维护
 

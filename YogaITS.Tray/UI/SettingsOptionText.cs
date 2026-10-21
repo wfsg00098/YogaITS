@@ -3,6 +3,23 @@ namespace YogaITS.Tray.UI;
 // Display text stays separate from RPC/profile identifiers.
 internal static class SettingsOptionText
 {
+    public static int[] KeyboardBacklightStates(int levels) => levels switch
+    {
+        1 => [0, 1],
+        2 => [0, 1, 2],
+        3 => [0, 3, 1, 2],
+        _ => []
+    };
+
+    public static string KeyboardBacklightLabel(int levels, int state) => state switch
+    {
+        0 => "关闭",
+        1 => levels == 1 ? "开启" : "低亮度",
+        2 => "高亮度",
+        3 => "自动",
+        _ => "未知"
+    };
+
     public static string VoiceRegistrationStatus(string status, bool recording, int remainingSeconds) =>
         recording && remainingSeconds > 0
             ? $"正在录音，剩余 {remainingSeconds} 秒。请连续朗读下方文字。"

@@ -33,6 +33,7 @@
     <Compile Include="../../YogaITS.Tray/Services/LenovoBatteryHelper.cs" Link="LenovoBatteryHelper.cs" />
     <Compile Include="../../YogaITS.Tray/Services/BatteryChargeSelection.cs" Link="BatteryChargeSelection.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SerializedFeatureService.cs" Link="SerializedFeatureService.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/KeyboardBacklight/*.cs" Link="KeyboardBacklight/%(Filename)%(Extension)" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/HpdState.cs" Link="HpdState.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/HpdFeatureProfile.cs" Link="HpdFeatureProfile.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocJson.cs" Link="ElevocJson.cs" />

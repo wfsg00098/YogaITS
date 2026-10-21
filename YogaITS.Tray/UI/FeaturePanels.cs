@@ -4,6 +4,7 @@ using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using Microsoft.UI.Xaml;
+using YogaITS.Tray.Services.KeyboardBacklight;
 
 namespace YogaITS.Tray.UI;
 
@@ -21,18 +22,22 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _micCard = new("麦克风降噪");
     private readonly FeatureCard _speakerCard = new("扬声器降噪");
     private readonly FeatureCard _voiceCard = new("声纹管理");
+    private readonly KeyboardBacklightService _keyboardBacklight;
+    private readonly FeatureCard _keyboardBacklightCard = new("键盘背光");
     private bool _voiceStartPending;
     private bool _voiceWasRegistering;
     private int _voiceRemainingSeconds;
     private const string VoiceReadingExample = "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。";
     private bool _closed;
 
-    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color, ElevocService audio)
+    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color,
+        ElevocService audio, KeyboardBacklightService keyboardBacklight)
     {
         _gpu = gpu;
         _hpd = hpd;
         _color = color;
         _audio = audio;
+        _keyboardBacklight = keyboardBacklight;
         _host = host;
         host.Children.Add(_gpuCard.View);
         host.Children.Add(_wakeCard.View);
@@ -41,6 +46,7 @@ internal sealed class FeaturePanels : IDisposable
         host.Children.Add(_speakerCard.View);
         host.Children.Add(_micCard.View);
         host.Children.Add(_voiceCard.View);
+        host.Children.Add(_keyboardBacklightCard.View);
         Render();
     }
 
@@ -72,13 +78,28 @@ internal sealed class FeaturePanels : IDisposable
         RenderHpd();
         RenderColor();
         RenderAudio();
+        RenderKeyboardBacklight();
     }
 
     public void Dispose()
     {
         _closed = true;
-        foreach (var card in new[] { _gpuCard, _wakeCard, _videoCard, _colorCard, _micCard, _speakerCard, _voiceCard })
+        foreach (var card in new[] { _gpuCard, _wakeCard, _videoCard, _colorCard, _micCard, _speakerCard, _voiceCard, _keyboardBacklightCard })
             card.Dispose();
+    }
+
+    private void RenderKeyboardBacklight()
+    {
+        var snapshot = _keyboardBacklight.Snapshot;
+        _keyboardBacklightCard.Update(snapshot.Supported && _keyboardBacklight.IsResponsive, body =>
+        {
+            var current = _keyboardBacklight.Snapshot;
+            _keyboardBacklightCard.Options(body, Math.Max(1, current.Levels + 1), false,
+                SettingsOptionText.KeyboardBacklightStates(current.Levels).Select(state =>
+                    _keyboardBacklightCard.Option(SettingsOptionText.KeyboardBacklightLabel(current.Levels, state),
+                        current.State == state, () => _keyboardBacklight.SetAsync(state))).ToArray());
+            _keyboardBacklightCard.SetStatus("");
+        });
     }
 
     private void RenderAudio()

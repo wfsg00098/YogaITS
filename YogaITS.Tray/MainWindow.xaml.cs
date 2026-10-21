@@ -5,6 +5,7 @@ using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Updates;
+using YogaITS.Tray.Services.KeyboardBacklight;
 
 namespace YogaITS.Tray;
 
@@ -20,6 +21,7 @@ public sealed partial class MainWindow : Window
     private readonly HpdService _hpd = new();
     private readonly ColorGamutService _color = new();
     private readonly ElevocService _audio = new();
+    private readonly KeyboardBacklightService _keyboardBacklight = new();
     private readonly GpuKeepAwakeService _keepAwake = new();
     private bool _gpuInitializationComplete;
     private readonly AppUpdateService _updates = new();
@@ -104,6 +106,8 @@ public sealed partial class MainWindow : Window
         _ = _color.RefreshAsync();
         _audio.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
         _ = _audio.RefreshAsync();
+        _keyboardBacklight.Changed += () => DispatcherQueue.TryEnqueue(() => _featurePanels?.Render());
+        _ = _keyboardBacklight.RefreshAsync();
         _updates.Changed += () => DispatcherQueue.TryEnqueue(RefreshUpdateCard);
         _ = InitializeCoreAsync();
     }
@@ -214,7 +218,7 @@ public sealed partial class MainWindow : Window
             {
                 _controlCenterWindow = menu;
                 RefreshUpdateCard();
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio);
+                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio, _keyboardBacklight);
                 bool active = false;
                 menu.Activated += (_, args) =>
                 {
@@ -265,7 +269,7 @@ public sealed partial class MainWindow : Window
         try
         {
             await Task.WhenAll(RefreshCoreAsync(), _gpu.RefreshAsync(), _hpd.RefreshAsync(),
-                _color.RefreshAsync(), _audio.RefreshAsync());
+                _color.RefreshAsync(), _audio.RefreshAsync(), _keyboardBacklight.RefreshAsync());
         }
         catch (Exception ex)
         {
@@ -595,7 +599,7 @@ public sealed partial class MainWindow : Window
         try
         {
             await Task.WhenAll(_keepAwake.DisposeAsync().AsTask(), _gpu.DisposeAsync().AsTask(), _hpd.DisposeAsync().AsTask(),
-                _color.DisposeAsync().AsTask(), _audio.DisposeAsync().AsTask(), _itsActions.DisposeAsync().AsTask(),
+                _color.DisposeAsync().AsTask(), _audio.DisposeAsync().AsTask(), _keyboardBacklight.DisposeAsync().AsTask(), _itsActions.DisposeAsync().AsTask(),
                 _chargeActions.DisposeAsync().AsTask(), _flipActions.DisposeAsync().AsTask(),
                 _startupActions.DisposeAsync().AsTask()).WaitAsync(TimeSpan.FromSeconds(10));
         }
