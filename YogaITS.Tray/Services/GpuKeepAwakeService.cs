@@ -14,6 +14,7 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
     private bool _disposed, _present, _modeBlocked, _switching, _active, _configured;
     private bool _suspended;
     private bool _displayOn = true;
+    private long _modeRevision;
     private int _powerSource = -1;
     private bool _enabled = UserSettingsStore.Get("KeepDGpuAwake", false);
     private string _message = "";
@@ -40,15 +41,19 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         Changed?.Invoke();
     }
 
-    public Task ConfigureAsync(bool present, GpuWorkingSnapshot mode, bool endSwitch = false) => RunAsync(async () =>
+    public Task ConfigureAsync(bool present, GpuWorkingSnapshot mode) => RunAsync(async () =>
     {
+        if (mode.Revision < _modeRevision) return;
+        _modeRevision = mode.Revision;
+        // Only a newly published, confirmed mode may release a failed transition.
+        bool completedSwitch = _switching && mode.Available && mode.EffectiveMode is 0 or 1;
+        if (completedSwitch) _switching = false;
         bool blocked = !mode.Available || (mode.Supported && mode.EffectiveMode == 1);
         if (_configured && _present == present && _modeBlocked == blocked &&
-            _powerSource == SystemEventMonitor.ReadPowerSource() && !endSwitch) return;
+            _powerSource == SystemEventMonitor.ReadPowerSource() && !completedSwitch) return;
         _configured = true;
         _present = present;
         _modeBlocked = blocked;
-        if (endSwitch) _switching = false;
         await ReconcileAsync();
     });
 
@@ -68,11 +73,23 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         await ReconcileAsync(checkHealth: displayOn);
     });
 
-    public Task PauseForModeSwitchAsync() => RunAsync(async () =>
+    public Task SuspendForGpuModeAsync(long revision) => RunAsync(async () =>
     {
+        _modeRevision = Math.Max(_modeRevision, revision);
         _switching = true;
         try { await StopAsync(); }
         catch { _switching = false; throw; }
+    });
+
+    public Task CompleteGpuModeAsync(bool present, int? effectiveMode, long revision) => RunAsync(async () =>
+    {
+        _modeRevision = Math.Max(_modeRevision, revision);
+        _configured = true;
+        _present = present;
+        // Unknown readback must not restart a context on a possibly disabled GPU.
+        _modeBlocked = effectiveMode != 0;
+        _switching = false;
+        await ReconcileAsync(verifyStarted: true);
     });
 
     public async Task<GpuKeepAwakeSnapshot> SetEnabledAsync(bool enabled)
@@ -97,7 +114,7 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         return Snapshot;
     }
 
-    private async Task ReconcileAsync(bool checkHealth = false)
+    private async Task ReconcileAsync(bool checkHealth = false, bool verifyStarted = false)
     {
         _powerSource = SystemEventMonitor.ReadPowerSource();
         if (!GpuKeepAwakePolicy.MayRun(_enabled, _present, true, _modeBlocked ? 1 : 0,
@@ -110,7 +127,7 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
                 : "当前暂不保持唤醒，条件恢复后将自动恢复。";
             return;
         }
-        if (_process is { HasExited: false } && (!checkHealth || await CheckHealthAsync())) return;
+        if (_process is { HasExited: false } && (!(checkHealth || verifyStarted) || await CheckHealthAsync())) return;
         await StopAsync();
         string helper = Path.Combine(AppContext.BaseDirectory, GpuKeepAwakePolicy.HelperFileName);
         if (!File.Exists(helper))
@@ -137,6 +154,8 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         catch { _stop.Dispose(); _stop = null; _check.Dispose(); _check = null; throw; }
         _message = "正在建立 NVIDIA 独显空闲上下文。";
         _ = ReadStatusAsync(_process);
+        if (verifyStarted && !await CheckHealthAsync())
+            throw new InvalidOperationException("保持独显唤醒助手未能确认建立有效的独显上下文。");
     }
 
     private async Task<bool> CheckHealthAsync()

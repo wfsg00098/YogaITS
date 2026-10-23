@@ -26,6 +26,7 @@ internal sealed class FeatureCard : IDisposable
     private bool _available = true;
     private bool _closed;
     private string? _lastError;
+    private string? _unavailableMessage;
     private int _nextChild;
     private sealed record OptionBinding(Func<Task> Action, bool KeepInteractive, bool Selected);
     private readonly ConditionalWeakTable<Button, OptionBinding> _bindings = new();
@@ -45,12 +46,14 @@ internal sealed class FeatureCard : IDisposable
         SettingsMotion.SeparateDivider(View);
     }
 
-    public void Update(bool visible, Action<StackPanel> render, bool available = true, bool preserveError = false)
+    public void Update(bool visible, Action<StackPanel> render, bool available = true, bool preserveError = false,
+        string? unavailableMessage = null)
     {
         if (_closed) return;
         _render = render;
         _visible = visible;
         _available = available;
+        _unavailableMessage = unavailableMessage;
         if (available && !preserveError) _lastError = null;
         if (_busy)
             return;
@@ -63,7 +66,7 @@ internal sealed class FeatureCard : IDisposable
         while (_body.Children.Count > _nextChild)
             _body.Children.RemoveAt(_body.Children.Count - 1);
         RefreshFooterVisibility();
-        if (!available) SetStatus("暂时无法读取状态，请稍后重试。已禁用操作，未更改设置。");
+        if (!available) SetStatus(unavailableMessage ?? "暂时无法读取状态，请稍后重试。已禁用操作，未更改设置。");
         else if (_lastError is not null)
             SetStatus(_lastError);
     }
@@ -197,7 +200,7 @@ internal sealed class FeatureCard : IDisposable
             {
                 TrayMenuWindow.RefreshOptionTile(button, binding.Selected);
                 if (_render is not null)
-                    Update(_visible, _render, _available, preserveError: true);
+                    Update(_visible, _render, _available, preserveError: true, unavailableMessage: _unavailableMessage);
                 if (_lastError is not null)
                     SetStatus(_lastError, announce: true);
                 else UiAccessibility.Announce(_title, "操作完成。" + _status.Text);

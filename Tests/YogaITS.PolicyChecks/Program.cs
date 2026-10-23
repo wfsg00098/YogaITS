@@ -274,10 +274,10 @@ Check(SystemEventMonitor.ClassifyMessage(0x0007, 0) == SystemStateChange.None &&
     "Focus gain/loss are not required system event sources");
 
 foreach (int power in new[] { -1, 0, 1, 2 })
-foreach (int path in new[] { -1, 0, 1 })
+foreach (var displayState in Enum.GetValues<DgpuDisplayState>())
 {
-    int? expected = power == 0 ? 0 : power == 1 && path == 0 ? 1 : null;
-    Check(GpuAutoPolicy.Target(power, path) == expected, $"GPU power={power}, externalPath={path}");
+    int? expected = power == 0 ? 0 : power == 1 && displayState == DgpuDisplayState.Disconnected ? 1 : null;
+    Check(GpuAutoPolicy.Target(power, displayState) == expected, $"GPU power={power}, display={displayState}");
 }
 
 HpdState Hpd(int aware, int sensor) => new(aware, sensor, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0);
@@ -606,6 +606,7 @@ int updaterIndex = Array.IndexOf(args, "--updater-executable");
 checks += await UpdateChecks.RunAsync(updaterIndex >= 0 ? args[updaterIndex + 1] : null);
 checks += await OptimizationChecks.RunAsync();
 checks += await KeyboardBacklightChecks.RunAsync();
+checks += await GpuModeChecks.RunAsync();
 Console.WriteLine($"PASS: {checks} checks. No hardware, registry, microphone, or network operations were performed.");
 
 static byte[] Icc(string serial, string panel, int brightness, string machineType = "TEST")

@@ -48,9 +48,10 @@ public sealed partial class MainWindow : Window
         foreach (var actions in new[] { _itsActions, _chargeActions, _flipActions, _startupActions })
             actions.Changed += () => DispatcherQueue.TryEnqueue(ApplyCoreState);
         _keepAwake.Changed += () => DispatcherQueue.TryEnqueue(RefreshKeepAwakeCards);
-        _gpu.KeepAwakeModeChange = suppressed => suppressed
-            ? _keepAwake.PauseForModeSwitchAsync()
-            : _keepAwake.ConfigureAsync(_stateCache.Snapshot.NvidiaGpuSupported, _gpu.Snapshot, endSwitch: true);
+        _gpu.SuspendKeepAwake = () => _keepAwake.SuspendForGpuModeAsync(_gpu.StateRevision);
+        _gpu.CompleteKeepAwake = actual => _keepAwake.CompleteGpuModeAsync(
+            actual == 0 ? NvidiaGpuHelper.HasNvidiaDisplayDevice() : _stateCache.Snapshot.NvidiaGpuSupported, actual, _gpu.StateRevision);
+        _gpu.KeepAwakeDiagnostic = () => $"Enabled={_keepAwake.Snapshot.Enabled}; Active={_keepAwake.Snapshot.Active}";
 
         Closed += MainWindow_Closed;
         InitializeHiddenTrayHost();

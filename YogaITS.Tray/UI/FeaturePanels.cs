@@ -60,7 +60,7 @@ internal sealed class FeaturePanels : IDisposable
             var current = _gpu.Snapshot;
             _gpuCard.Options(body,
                 _gpuCard.Option("集显模式", current.LogicalMode == GpuWorkingMode.IGPUOnly,
-                    () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly), current.ExternalPath == 0),
+                    () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly), current.DgpuDisplayState == DgpuDisplayState.Disconnected),
                 _gpuCard.Option("智能模式", current.LogicalMode == GpuWorkingMode.Auto,
                     () => _gpu.SelectAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
                 _gpuCard.Option("双显模式", current.LogicalMode == GpuWorkingMode.Default,
@@ -74,11 +74,38 @@ internal sealed class FeaturePanels : IDisposable
             });
             string effective = current.EffectiveMode switch { 0 => "双显", 1 => "集显", _ => "未知" };
             _gpuCard.SetStatus($"当前实际状态：{effective}。{current.Message}");
-        }, gpu.Available && _gpu.IsResponsive);
+            _gpuCard.Options(body, _gpuCard.Option("详细信息 / 复制诊断信息", false, ShowGpuDiagnosticsAsync,
+                keepInteractive: true, isAction: true, allowWhenUnavailable: true));
+        }, gpu.Available && _gpu.IsResponsive, unavailableMessage: !_gpu.IsResponsive
+            ? "显卡服务响应超时，当前操作结果待确认；原调用结束前不会再次执行切换。"
+            : string.IsNullOrEmpty(gpu.Message) ? null : gpu.Message);
         RenderHpd();
         RenderColor();
         RenderAudio();
         RenderKeyboardBacklight();
+    }
+
+    private async Task ShowGpuDiagnosticsAsync()
+    {
+        string diagnostics = _gpu.CapabilityDiagnostic + "\n" + _gpu.DisplayQuery + "\n\n" +
+            (!string.IsNullOrEmpty(_gpu.ActiveDiagnostic) ? _gpu.ActiveDiagnostic
+                : _gpu.LastOperation?.Diagnostics ?? "尚未执行显卡切换事务。");
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _host.XamlRoot, Title = "显卡工作模式诊断",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 420, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = new TextBlock { Text = diagnostics, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }
+            },
+            PrimaryButtonText = "复制诊断信息", CloseButtonText = "关闭", DefaultButton = ContentDialogButton.Close
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(diagnostics);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        }
     }
 
     public void Dispose()

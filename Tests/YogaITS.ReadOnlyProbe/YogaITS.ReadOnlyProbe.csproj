@@ -23,6 +23,7 @@
     <Compile Include="../../YogaITS.Tray/Services/UserSettingsStore.cs" Link="Services/UserSettingsStore.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SystemEventMonitor.cs" Link="Services/SystemEventMonitor.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuAutoPolicy.cs" Link="Services/GpuAutoPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/GpuMode/*.cs" Link="Services/GpuMode/%(Filename)%(Extension)" />
     <Compile Include="../../YogaITS.Tray/Services/LenovoGpuWorkingModeService.cs" Link="Services/LenovoGpuWorkingModeService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/NvidiaGpuHelper.cs" Link="Services/NvidiaGpuHelper.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Hpd/*.cs" Link="Services/Hpd/%(Filename)%(Extension)" />

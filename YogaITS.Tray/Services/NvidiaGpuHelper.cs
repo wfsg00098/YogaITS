@@ -11,6 +11,7 @@ public sealed record GpuActionResult(bool Success, string Message);
 
 public static class NvidiaGpuHelper
 {
+    internal static readonly object NvapiGate = new();
     private const uint NvapiInitializeId = 0x0150E828;
     private const uint NvapiUnloadId = 0xD22BDD7E;
     private const uint NvapiEnumPhysicalGpusId = 0xE5AC921F;
@@ -54,6 +55,11 @@ public static class NvidiaGpuHelper
     }
 
     public static IReadOnlyList<GpuProcessInfo> QueryActiveApplications()
+    {
+        lock (NvapiGate) return QueryActiveApplicationsCore();
+    }
+
+    private static IReadOnlyList<GpuProcessInfo> QueryActiveApplicationsCore()
     {
         nint library = 0;
         NvNoArg? unload = null;

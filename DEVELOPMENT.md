@@ -106,7 +106,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 | --- | --- |
 | ITS 性能选项 | 保留型号筛选；Dispatcher Version ≥8192 走现代服务，查询 2 成功且含 `0x1` 才显示。较低/缺失版本走 LITSSVC，要求旧 MMC 状态键和 EnergyDrv 存在，不套用现代查询 2 门槛。 |
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
-| 显卡工作模式 | `IsSupportIGPUMode.Data > 0`；实际状态来自 `GetIGPUModeStatus`，Auto 策略由应用保存，其余选项跟随实际回读。集显选择要求 `GetIGPUMHDMIStatus == 0`，未知也禁用。 |
+| 显卡工作模式（实验分支） | `IsSupportIGPUMode.Data > 0` 且类型正常才显示；能力探测失败也隐藏整卡。实际状态来自 `GetIGPUModeStatus`。NVAPI `Disconnected` 才允许进入集显，`Connected/Unknown` 禁用；不再读取 HDMI WMI guard。Auto 偏好由应用保存，其余选项跟随实际回读。 |
 | 显卡智能策略 | 电源通知必须可用；AC 目标双显，DC 且外接独显路径未占用时目标集显，供电未知不切换。DC 临时失败最多重试 5 次、间隔 5 秒；新事件或手动选择取消旧重试。 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配面板及有效的序列号、Machine Type。仅当后两者同时为 `INVALID` 时接受 Lenovo 的面板级配置，不放宽真实身份不匹配或空字段校验；恢复与实际切换共用校验逻辑。 |
 | HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
@@ -171,6 +171,23 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 每个事务保留 `Global\\TconDriverConnectorParallelMutex`、独占 SPB handle、`SetTconSwitch` gate、`0x04001C00` 初始化与 `0x04001C10` 读/WriteFile 顺序。WMI、COM、mutex 在同一 worker 线程创建/使用/释放。按用户要求仅将探针的无限枚举/mutex 等待替换为 30 秒后台等待；其他 native WMI/transport/protocol 代码保持探针原样。初始化结果、gate OFF、bytesReturned/bytesWritten 不额外阻断，仍由原探针的 live capability、GET、WriteFile 成功和最终回读判定。设置前再次验证目标 mode bit 与当前 GET；写入后最多回读 6 次、间隔 30 ms，匹配才成功。
 
 用户确认的集成版完善测试机型包含 ThinkBook 14 G6+ AHP、G6+ IMH、G7+ IAH，重点验证 TCON P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。这些是既有版本的验证记录，不替代 5.2 回归。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
+
+## NVAPI 显卡工作模式实验（2026-10-23）
+
+分支 `experiment/gpu-mode-nvapi` 基于 `86f2fea`，验证工作区设计文件 `YogaITS_GPU_Working_Mode_NVAPI_Design_2026-10-23.md`。仅本地实验，不推送、不合并 main；本轮不启动程序或探针、不切换真实显卡模式。5.2/5.3 的既有实机验收不覆盖此实验。
+
+- `Services/GpuMode/` 拆分严格 WMI 后端、NVAPI 显示查询及单次切换事务。只有 `IsSupportIGPUMode` 调用成功、Data 为正常 Int32/UInt32 且大于零时显示整卡，不根据 1/2/3、型号或年份划分能力。能力不支持/探测失败分别记录 `CapabilityUnsupported/CapabilityProbeFailed`；两者都隐藏。能力成功后的运行态读取失败保留卡片但禁用操作。
+- 移除生产链的 `ExternalPath` 和 HDMI WMI 查询。参考 [NVIDIA nvapi.h](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h) 与 [接口 ID](https://github.com/NVIDIA/nvapi/blob/main/nvapi_interface.h)：枚举 physical GPU，逐个使用 `NvAPI_GPU_GetConnectedDisplayIds`（`0x0078DBA2`）；先查询数量，非零才分配，结构为 16 字节、VER2 实际修订号 3、`isConnected` 位为 bit6。查询使用 UNCACHED，不根据端口或 `isActive` 猜连接，也不区分 eGPU。缺 DLL/入口、初始化/枚举/数据查询失败或异常数量均为 Unknown，不降级为“无显示器”。NVAPI 生命周期与现有进程查询共用锁。
+- 手动进入集显：读取实际模式 → NVAPI Disconnected → 暂停并确认释放 helper → SET 一次 → 等待 1.5 秒 → GET 验证。Connected/Unknown 不 SET；保活暂停失败不 SET。已确认处于目标时不重复 SET，只协调保活运行态。SET 明确失败或回读仍为双显时按原状态恢复保活；确认集显后继续抑制；回读失败为 Indeterminate，继续暂停，直到后续读取确认实际模式。
+- 返回双显不依赖 NVAPI guard。回读确认双显后恢复符合供电、屏幕、睡眠等条件的保活；新启动的 helper 还须健康应答确认 context。辅助恢复失败记录 SuccessWithWarning，不改写核心模式成功。用户 `KeepDGpuAwake` 偏好从不因切换清除。切换协调和快照带递增 revision，旧缓存不能恢复刚暂停的 helper。
+- `GpuModeOperationResult` 区分 Success / SuccessWithWarning / Blocked / Failed / Indeterminate，保留阶段、后端、原始代码、异常类型、目标、SET 是否完成和回读。UI 普通提示只展示原因；诊断卡片可复制完整记录，状态未知时仍可打开。记录写入 Trace 和最近一次诊断内存，不新建 logs 目录、不生成持久日志文件。
+- Auto 保留应用偏好，AC 返回双显，DC 必须经相同 NVAPI guard。初次尝试之外最多 5 次、每次间隔 5 秒，只对明确 SET 失败/状态未改变重试；Connected/Unknown、AC、取消、能力丢失或 Indeterminate 停止。每次记录 attempt，耗尽保留最终阶段和回读。SET 前再次检查供电；已经发出的 SET 不因取消而跳过回读。
+
+自动检查使用模拟 WMI、NVAPI 和保活接口，覆盖设计矩阵的能力/guard/暂停/SET/回读/辅助恢复/Auto 分支、结构 ABI、状态码、手动无重复 SET、有限重试及取消。不执行真实硬件调用；只读探针仅更新诊断输出并编译，不运行。现有串行服务的有限等待仍保留，无法强制中断的 native 调用返回前不释放资源或并发重试。
+
+待用户回来启动实验版后验收：无外接屏与独显外接屏、NVAPI Unknown 的按钮显隐、保活开/关进入集显、返回双显恢复、插拔电与显示器触发 Auto、详细诊断复制及原有息屏/离电暂停行为。模拟失败注入不能证明对应真实驱动场景已通过。
+
+2026-10-23：完整实验构建输出到 `publish/5.3-gpu-nvapi-dev/`，包含主程序、两个助手和 PRI，**1469 项无硬件检查通过**，版本命名检查通过；主程序及只读探针编译无警告/错误。未启动主程序、helper 或只读探针，未访问真实 WMI/NVAPI 显卡接口；实机验收尚未开始。
 
 ## 保持 NVIDIA 独显唤醒
 
