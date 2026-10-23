@@ -535,13 +535,13 @@ public sealed partial class MainWindow : Window
 
     private async Task RestartGpuDirectAsync(bool fullWindow)
     {
-        if (_keepAwake.Snapshot.Enabled || _gpuRestartRequested || _updateRequested || _exiting) return;
+        if (_gpuRestartRequested || _updateRequested || _exiting) return;
         _gpuRestartRequested = true;
         try
         {
             var window = fullWindow ? _controlCenterWindow : _trayMenuWindow;
             if (window is null || !await window.ConfirmGpuRestartAsync()) return;
-            if (_keepAwake.Snapshot.Enabled || _exiting || _updateRequested) return;
+            if (_exiting || _updateRequested) return;
             await GpuDeviceRestartClient.StartAsync(_controlCenterWindow is not null, _trayMenuWindow is not null);
             await ExitApplicationAsync();
         }

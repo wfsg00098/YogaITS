@@ -538,7 +538,7 @@ public sealed class TrayMenuWindow : Window
     {
         if (_closed) return;
         _keepAwake = state;
-        if (_restartGpuButton is { } restart) restart.IsEnabled = !state.Enabled && !_updatingKeepAwake;
+        if (_restartGpuButton is { } restart) restart.IsEnabled = !_updatingKeepAwake;
         if (_keepAwakeButton is { } keep)
         {
             keep.IsEnabled = _setKeepAwake is not null;
