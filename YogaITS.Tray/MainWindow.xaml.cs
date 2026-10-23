@@ -71,7 +71,7 @@ public sealed partial class MainWindow : Window
             _systemEvents.DisplayPowerChanged += displayOn => _ = RefreshKeepAwakeForSystemChangeAsync(displayOn: displayOn);
             _systemEvents.EnableDisplayPowerNotifications();
             _systemEvents.PowerChanged += () => _ = RefreshGpuForSystemChangeAsync("电源事件");
-            _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件");
+            _systemEvents.DisplayChanged += () => _ = RefreshGpuForSystemChangeAsync("屏幕事件", displayChanged: true);
             _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(ScheduleColorRefresh);
             _systemEvents.PowerChanged += () => DispatcherQueue.TryEnqueue(() =>
             {
@@ -323,7 +323,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RefreshGpuForSystemChangeAsync(string trigger)
+    private async Task RefreshGpuForSystemChangeAsync(string trigger, bool displayChanged = false)
     {
         if (_exiting) return;
         try
@@ -331,7 +331,7 @@ public sealed partial class MainWindow : Window
             System.Diagnostics.Debug.WriteLine("GPU 后台刷新：" + trigger);
             // The hidden message host owns these subscriptions for the app lifetime.
             // The service reads in every mode; only Auto is allowed to apply policy.
-            await _gpu.HandleSystemChangeAsync();
+            await _gpu.HandleSystemChangeAsync(displayChanged);
         }
         catch (Exception ex)
         {
@@ -591,7 +591,7 @@ public sealed partial class MainWindow : Window
         _lifetime.Cancel();
         _colorRefreshDebounce?.Cancel();
         _colorRefreshDebounce?.Dispose();
-        _gpu.CancelRetry();
+        _gpu.CancelPendingOperations();
         _audio.CancelRegistration();
         _color.CancelPendingOperations();
         _updates.Dispose();

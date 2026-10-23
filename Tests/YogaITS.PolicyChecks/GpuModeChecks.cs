@@ -251,6 +251,100 @@ internal static class GpuModeChecks
             await Task.Delay(100);
             Check(backend.SetCalls == 1, "AC event cancels pending DC retries even when Default is already active");
         }
+        {
+            var backend = new FakeBackend { Mode = 1, Power = 1, DisplayState = DgpuDisplayState.Unknown };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.InitializeAsync(() => true);
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 0 && service.Snapshot.EffectiveMode == 1 && service.Snapshot.RawWmiMode == 1 &&
+                service.Snapshot.DgpuDisplayState == DgpuDisplayState.Unknown && !service.Snapshot.ModeConflict,
+                "confirmed iGPU-only meets DC target even when ejected NVIDIA APIs are unavailable; Unknown is not fabricated as Disconnected");
+            Check(service.LastOperation?.Outcome == GpuModeOperationOutcome.Success && !service.Snapshot.Message.Contains("无法"),
+                "already-at-target check precedes NVAPI guard and clears spurious Auto blocking");
+            Check(backend.ReadCalls == 7 && service.RuntimeDiagnostic.Contains("WMI=1") &&
+                service.RuntimeDiagnostic.Contains("NVAPI=Unknown") && service.RuntimeDiagnostic.Contains("time="),
+                "one event has exactly five finite read-only follow-ups with timestamped raw diagnostics");
+        }
+        {
+            var backend = new FakeBackend { Power = 1, DisplayState = DgpuDisplayState.Connected };
+            backend.DisplayProvider = () => backend.Mode == 1 ? DgpuDisplayState.Unknown : backend.DisplayState;
+            var keeper = new FakeKeeper();
+            await using var service = Service(backend, GpuWorkingMode.Auto, keeper, observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.InitializeAsync(() => true);
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 1 && service.Snapshot.EffectiveMode == 1 && keeper.Suppressed && keeper.Enabled,
+                "Yoga unplug scenario switches once then accepts post-ejection Unknown without resending SET or restoring helper");
+            Check(service.LastOperation?.Succeeded == true && !service.Snapshot.Message.Contains("无法"),
+                "read-only follow-up cannot replace successful iGPU switch with a failed guard");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, Power = 1, DisplayState = DgpuDisplayState.Unknown };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.InitializeAsync(() => true);
+            backend.DisplayState = DgpuDisplayState.Connected;
+            int firstRead = backend.ReadCalls;
+            backend.ModeProvider = () => backend.ReadCalls <= firstRead + 2 ? 1 : 0;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            Check(service.Snapshot.ModeConflict && service.Snapshot.EffectiveMode == -1 && service.Snapshot.RawWmiMode == 1 &&
+                service.Snapshot.Message.Contains("待确认"),
+                "HDMI firmware wake with stale WMI is Pending, never a fabricated iGPU or Default state");
+            await UntilAsync(() => !service.IsObserving);
+            Check(service.Snapshot.EffectiveMode == 0 && !service.Snapshot.ModeConflict && backend.SetCalls == 0 &&
+                service.Snapshot.LogicalMode == GpuWorkingMode.Auto && service.Snapshot.Message.Contains("双显"),
+                "finite observation converges delayed firmware WMI to Default without any SET or preference change");
+            Check(service.RuntimeDiagnostic.Contains("WMI=1") && service.RuntimeDiagnostic.Contains("WMI=0"),
+                "diagnostics distinguish an old read from a delayed WMI update");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, Power = 1, DisplayState = DgpuDisplayState.Connected };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.InitializeAsync(() => true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.ReadCalls == 6 && backend.SetCalls == 0 && service.Snapshot.ModeConflict &&
+                service.Snapshot.RawWmiMode == 1 && service.Snapshot.EffectiveMode == -1,
+                "persistent WMI/display conflict remains explicitly pending after bounded reads, not retried SET or endless polling");
+            Check(service.LastOperation?.Outcome == GpuModeOperationOutcome.Blocked && service.Snapshot.Message.Contains("WMI"),
+                "persistent disagreement is not described as an ordinary confirmed iGPU state");
+        }
+        {
+            var backend = new FakeBackend { Power = 1, DisplayState = DgpuDisplayState.Unknown };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 0 && service.Snapshot.DgpuDisplayState == DgpuDisplayState.Disconnected,
+                "observation only reads: recovering NVAPI is not permission for follow-up SETs");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, Power = 1, DisplayState = DgpuDisplayState.Unknown };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(30));
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await service.SelectAsync(GpuWorkingMode.Default);
+            int reads = backend.ReadCalls;
+            await Task.Delay(100);
+            Check(!service.IsObserving && backend.ReadCalls == reads && service.Snapshot.EffectiveMode == 0,
+                "manual selection cancels pending observation so old samples cannot overwrite its result");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, Power = 1, DisplayState = DgpuDisplayState.Unknown };
+            var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(30));
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await service.DisposeAsync();
+            int reads = backend.ReadCalls;
+            await Task.Delay(100);
+            Check(!service.IsObserving && backend.ReadCalls == reads, "disposal cancels finite readback observation");
+        }
+        foreach (var fresh in new[] { DgpuDisplayState.Connected, DgpuDisplayState.Disconnected })
+        {
+            var backend = new FakeBackend { Mode = 1, DisplayState = fresh };
+            var result = await Transaction(backend, new()).ExecuteAsync(1, 3, "fixture",
+                observation: new(DgpuDisplayState.Connected));
+            Check(backend.SetCalls == 0 && backend.DisplayCalls == 1 && result.Succeeded == (fresh == DgpuDisplayState.Disconnected),
+                "known WMI/display disagreement cannot bypass guard via an already-at-target shortcut");
+        }
         return checks;
     }
 
@@ -266,10 +360,10 @@ internal static class GpuModeChecks
         return new(backend, keeper.SuspendAsync, keeper.CompleteAsync, () => Task.CompletedTask);
     }
     private static LenovoGpuWorkingModeService Service(FakeBackend backend, GpuWorkingMode? preference,
-        FakeKeeper keeper, TimeSpan? retryDelay = null)
+        FakeKeeper keeper, TimeSpan? retryDelay = null, TimeSpan? observationDelay = null)
     {
         keeper.Order = backend.Order;
-        return new(backend, preference, _ => { }, () => Task.CompletedTask, retryDelay)
+        return new(backend, preference, _ => { }, () => Task.CompletedTask, retryDelay, observationDelay)
         {
             SuspendKeepAwake = keeper.SuspendAsync, CompleteKeepAwake = keeper.CompleteAsync
         };
@@ -282,6 +376,7 @@ internal static class GpuModeChecks
         public Exception? CapabilityError, SetError;
         public Action? OnSet;
         public Func<DgpuDisplayState>? DisplayProvider;
+        public Func<int>? ModeProvider;
         public DgpuDisplayState DisplayState = DgpuDisplayState.Disconnected;
         public List<string> Order = [];
         public long ProbeCapability() => CapabilityError is { } ex ? throw ex : Capability;
@@ -289,6 +384,7 @@ internal static class GpuModeChecks
         {
             Order.Add("read");
             if (++ReadCalls == FailReadAt) throw new IOException("readback fixture");
+            if (ModeProvider is not null) Mode = ModeProvider();
             return Mode;
         }
         public void SetMode(int mode)

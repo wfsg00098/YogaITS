@@ -174,7 +174,7 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 ## NVAPI 显卡工作模式实验（2026-10-23）
 
-分支 `experiment/gpu-mode-nvapi` 基于 `86f2fea`，验证工作区设计文件 `YogaITS_GPU_Working_Mode_NVAPI_Design_2026-10-23.md`。仅本地实验，不推送、不合并 main；本轮不启动程序或探针、不切换真实显卡模式。5.2/5.3 的既有实机验收不覆盖此实验。
+分支 `experiment/gpu-mode-nvapi` 基于 `86f2fea`，验证工作区设计文件 `YogaITS_GPU_Working_Mode_NVAPI_Design_2026-10-23.md`。仅本地实验，不推送、不合并 main；初版已按用户要求启动并收到实机反馈，本轮修复只构建，不自动启动。5.2/5.3 的既有实机验收不覆盖此实验。
 
 - `Services/GpuMode/` 拆分严格 WMI 后端、NVAPI 显示查询及单次切换事务。只有 `IsSupportIGPUMode` 调用成功、Data 为正常 Int32/UInt32 且大于零时显示整卡，不根据 1/2/3、型号或年份划分能力。能力不支持/探测失败分别记录 `CapabilityUnsupported/CapabilityProbeFailed`；两者都隐藏。能力成功后的运行态读取失败保留卡片但禁用操作。
 - 移除生产链的 `ExternalPath` 和 HDMI WMI 查询。参考 [NVIDIA nvapi.h](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h) 与 [接口 ID](https://github.com/NVIDIA/nvapi/blob/main/nvapi_interface.h)：枚举 physical GPU，逐个使用 `NvAPI_GPU_GetConnectedDisplayIds`（`0x0078DBA2`）；先查询数量，非零才分配，结构为 16 字节、VER2 实际修订号 3、`isConnected` 位为 bit6。查询使用 UNCACHED，不根据端口或 `isActive` 猜连接，也不区分 eGPU。缺 DLL/入口、初始化/枚举/数据查询失败或异常数量均为 Unknown，不降级为“无显示器”。NVAPI 生命周期与现有进程查询共用锁。
@@ -187,7 +187,20 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 待用户回来启动实验版后验收：无外接屏与独显外接屏、NVAPI Unknown 的按钮显隐、保活开/关进入集显、返回双显恢复、插拔电与显示器触发 Auto、详细诊断复制及原有息屏/离电暂停行为。模拟失败注入不能证明对应真实驱动场景已通过。
 
-2026-10-23：完整实验构建输出到 `publish/5.3-gpu-nvapi-dev/`，包含主程序、两个助手和 PRI，**1469 项无硬件检查通过**，版本命名检查通过；主程序及只读探针编译无警告/错误。未启动主程序、helper 或只读探针，未访问真实 WMI/NVAPI 显卡接口；实机验收尚未开始。
+2026-10-23：初版 `8191710` 完整实验构建输出到 `publish/5.3-gpu-nvapi-dev/`，包含主程序、两个助手和 PRI，**1469 项无硬件检查通过**，版本命名检查通过；主程序及只读探针编译无警告/错误。构建检查不访问真实显卡接口；随后按用户要求启动主程序，用户反馈以下两个状态同步问题，尚未完成全项验收。
+
+### 初版实机反馈后的状态同步修复
+
+用户在 Yoga Pro 16 IPH11 上确认：离电且独显连接显示器时 Auto 正确保持双显；移除显示器后已经进入集显，但 NVAPI 枚举入口不可用被误报为 guard 阻止；再次连接 HDMI 后固件自行恢复双显输出，界面却保留集显状态，插电再刷新才恢复。
+
+- Auto 先按供电判断目标是否已由有效回读满足，再检查切换前 guard。WMI=1、NVAPI=Unknown 时接受已集显，不伪造 Disconnected、不重复 SET。NVAPI 业务入口延迟到 Initialize 成功后解析，失败仍保留真实阶段。
+- 新增 `RawWmiMode`；当 WMI=1 且 NVAPI=Connected 时标记冲突，`EffectiveMode=-1`，显示“待确认”，保留 Auto 偏好。未确认时不选中集显/双显卡片，保活继续抑制。不能仅凭 NVAPI 把 WMI 原始值改成 0。
+- 显示事件后的初次策略执行之外，最多再进行 5 次只读补查，间隔 750 ms，调度窗口 6 秒；补查本身不执行 SET。固件回读延迟时可自动收敛为双显，持续不一致则保持待确认，不无限轮询。原有 native 调用不可强制中断，串行/超时资源所有权约束不变。新事件、手动选择与退出取消旧补查；能力丢失也停止。
+- 最近 8 条读取记录保存在内存，含 UTC 时间、来源、原始 WMI、有效模式、NVAPI、供电及 revision；诊断对话框区分这些运行态记录与最近一次策略/切换记录，不创建日志文件。只读探针也输出原始值与冲突标志。
+
+自动回归覆盖上述两种实机时序、持续冲突、只读补查不写硬件、取消/关闭及已达目标但已知存在连接冲突时不绕过 guard。本轮修复待用户启动新测试版复测，不宣称真实 WMI 一定会在补查窗口内更新。
+
+修复版构建目录为 `publish/5.3-gpu-nvapi-refresh-dev/`，不覆盖初版运行目录；完整发布及无硬件检查 **1484 项通过**，主程序与只读探针编译通过，版本命名检查通过。本轮未启动新版、未推送或合并 main，等待用户要求启动复测。
 
 ## 保持 NVIDIA 独显唤醒
 

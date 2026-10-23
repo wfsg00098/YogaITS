@@ -48,7 +48,7 @@ internal sealed class GpuKeepAwakeService : IAsyncDisposable
         // Only a newly published, confirmed mode may release a failed transition.
         bool completedSwitch = _switching && mode.Available && mode.EffectiveMode is 0 or 1;
         if (completedSwitch) _switching = false;
-        bool blocked = !mode.Available || (mode.Supported && mode.EffectiveMode == 1);
+        bool blocked = !mode.Available || (mode.Supported && mode.EffectiveMode != 0);
         if (_configured && _present == present && _modeBlocked == blocked &&
             _powerSource == SystemEventMonitor.ReadPowerSource() && !completedSwitch) return;
         _configured = true;

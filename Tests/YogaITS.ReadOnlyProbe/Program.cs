@@ -65,8 +65,9 @@ internal static class Program
         bool elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
         await Task.WhenAll(gpu.RefreshAsync(), hpd.RefreshAsync(), color.RefreshAsync(), audio.RefreshAsync());
         Console.WriteLine($"Read-only capability probe. Administrator={elevated}");
-        Console.WriteLine($"GPU: supported={gpu.Snapshot.Supported}, effective={gpu.Snapshot.EffectiveMode}, display={gpu.Snapshot.DgpuDisplayState}");
+        Console.WriteLine($"GPU: supported={gpu.Snapshot.Supported}, WMI={gpu.Snapshot.RawWmiMode}, effective={gpu.Snapshot.EffectiveMode}, conflict={gpu.Snapshot.ModeConflict}, display={gpu.Snapshot.DgpuDisplayState}");
         Console.WriteLine($"GPU capability: {gpu.CapabilityDiagnostic}; NVAPI: {gpu.DisplayQuery}");
+        Console.WriteLine(gpu.RuntimeDiagnostic);
         if (!gpu.Snapshot.Supported && gpu.Snapshot.Message.Length > 0)
             Console.WriteLine("GPU read diagnostic: " + gpu.Snapshot.Message);
         Console.WriteLine($"HPD: wakeSleep={hpd.Snapshot.Features.WakeSleepSection}, cameraAssist={hpd.Snapshot.Features.CameraAssist}, videoPause={hpd.Snapshot.Features.AutoVideoPause}");

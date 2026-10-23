@@ -140,7 +140,7 @@ foreach (bool suspended in new[] { false, true })
 foreach (bool displayOn in new[] { false, true })
 foreach (int power in new[] { -1, 0, 1 })
     Check(GpuKeepAwakePolicy.MayRun(enabled, present, supported, effective, power, suspended, displayOn) ==
-        (enabled && present && power == 0 && !suspended && displayOn && (!supported || effective != 1)), "All modes stop on battery, unknown power, suspend, screen-off or IGPU-only without clearing the preference");
+        (enabled && present && power == 0 && !suspended && displayOn && (!supported || effective == 0)), "All modes stop on battery, unknown power, suspend, screen-off, unknown/conflicting mode or IGPU-only without clearing the preference");
 var sessionDisplayStatus = new Guid("2B84C20E-AD23-4DDF-93DB-05FFBD7EFCA5");
 Check(SystemEventMonitor.ReadDisplayState(sessionDisplayStatus, 4, 0) == false, "Screen-off pauses keep-awake independently of suspend");
 foreach (uint state in new uint[] { 1, 2 })

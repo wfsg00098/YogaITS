@@ -5,11 +5,12 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
     Func<int?, Task> completeKeepAwake, Func<Task>? settle = null, Action<string>? observe = null)
 {
     public async Task<GpuModeOperationResult> ExecuteAsync(int target, long capability,
-        string keepAwakeContext, int? requiredPower = null, CancellationToken cancellationToken = default)
+        string keepAwakeContext, int? requiredPower = null, CancellationToken cancellationToken = default,
+        DgpuDisplayQueryResult? observation = null)
     {
         if (target is not (0 or 1)) throw new ArgumentOutOfRangeException(nameof(target));
         var trace = new List<string>();
-        var display = new DgpuDisplayQueryResult(DgpuDisplayState.Unknown);
+        var display = observation ?? new DgpuDisplayQueryResult(DgpuDisplayState.Unknown);
         bool invoked = false;
         int? effective = null;
         void Log(string message)
@@ -38,7 +39,7 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
         }
         bool CanceledOrPowerChanged() => cancellationToken.IsCancellationRequested ||
             requiredPower is { } expected && backend.ReadPowerSource() != expected;
-        Log($"target={target}; capability={capability}; Keep Awake: {keepAwakeContext}");
+        Log($"time={DateTimeOffset.UtcNow:O}; target={target}; capability={capability}; Keep Awake: {keepAwakeContext}");
         try
         {
             if (CanceledOrPowerChanged()) return Finish(GpuModeOperationOutcome.Blocked,
@@ -51,7 +52,7 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
         catch (Exception ex) { return Finish(GpuModeOperationOutcome.Failed,
             GpuModeOperationFailure.From(GpuModeOperationStage.RuntimeStateRead, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus",
                 "无法读取当前显卡状态，未执行切换。", ex)); }
-        if (effective == target)
+        if (effective == target && !GpuAutoPolicy.ConflictingObservation(effective.Value, display.State))
         {
             var warning = await CompleteAsync(effective, true);
             return Finish(warning is null ? GpuModeOperationOutcome.Success : GpuModeOperationOutcome.SuccessWithWarning,
@@ -68,6 +69,12 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
                     display.State == DgpuDisplayState.Connected
                         ? "无法进入集显模式：独立显卡当前正在驱动外接显示器。"
                         : "无法检测独显显示状态，暂不允许关闭独立显卡。", display.Detail, display.NativeCode));
+            if (effective == target)
+            {
+                var warning = await CompleteAsync(effective, true);
+                return Finish(warning is null ? GpuModeOperationOutcome.Success : GpuModeOperationOutcome.SuccessWithWarning,
+                    auxiliary: warning);
+            }
             Log("stage=KeepAwakeSuspend; backend=YogaITS.KeepAwake");
             try { await suspendKeepAwake().ConfigureAwait(false); Log("keepAwake suspend=success"); }
             catch (Exception ex) { return Finish(GpuModeOperationOutcome.Failed,

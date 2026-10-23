@@ -81,8 +81,9 @@ internal static class NvidiaDisplayQuery
         private nint _library;
         private readonly NoArg _initialize;
         private readonly NoArg _unload;
-        private readonly EnumGpus _enumerate;
-        private readonly GetDisplayIds _getDisplays;
+        private readonly QueryInterface _query;
+        private EnumGpus? _enumerate;
+        private GetDisplayIds? _getDisplays;
         private bool _initialized;
 
         public NativeApi()
@@ -90,25 +91,33 @@ internal static class NvidiaDisplayQuery
             try
             {
                 _library = NativeLibrary.Load(Path.Combine(Environment.SystemDirectory, "nvapi64.dll"));
-                var query = Marshal.GetDelegateForFunctionPointer<QueryInterface>(NativeLibrary.GetExport(_library, "nvapi_QueryInterface"));
+                _query = Marshal.GetDelegateForFunctionPointer<QueryInterface>(NativeLibrary.GetExport(_library, "nvapi_QueryInterface"));
                 _initialize = Get<NoArg>(0x0150E828);
                 _unload = Get<NoArg>(0xD22BDD7E);
-                _enumerate = Get<EnumGpus>(0xE5AC921F);
-                _getDisplays = Get<GetDisplayIds>(0x0078DBA2);
-                T Get<T>(uint id) where T : Delegate
-                {
-                    nint address = query(id);
-                    if (address == 0) throw new EntryPointNotFoundException($"NVAPI QueryInterface 0x{id:X8}");
-                    return Marshal.GetDelegateForFunctionPointer<T>(address);
-                }
             }
             catch { if (_library != 0) NativeLibrary.Free(_library); _library = 0; throw; }
         }
 
+        private T Get<T>(uint id) where T : Delegate
+        {
+            nint address = _query(id);
+            if (address == 0) throw new EntryPointNotFoundException($"NVAPI QueryInterface 0x{id:X8}");
+            return Marshal.GetDelegateForFunctionPointer<T>(address);
+        }
+
         public int Initialize() { int status = _initialize(); _initialized = status == 0; return status; }
-        public int Enumerate(nint[] handles, out int count) => _enumerate(handles, out count);
+        public int Enumerate(nint[] handles, out int count)
+        {
+            if (!_initialized) throw new InvalidOperationException("NVAPI 尚未初始化成功。");
+            // Resolve business APIs only after successful initialization. An
+            // ejected GPU may make these unavailable; preserve the true stage.
+            _enumerate ??= Get<EnumGpus>(0xE5AC921F);
+            return _enumerate(handles, out count);
+        }
         public int GetDisplays(nint gpu, NvGpuDisplayId[]? displays, ref uint count)
         {
+            if (!_initialized) throw new InvalidOperationException("NVAPI 尚未初始化成功。");
+            _getDisplays ??= Get<GetDisplayIds>(0x0078DBA2);
             if (displays is null) return _getDisplays(gpu, 0, ref count, 1);
             int size = Marshal.SizeOf<NvGpuDisplayId>();
             nint buffer = Marshal.AllocHGlobal(checked(size * displays.Length));
