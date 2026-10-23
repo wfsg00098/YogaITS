@@ -177,7 +177,8 @@ internal static class OptimizationChecks
             catch (InvalidDataException) { rejected = true; }
             Check(rejected && !File.Exists(Path.Combine(root, "escape.icm")), "calibration extraction rejects traversal");
             Check(UpdatePackage.RequiredFiles.Contains("YogaITS.Updater.runtimeconfig.json") &&
-                UpdatePackage.RequiredFiles.Contains("YogaITS.dGPUKeepAwake.exe"), "complete update manifest includes both helpers");
+                UpdatePackage.RequiredFiles.Contains("YogaITS.dGPUKeepAwake.exe") &&
+                UpdatePackage.RequiredFiles.Contains("YogaITS.dGPURestart.exe"), "complete update manifest includes all three helpers");
             foreach (string missing in UpdatePackage.RequiredFiles)
             {
                 string incomplete = Path.Combine(root, "incomplete.zip");

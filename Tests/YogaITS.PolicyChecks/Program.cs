@@ -607,6 +607,8 @@ checks += await UpdateChecks.RunAsync(updaterIndex >= 0 ? args[updaterIndex + 1]
 checks += await OptimizationChecks.RunAsync();
 checks += await KeyboardBacklightChecks.RunAsync();
 checks += await GpuModeChecks.RunAsync();
+int gpuRestartIndex = Array.IndexOf(args, "--gpu-restart-executable");
+checks += await GpuDeviceRestartChecks.RunAsync(gpuRestartIndex >= 0 ? args[gpuRestartIndex + 1] : null);
 Console.WriteLine($"PASS: {checks} checks. No hardware, registry, microphone, or network operations were performed.");
 
 static byte[] Icc(string serial, string panel, int brightness, string machineType = "TEST")

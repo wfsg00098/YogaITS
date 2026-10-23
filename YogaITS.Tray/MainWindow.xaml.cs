@@ -26,6 +26,7 @@ public sealed partial class MainWindow : Window
     private bool _gpuInitializationComplete;
     private readonly AppUpdateService _updates = new();
     private bool _updateRequested;
+    private bool _gpuRestartRequested;
     private SystemEventMonitor? _systemEvents;
     private FeaturePanels? _featurePanels;
     private readonly AsyncOperationQueue _coreRefreshQueue = new();
@@ -173,6 +174,11 @@ public sealed partial class MainWindow : Window
         if (!_exiting) ShowControlCenter();
     });
 
+    internal void RequestOpenMiniWindow() => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (!_exiting) ShowTrayMenu();
+    });
+
     private void ShowSettingsWindow(bool fullWindow)
     {
         // Critical path: cache only. No WMI, EnergyDrv, registry/service state
@@ -205,14 +211,15 @@ public sealed partial class MainWindow : Window
                 setChargeOption: SetChargeOptionAsync,
                 setFlipToStart: SetFlipToStartAsync,
                 killGpuApps: KillGpuAppsDirectAsync,
-                restartGpu: RestartGpuDirectAsync,
+                restartGpu: () => RestartGpuDirectAsync(fullWindow),
                 setStartup: SetStartupAsync,
                 showInfo: (title, message) =>
                     ShowChild(new InfoWindow(title, message)),
                 exitApp: ExitApplication,
                 fullWindow: fullWindow,
                 keepAwake: _keepAwake.Snapshot,
-                setKeepAwake: _keepAwake.SetEnabledAsync);
+                setKeepAwake: enabled => _gpuRestartRequested || _exiting
+                    ? Task.FromResult(_keepAwake.Snapshot) : _keepAwake.SetEnabledAsync(enabled));
             menu.ApplyRefreshedState(state);
 
             if (fullWindow)
@@ -527,20 +534,17 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task RestartGpuDirectAsync()
+    private async Task RestartGpuDirectAsync(bool fullWindow)
     {
-        if (_keepAwake.Snapshot.Enabled) return;
+        if (_keepAwake.Snapshot.Enabled || _gpuRestartRequested || _updateRequested || _exiting) return;
+        _gpuRestartRequested = true;
         try
         {
-            GpuActionResult result =
-                await NvidiaGpuHelper.RestartNvidiaDisplayDeviceAsync();
-
-            if (!result.Success)
-            {
-                ShowChild(new InfoWindow(
-                    "重启独显设备失败",
-                    result.Message));
-            }
+            var window = fullWindow ? _controlCenterWindow : _trayMenuWindow;
+            if (window is null || !await window.ConfirmGpuRestartAsync()) return;
+            if (_keepAwake.Snapshot.Enabled || _exiting || _updateRequested) return;
+            await GpuDeviceRestartClient.StartAsync(_controlCenterWindow is not null, _trayMenuWindow is not null);
+            await ExitApplicationAsync();
         }
         catch (Exception ex)
         {
@@ -548,6 +552,7 @@ public sealed partial class MainWindow : Window
                 "重启独显设备失败",
                 ex.Message));
         }
+        finally { _gpuRestartRequested = false; }
     }
 
     private void ShowChild(Window window)
@@ -566,7 +571,7 @@ public sealed partial class MainWindow : Window
 
     private async Task InstallUpdateAsync(TrayMenuWindow menu)
     {
-        if (_updateRequested || _exiting || _updates.Available is not { } release) return;
+        if (_updateRequested || _gpuRestartRequested || _exiting || _updates.Available is not { } release) return;
         _updateRequested = true;
         try
         {

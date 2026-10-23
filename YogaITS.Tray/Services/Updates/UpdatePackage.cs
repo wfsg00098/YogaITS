@@ -9,7 +9,8 @@ internal static class UpdatePackage
     [
         "YogaITS.Tray.exe", "YogaITS.Tray.dll", "YogaITS.Tray.pri", "YogaITS.Tray.runtimeconfig.json", "YogaITS.Tray.deps.json",
         "YogaITS.Updater.exe", "YogaITS.Updater.dll", "YogaITS.Updater.runtimeconfig.json", "YogaITS.Updater.deps.json",
-        "YogaITS.dGPUKeepAwake.exe", "YogaITS.dGPUKeepAwake.dll", "YogaITS.dGPUKeepAwake.runtimeconfig.json", "YogaITS.dGPUKeepAwake.deps.json"
+        "YogaITS.dGPUKeepAwake.exe", "YogaITS.dGPUKeepAwake.dll", "YogaITS.dGPUKeepAwake.runtimeconfig.json", "YogaITS.dGPUKeepAwake.deps.json",
+        "YogaITS.dGPURestart.exe", "YogaITS.dGPURestart.dll", "YogaITS.dGPURestart.runtimeconfig.json", "YogaITS.dGPURestart.deps.json"
     ];
     public static void VerifyArchive(string archive, string expectedHash)
     {

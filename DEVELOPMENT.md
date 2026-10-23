@@ -11,6 +11,7 @@
 - `YogaITS.Tray/UI/`：完整/迷你窗口、信息窗口、功能卡片、原生动画、滚动条和辅助功能。
 - `YogaITS.Tray/Assets/YogaITS.ico`：编译进 EXE 的图标源，不单独复制到发布目录。
 - `YogaITS.dGPUKeepAwake/`：独立 NVIDIA 空闲 context 助手，不承载保活策略。
+- `YogaITS.dGPURestart/`：等待主程序退出、重启独显设备并恢复控制中心窗口的独立助手，不加载 WinUI。
 - `YogaITS.Tray/Services/KeyboardBacklight/`：键盘背光协议、EnergyDrv 设备访问、Probe/Get/Set 后端及串行服务，无状态持久化或自动场景。
 - `YogaITS.Updater/`：等待主程序退出、校验/安装及失败回滚的更新助手。
 - `Tests/YogaITS.PolicyChecks/`：不操作硬件的逻辑检查。
@@ -32,9 +33,9 @@ dotnet build .\YogaITS.Tray\YogaITS.Tray.csproj -c Debug
 .\dist\YogaITS.Tray.exe
 ```
 
-`build-clean.ps1` 删除主项目的 `bin/`、`obj/`、`dist/`，还原并发布主程序及两个助手的 Release，验证 `YogaITS.Tray.pri` 和保活助手文件，移除 PDB/XML 和主项目中间产物。执行前退出程序，避免发布文件被占用；不要在 `dist/` 内存放需要保留的个人文件。
+`build-clean.ps1` 删除主项目的 `bin/`、`obj/`、`dist/`，还原并发布主程序及更新、保活、独显重启三个助手的 Release，统一提交版本信息，验证 `YogaITS.Tray.pri` 和独显助手文件，移除 PDB/XML 和主项目中间产物。执行前退出程序，避免发布文件被占用；不要在 `dist/` 内存放需要保留的个人文件。
 
-仅编译主程序（不包含可交付的更新/保活助手，不可用作完整交付）：
+仅编译主程序（不包含可交付的三个助手，不可用作完整交付）：
 
 ```powershell
 dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-contained false -o .\dist
@@ -58,7 +59,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
-发布前及上传后核对远端 main，只有仍对应 main 的发布才标记 latest，避免旧构建晚完成覆盖最新版。完整交付必须使用 `build-clean.ps1`，该脚本另发布两个助手；不要只复制主程序的发布输出。
+发布前及上传后核对远端 main，只有仍对应 main 的发布才标记 latest，避免旧构建晚完成覆盖最新版。完整交付必须使用 `build-clean.ps1`，该脚本另发布三个助手；不要只复制主程序的发布输出。
 
 ## 5.2 稳定性优化与验收
 
@@ -80,7 +81,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 `GitHubUpdateClient` 同时请求固定仓库 `wfsg00098/YogaITS` 的 `/releases/latest` 与 `https://gh-proxy.org/` 对应代理地址，采用最先解析校验成功的结果，随即取消另一条请求。一条线路失败不抢占另一条仍在进行的有效请求；两条均失败才报错。元数据请求上限均为 20 秒。下载也双路同时进行，各用独立随机 `.part` 文件，先完整下载且通过大小与 SHA-256 校验的包胜出；取消并等待另一条释放文件句柄后发布获胜包、清理临时文件。下载响应头/读取空闲上限均为 20 秒，总时限各 8 分钟，不再按低速阈值切换线路。保留 HttpClient 默认系统代理行为，不发送凭证、序列号或配置。只接收正式版、预期仓库/文件名的 x64 ZIP、合理大小及 GitHub SHA-256 digest。第三方代理同时承载元数据与包时仍存在代理信任边界，SHA-256 并不等价于发行者数字签名。确认对话框不展示下载线路说明。
 
-更新暂存与旧文件备份位于 `%LOCALAPPDATA%\YogaITS\Updates\<GUID>\`，不写 Logs。拒绝 ZIP 路径穿越、重复路径、缺少必需文件及过大展开内容；必需清单包括主程序、PRI 和两个助手的 exe/dll/deps/runtimeconfig。助手从暂存目录运行，按 PID 和启动时间等待原进程退出，再从原 ZIP 重新验 hash/解压、备份被覆盖文件、复制及逐文件验 hash，最后重新启动原路径。复制、校验或启动失败回滚；回滚不完整时保留备份并明确提示。成功重启才写入 `completed` 标记，后续仅清理超过 7 天、标记内容正确且不含链接的 GUID 暂存。失败或未知目录保留。未运行常驻更新服务，不修改计划任务或硬件设置。
+更新暂存与旧文件备份位于 `%LOCALAPPDATA%\YogaITS\Updates\<GUID>\`，不写 Logs。拒绝 ZIP 路径穿越、重复路径、缺少必需文件及过大展开内容；必需清单包括主程序、PRI 和三个助手的 exe/dll/deps/runtimeconfig。更新助手从暂存目录运行，按 PID 和启动时间等待原进程退出，再从原 ZIP 重新验 hash/解压、备份被覆盖文件、复制及逐文件验 hash，最后重新启动原路径。复制、校验或启动失败回滚；回滚不完整时保留备份并明确提示。成功重启才写入 `completed` 标记，后续仅清理超过 7 天、标记内容正确且不含链接的 GUID 暂存。失败或未知目录保留。未运行常驻更新服务，不修改计划任务或硬件设置。
 
 自动检查覆盖模拟 HTTP 双路竞速/取消/坏包、版本身份、ZIP 路径安全、临时目录安装/配置保留及回滚。完整 UI 更新和真实程序重启仍需实机验收。
 
@@ -242,7 +243,19 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - 下方仅显示“当前实际工作模式：集显/双显/未知。”；Connected 时再加“外接显示器正在通过独显输出。”，去掉模式说明与冗长执行状态。已保存偏好的硬件切换异常留在详细诊断中，不覆盖实际模式提示；读取不可用显示未知。
 - 增加显式 `RefreshReadOnlyAsync` 给只读探针使用，不保存偏好、不调度协调、不发送 SET。应用刷新可以执行上述唯一偏好转换，与诊断读取分开。
 
-回归覆盖 AC/DC/未知供电、原集显/智能/双显偏好、重复通知不重复保存、断开后保持智能、旧回调、fresh guard 热插拔、延迟 Connected、重试期间插屏及只读探针不写入。1582 项不依赖发布物的无硬件检查通过，主程序与只读探针编译均为 0 警告、0 错误，版本命名检查通过。输出目录 `publish/5.3-gpu-display-preference-dev/`；本轮只构建，实机验证待用户启动，未推送或合并 main。
+该轮 `29921309` 输出到 `publish/5.3-gpu-display-preference-dev/`，完整发布物检查 **1588 项通过**。按用户要求启动后，收到设备重启令窗口元素与 Mica 丢失的反馈，随后按要求新增独立重启助手与确认提示。未推送或合并 main。
+
+### 独显重启助手与界面重建
+
+用户报告：直接在 Tray 中重启独显后，大小窗口元素和 Mica 消失。采用进程交接，在重置期间不保留旧 WinUI 进程，重置后完整重新初始化。具体 WinUI 内部设备丢失原因未通过实机调试确认。
+
+- 两种窗口均显示原生 ContentDialog，说明屏幕闪烁、应用影响以及控制中心会退出并自动重开；默认取消。确认后才启动 `YogaITS.dGPURestart.exe`，并再次检查保活未开启。与更新互斥，确认/交接期间阻止开启保活；取消不启动助手、不退出、不调用 pnputil。
+- 主程序使用私有就绪事件、PID、UTC 启动时间和恢复窗口标志交接，最多等 10 秒。助手验证同目录 Tray 的 PID/启动时间/名称/路径和管理员令牌，并持有父进程句柄；缺失或非法参数直接退出。未就绪时主程序保持运行，仅停止自己创建的助手。
+- 助手不加载 WinUI、不持有独显 context，`asInvoker` 继承父进程权限。先取得会话级重启互斥，再通知就绪；等待 Tray 完整退出最多 90 秒，超时不重置、不终止父进程。退出后复用原 PCI NVIDIA 显示设备查找与 `pnputil /restart-device` 行为，仅发一次、最多等 30 秒；失败或异常仍尝试重启 Tray 并报告错误，不自动重试设备操作。
+- 主程序原有退出路径先取消后台操作/录制、释放助手与硬件服务，最长等待 10 秒再退出。新进程在 WinUI/COM 初始化前最多等重启互斥 45 秒，防止手动再次启动时提前创建图形资源；助手释放互斥后启动同目录 Tray。恢复参数区分大窗口、小窗口、同时打开或仅托盘，不改变普通启动和 `--startup` 语义。单实例新增小窗口打开信号。
+- `build-clean.ps1`、Actions 发布检查和更新包必需清单均加入新助手的 exe/dll/deps/runtimeconfig；不能仅覆盖 Tray.exe。模拟检查覆盖父进程未退出不执行、身份不符/PID 复用拒绝、等待超时、重置异常及窗口恢复；发布物只测试非法参数/非 Tray 父进程拒绝，绝不执行真实设备重启。
+
+本轮主程序、只读探针和新助手编译均为 0 警告、0 错误，1613 项不依赖发布物的无硬件检查通过。测试包目录 `publish/5.3-gpu-restart-helper-dev/`；不自动启动或重启真实独显，大小窗口确认与 Mica 恢复待实机验证，未推送或合并 main。
 
 ## 保持 NVIDIA 独显唤醒
 
@@ -316,7 +329,7 @@ WinMM 清理按 Stop → Reset → Unprepare → Close → 释放内存；任一
 
 ```powershell
 dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release
-dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executable .\dist\YogaITS.Tray.exe --updater-executable .\dist\YogaITS.Updater.exe
+dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executable .\dist\YogaITS.Tray.exe --updater-executable .\dist\YogaITS.Updater.exe --gpu-restart-executable .\dist\YogaITS.dGPURestart.exe
 dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release
 ```
 

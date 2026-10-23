@@ -581,6 +581,21 @@ public sealed class TrayMenuWindow : Window
         _updateHost.Visibility = Visibility.Visible;
     }
 
+    internal async Task<bool> ConfirmGpuRestartAsync()
+    {
+        if (_closed || _contentRoot?.XamlRoot is null) return false;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = _contentRoot.XamlRoot,
+            Title = "重启独显设备",
+            Content = "屏幕可能短暂闪烁，正在使用独显的应用可能受到影响。Yoga控制中心将退出，并在设备重启后自动重新打开。是否继续？",
+            PrimaryButtonText = "重启", CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close
+        };
+        try { return await dialog.ShowAsync() == ContentDialogResult.Primary && !_closed; }
+        catch (Exception) when (_closed) { return false; }
+    }
+
     internal async Task<bool> ConfirmUpdateAsync(string version)
     {
         if (_closed || _contentRoot?.XamlRoot is null) return false;

@@ -7,8 +7,6 @@ namespace YogaITS.Tray.Services;
 
 public sealed record GpuProcessInfo(int Pid, string Name, string? ExecutablePath = null, long? StartedUtcTicks = null);
 
-public sealed record GpuActionResult(bool Success, string Message);
-
 public static class NvidiaGpuHelper
 {
     internal static readonly object NvapiGate = new();
@@ -231,74 +229,6 @@ public static class NvidiaGpuHelper
             message += "\n\n未处理：\n" + string.Join("\n", failed);
 
         return new(failed.Count == 0, message);
-    }
-
-    public static async Task<GpuActionResult> RestartNvidiaDisplayDeviceAsync()
-    {
-        string? instanceId = FindNvidiaDisplayDeviceInstanceId();
-
-        if (string.IsNullOrWhiteSpace(instanceId))
-            return new(false, "没有找到 PCI\\VEN_10DE 的 NVIDIA 显示设备。");
-
-        string pnputil = Path.Combine(Environment.SystemDirectory, "pnputil.exe");
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = pnputil,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        psi.ArgumentList.Add("/restart-device");
-        psi.ArgumentList.Add(instanceId);
-
-        using Process? process = Process.Start(psi);
-        if (process is null)
-            return new(false, "无法启动 pnputil.exe。");
-
-        Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderrTask = process.StandardError.ReadToEndAsync();
-
-        try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30)); }
-        catch (TimeoutException)
-        {
-            try { process.Kill(); } catch { }
-            return new(false, "重启设备等待超时，实际状态待确认，请稍后刷新。不会重复发送重启命令。");
-        }
-
-        string stdout = (await stdoutTask).Trim();
-        string stderr = (await stderrTask).Trim();
-
-        if (process.ExitCode == 0)
-        {
-            return new(true,
-                "NVIDIA 显示设备已重启。\n\n" +
-                (string.IsNullOrWhiteSpace(stdout) ? instanceId : stdout));
-        }
-
-        return new(false,
-            $"pnputil 返回 {process.ExitCode}。\n\n" +
-            (string.IsNullOrWhiteSpace(stderr) ? stdout : stderr));
-    }
-
-    private static string? FindNvidiaDisplayDeviceInstanceId()
-    {
-        using var searcher = new ManagementObjectSearcher(
-            "SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='Display'");
-
-        foreach (ManagementObject device in searcher.Get())
-        {
-            using (device)
-            {
-                string? id = device["PNPDeviceID"] as string;
-                if (id?.StartsWith(@"PCI\VEN_10DE", StringComparison.OrdinalIgnoreCase) == true)
-                    return id;
-            }
-        }
-
-        return null;
     }
 
     private static T GetDelegate<T>(NvQueryInterface queryInterface, uint id) where T : Delegate

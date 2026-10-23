@@ -51,7 +51,7 @@ jobs:
 
       - name: Run hardware-free policy checks
         run: |
-          dotnet run --project ./Tests/YogaITS.PolicyChecks -c Release -- --icon-executable ./dist/YogaITS.Tray.exe --updater-executable ./dist/YogaITS.Updater.exe
+          dotnet run --project ./Tests/YogaITS.PolicyChecks -c Release -- --icon-executable ./dist/YogaITS.Tray.exe --updater-executable ./dist/YogaITS.Updater.exe --gpu-restart-executable ./dist/YogaITS.dGPURestart.exe
           if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed.' }
 
       - name: Package complete publish directory

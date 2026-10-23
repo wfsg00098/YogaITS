@@ -8,6 +8,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // A reset helper may still own the display stack; do not create WinUI resources yet.
+        try { GpuDeviceRestartProtocol.WaitForIdle(TimeSpan.FromSeconds(45)); }
+        catch (Exception ex) { GpuDeviceRestartProtocol.ShowError(ex.Message); return; }
         // Match the final probe: process security precedes UI/OLE/COM proxies.
         ProcessComSecurity.InitializeEarly();
         try

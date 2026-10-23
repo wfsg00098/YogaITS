@@ -21,6 +21,8 @@
     <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateInstallation.cs" Link="Updates/UpdateInstallation.cs" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <Compile Include="../../YogaITS.Tray/Services/NvidiaGpuHelper.cs" Link="NvidiaGpuHelper.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/GpuActionResult.cs" Link="GpuActionResult.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/GpuDeviceRestartProtocol.cs" Link="GpuDeviceRestartProtocol.cs" />
     <Compile Include="../../YogaITS.Tray/UI/WindowSizing.cs" Link="WindowSizing.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ItsCapabilityPolicy.cs" Link="ItsCapabilityPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ItsModePolicy.cs" Link="ItsModePolicy.cs" />
