@@ -58,21 +58,23 @@ internal sealed class FeaturePanels : IDisposable
         _gpuCard.Update(gpu.Supported, body =>
         {
             var current = _gpu.Snapshot;
+            GpuWorkingMode? selected = current.LogicalMode == GpuWorkingMode.Auto ? GpuWorkingMode.Auto
+                : current.ActualMode switch { 0 => GpuWorkingMode.Default, 1 => GpuWorkingMode.IGPUOnly, _ => null };
             _gpuCard.Options(body,
-                _gpuCard.Option("集显模式", !current.ModeConflict && current.LogicalMode == GpuWorkingMode.IGPUOnly,
+                _gpuCard.Option("集显模式", selected == GpuWorkingMode.IGPUOnly,
                     () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly), current.DgpuDisplayState == DgpuDisplayState.Disconnected),
-                _gpuCard.Option("智能模式", current.LogicalMode == GpuWorkingMode.Auto,
+                _gpuCard.Option("智能模式", selected == GpuWorkingMode.Auto,
                     () => _gpu.SelectAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
-                _gpuCard.Option("双显模式", !current.ModeConflict && current.LogicalMode == GpuWorkingMode.Default,
+                _gpuCard.Option("双显模式", selected == GpuWorkingMode.Default,
                     () => _gpu.SelectAsync(GpuWorkingMode.Default)));
-            _gpuCard.Note(body, current.LogicalMode switch
+            _gpuCard.Note(body, selected switch
             {
                 GpuWorkingMode.IGPUOnly => "提供更佳的续航和更长的电池使用时间。",
                 GpuWorkingMode.Default => "提供更佳的性能。",
                 GpuWorkingMode.Auto => "智能模式：插电时双显，使用电池时自动尝试集显。外接独显显示器使用中时保留实际状态。",
                 _ => ""
             });
-            string effective = current.ModeConflict ? "待确认" : current.EffectiveMode switch { 0 => "双显", 1 => "集显", _ => "未知" };
+            string effective = current.ActualMode switch { 0 => "双显", 1 => "集显", _ => current.ModeConflict ? "待确认" : "未知" };
             _gpuCard.SetStatus($"当前实际状态：{effective}。{current.Message}");
             _gpuCard.Options(body, _gpuCard.Option("详细信息 / 复制诊断信息", false, ShowGpuDiagnosticsAsync,
                 keepInteractive: true, isAction: true, allowWhenUnavailable: true));

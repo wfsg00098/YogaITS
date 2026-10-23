@@ -289,8 +289,8 @@ internal static class GpuModeChecks
             backend.ModeProvider = () => backend.ReadCalls <= firstRead + 2 ? 1 : 0;
             await service.HandleSystemChangeAsync(displayChanged: true);
             Check(service.Snapshot.ModeConflict && service.Snapshot.EffectiveMode == -1 && service.Snapshot.RawWmiMode == 1 &&
-                service.Snapshot.Message.Contains("待确认"),
-                "HDMI firmware wake with stale WMI is Pending, never a fabricated iGPU or Default state");
+                service.Snapshot.ActualMode == 0 && service.Snapshot.Message.Contains("双显") && !service.Snapshot.Message.Contains("待确认"),
+                "NVAPI confirms actual dual mode during HDMI firmware wake without rewriting the retained WMI=1");
             await UntilAsync(() => !service.IsObserving);
             Check(service.Snapshot.EffectiveMode == 0 && !service.Snapshot.ModeConflict && backend.SetCalls == 0 &&
                 service.Snapshot.LogicalMode == GpuWorkingMode.Auto && service.Snapshot.Message.Contains("双显"),
@@ -304,10 +304,11 @@ internal static class GpuModeChecks
             await service.InitializeAsync(() => true);
             await UntilAsync(() => !service.IsObserving);
             Check(backend.ReadCalls == 6 && backend.SetCalls == 0 && service.Snapshot.ModeConflict &&
-                service.Snapshot.RawWmiMode == 1 && service.Snapshot.EffectiveMode == -1,
-                "persistent WMI/display conflict remains explicitly pending after bounded reads, not retried SET or endless polling");
-            Check(service.LastOperation?.Outcome == GpuModeOperationOutcome.Blocked && service.Snapshot.Message.Contains("WMI"),
-                "persistent disagreement is not described as an ordinary confirmed iGPU state");
+                service.Snapshot.RawWmiMode == 1 && service.Snapshot.EffectiveMode == -1 && service.Snapshot.ActualMode == 0,
+                "persistent WMI/display disagreement still shows actual dual mode after bounded observation without any SET");
+            Check(service.LastOperation?.Outcome == GpuModeOperationOutcome.Blocked && service.Snapshot.Message.Contains("双显") &&
+                !service.Snapshot.Message.Contains("待确认") && service.RuntimeDiagnostic.Contains("actual=0"),
+                "a connected output resolves actual display state while the iGPU request remains safely blocked");
         }
         {
             var backend = new FakeBackend { Power = 1, DisplayState = DgpuDisplayState.Unknown };
@@ -357,6 +358,8 @@ internal static class GpuModeChecks
                 "WMI=1 alone never confirms ejection: independently observe device presence and display output");
             Check(service.RuntimeDiagnostic.Contains("nvidiaPresent=" + present),
                 "diagnostics preserve device presence independently of raw WMI and NVAPI");
+            Check(service.Snapshot.ActualMode == (display == DgpuDisplayState.Connected ? 0 : confirmed ? 1 : -1),
+                "only a confirmed connected output resolves actual dual mode; present alone never proves it");
         }
         foreach (var display in new[] { DgpuDisplayState.Connected, DgpuDisplayState.Unknown })
         {
@@ -427,13 +430,14 @@ internal static class GpuModeChecks
             await service.HandleSystemChangeAsync(displayChanged: true);
             await UntilAsync(() => !service.IsObserving);
             Check(backend.SetCalls == 1 && service.Snapshot.RawWmiMode == 1 && service.Snapshot.ModeConflict &&
-                service.Snapshot.NvidiaPresent && service.Snapshot.EffectiveMode == -1,
-                "firmware HDMI wake is independently present while WMI stays 1; connected guard prevents SET");
+                service.Snapshot.NvidiaPresent && service.Snapshot.EffectiveMode == -1 && service.Snapshot.ActualMode == 0 &&
+                !service.Snapshot.Message.Contains("待确认"),
+                "firmware HDMI wake shows actual dual mode while preserving WMI=1 and the connected-display guard");
             backend.DisplayState = DgpuDisplayState.Disconnected;
             await service.HandleSystemChangeAsync(displayChanged: true);
             await UntilAsync(() => !service.IsObserving);
             Check(backend.SetCalls == 2 && service.Snapshot.RawWmiMode == 1 && service.Snapshot.EffectiveMode == 1 &&
-                !service.Snapshot.NvidiaPresent && !service.Snapshot.ModeConflict && keeper.Suppressed && keeper.Enabled &&
+                !service.Snapshot.NvidiaPresent && !service.Snapshot.ModeConflict && service.Snapshot.ActualMode == 1 && keeper.Suppressed && keeper.Enabled &&
                 service.Snapshot.LogicalMode == GpuWorkingMode.Auto && !backend.Order.Contains("set0"),
                 "second unplug reissues only SET1, confirms ejection, preserves Auto and saved keep-awake preference");
         }
@@ -446,6 +450,29 @@ internal static class GpuModeChecks
             Check(backend.SetCalls == 6 && service.Snapshot.ModeConflict && service.Snapshot.EffectiveMode == -1 &&
                 service.Snapshot.NvidiaPresent && service.LastOperation?.Failure?.Stage == GpuModeOperationStage.EffectiveStateVerify,
                 "device-still-present failure with WMI=1 uses bounded Auto retries and cannot terminate them as already satisfied");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, DisplayState = DgpuDisplayState.Connected };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new());
+            await service.InitializeAsync(() => true);
+            Check(backend.SetCalls == 1 && backend.Order.Contains("set0") && service.Snapshot.RawWmiMode == 0 &&
+                service.Snapshot.ActualMode == 0 && service.Snapshot.EffectiveMode == 0,
+                "AC Auto still explicitly SETs and confirms WMI=0; external output alone cannot satisfy the policy setting");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, DisplayState = DgpuDisplayState.Connected, ApplySet = false };
+            await using var service = Service(backend, GpuWorkingMode.Default, new());
+            bool failed = false;
+            try { await service.SelectAsync(GpuWorkingMode.Default); }
+            catch (GpuModeOperationException) { failed = true; }
+            Check(failed && backend.SetCalls == 1 && backend.Order.Contains("set0") && service.Snapshot.RawWmiMode == 1 &&
+                service.Snapshot.ActualMode == 0 && service.LastOperation?.Succeeded == false,
+                "actual dual output cannot falsely verify a manual SET0 whose WMI acknowledgement remains 1");
+        }
+        {
+            var state = new GpuWorkingSnapshot(true, GpuWorkingMode.Auto, -1, DgpuDisplayState.Connected,
+                1, true, "", Available: false, RawWmiMode: 1);
+            Check(state.ActualMode == -1, "unavailable runtime cannot reuse an old connected output to claim a current actual mode");
         }
         return checks;
     }
