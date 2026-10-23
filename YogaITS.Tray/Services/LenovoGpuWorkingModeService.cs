@@ -6,7 +6,7 @@ internal sealed record GpuWorkingSnapshot(
     bool Supported, GpuWorkingMode LogicalMode, int EffectiveMode, DgpuDisplayState DgpuDisplayState,
     int PowerSource, bool NvidiaPresent, string Message, bool Available = true, long Revision = 0, int RawWmiMode = -1)
 {
-    public bool ModeConflict => GpuAutoPolicy.ConflictingObservation(RawWmiMode, DgpuDisplayState);
+    public bool ModeConflict => GpuAutoPolicy.ConflictingObservation(RawWmiMode, NvidiaPresent, DgpuDisplayState);
     public static GpuWorkingSnapshot Unavailable { get; } = new(false, GpuWorkingMode.Default, -1,
         DgpuDisplayState.Unknown, -1, false, "", false);
 }
@@ -56,13 +56,15 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         _observationDelay = observationDelay ?? TimeSpan.FromMilliseconds(750);
     }
 
-    private const string ConflictMessage = "WMI 报告集显，但检测到独显正在输出显示；实际模式待确认，未额外发送切换命令。";
+    private static string ConflictMessage(DgpuDisplayState display) => display == DgpuDisplayState.Connected
+        ? "WMI 报告集显，但检测到独显正在输出显示；实际模式待确认，尚未完成独显关闭。"
+        : "WMI 报告集显，但独显设备仍然存在；实际模式待确认，尚未确认独显关闭。";
 
     private void RecordRead(string source)
     {
         var state = Snapshot;
         string entry = $"time={DateTimeOffset.UtcNow:O}; source={source}; WMI={state.RawWmiMode}; " +
-            $"effective={state.EffectiveMode}; conflict={state.ModeConflict}; NVAPI={state.DgpuDisplayState}; " +
+            $"effective={state.EffectiveMode}; nvidiaPresent={state.NvidiaPresent}; conflict={state.ModeConflict}; NVAPI={state.DgpuDisplayState}; " +
             $"nativeCode={DisplayQuery.NativeCode}; power={state.PowerSource}; revision={state.Revision}";
         _recentReads.Enqueue(entry);
         while (_recentReads.Count > 8) _recentReads.Dequeue();
@@ -70,9 +72,9 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         GpuModeDiagnostics.Write(entry);
     }
 
-    private string ObservationMessage(int raw, DgpuDisplayState display, int power)
+    private string ObservationMessage(int raw, bool nvidiaPresent, DgpuDisplayState display, int power)
     {
-        if (GpuAutoPolicy.ConflictingObservation(raw, display)) return ConflictMessage;
+        if (GpuAutoPolicy.ConflictingObservation(raw, nvidiaPresent, display)) return ConflictMessage(display);
         // An unavailable NVIDIA API after confirmed ejection is not a failed guard.
         if (raw == 1) return "";
         if (_logical == GpuWorkingMode.Auto && power == 1)
@@ -117,12 +119,13 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             if (effective is not (0 or 1)) throw new InvalidDataException("GetIGPUModeStatus 返回未知状态。");
             try { DisplayQuery = _backend.QueryDisplays(); }
             catch (Exception ex) { DisplayQuery = new(DgpuDisplayState.Unknown, NativeCode: ex.HResult, Detail: ex.ToString()); }
-            bool conflict = GpuAutoPolicy.ConflictingObservation(effective, DisplayQuery.State);
+            bool present = _backend.ReadNvidiaPresence();
+            bool conflict = GpuAutoPolicy.ConflictingObservation(effective, present, DisplayQuery.State);
             if ((!_hasPreference || _logical != GpuWorkingMode.Auto) && !conflict)
                 _logical = effective == 1 ? GpuWorkingMode.IGPUOnly : GpuWorkingMode.Default;
             int power = _backend.ReadPowerSource();
-            Snapshot = new(true, _logical, conflict ? -1 : effective, DisplayQuery.State, power,
-                _backend.ReadNvidiaPresence(), ObservationMessage(effective, DisplayQuery.State, power),
+            Snapshot = new(true, _logical, GpuAutoPolicy.ConfirmedMode(effective, present, DisplayQuery.State), DisplayQuery.State, power,
+                present, ObservationMessage(effective, present, DisplayQuery.State, power),
                 Revision: revision, RawWmiMode: effective);
             if (DisplayQuery.State == DgpuDisplayState.Unknown) GpuModeDiagnostics.Write(DisplayQuery.ToString());
         }
@@ -214,12 +217,14 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         LastOperation = result;
         ActiveDiagnostic = "";
         DisplayQuery = result.Display;
-        bool conflict = GpuAutoPolicy.ConflictingObservation(result.EffectiveMode ?? -1, result.Display.State);
-        Snapshot = Snapshot with { EffectiveMode = conflict ? -1 : result.EffectiveMode ?? -1,
-            Available = result.EffectiveMode.HasValue, Message = result.Message, Revision = revision,
-            RawWmiMode = result.EffectiveMode ?? -1, DgpuDisplayState = result.Display.State };
-        if (conflict) Snapshot = Snapshot with { Message = ConflictMessage };
-        if (_logical != GpuWorkingMode.Auto && !conflict && result.EffectiveMode is { } effective)
+        Snapshot = Snapshot with { EffectiveMode = result.EffectiveMode ?? -1,
+            Available = result.RawWmiMode.HasValue && result.NvidiaPresent.HasValue,
+            NvidiaPresent = result.NvidiaPresent ?? Snapshot.NvidiaPresent,
+            Message = result.Message, Revision = revision,
+            RawWmiMode = result.RawWmiMode ?? -1, DgpuDisplayState = result.Display.State };
+        if (Snapshot.ModeConflict && result.Failure?.Stage != GpuModeOperationStage.EffectiveStateVerify)
+            Snapshot = Snapshot with { Message = ConflictMessage(result.Display.State) };
+        if (_logical != GpuWorkingMode.Auto && result.EffectiveMode is { } effective)
             Snapshot = Snapshot with { LogicalMode = effective == 1 ? GpuWorkingMode.IGPUOnly : GpuWorkingMode.Default };
         RecordRead("Transaction result");
         return result;
@@ -231,15 +236,16 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         int? desired = GpuAutoPolicy.DesiredTarget(Snapshot.PowerSource);
         if (desired is { } already && Snapshot.EffectiveMode == already && !Snapshot.ModeConflict)
         {
-            Snapshot = Snapshot with { Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
+            Snapshot = Snapshot with { Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
             LastOperation = new(already, GpuModeOperationOutcome.Success, already, false, DisplayQuery, null, null,
-                $"time={DateTimeOffset.UtcNow:O}; Auto target={already}; WMI={Snapshot.RawWmiMode}; already at target; no SET; NVAPI={DisplayQuery.State}");
+                $"time={DateTimeOffset.UtcNow:O}; Auto target={already}; WMI={Snapshot.RawWmiMode}; nvidiaPresent={Snapshot.NvidiaPresent}; already at target; no SET; NVAPI={DisplayQuery.State}",
+                Snapshot.NvidiaPresent);
             return;
         }
         int? target = GpuAutoPolicy.Target(Snapshot.PowerSource, Snapshot.DgpuDisplayState);
         if (target is null)
         {
-            Snapshot = Snapshot with { LogicalMode = _logical, Message = Snapshot.ModeConflict ? ConflictMessage : Snapshot.PowerSource == 1
+            Snapshot = Snapshot with { LogicalMode = _logical, Message = Snapshot.ModeConflict ? ConflictMessage(Snapshot.DgpuDisplayState) : Snapshot.PowerSource == 1
                 ? Snapshot.DgpuDisplayState == DgpuDisplayState.Connected
                     ? "智能模式：因独显正在驱动外接显示器，当前暂保持现有模式。"
                     : "智能模式：无法确认独显显示状态，当前暂保持现有模式。"
@@ -248,9 +254,10 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             var failure = new GpuModeOperationFailure(Snapshot.PowerSource == 1 ? GpuModeOperationStage.DisplayGuard
                 : GpuModeOperationStage.RuntimeStateRead, Snapshot.PowerSource == 1 ? "NVAPI" : "Power",
                 Snapshot.Message, DisplayQuery.Detail, DisplayQuery.NativeCode);
-            LastOperation = new(1, GpuModeOperationOutcome.Blocked, Snapshot.EffectiveMode, false, DisplayQuery,
+            LastOperation = new(1, GpuModeOperationOutcome.Blocked, Snapshot.RawWmiMode, false, DisplayQuery,
                 failure, null, $"time={DateTimeOffset.UtcNow:O}; Auto; capability={_capability}; WMI={Snapshot.RawWmiMode}; " +
-                $"effective={Snapshot.EffectiveMode}; power={Snapshot.PowerSource}; {failure}; {DisplayQuery}");
+                $"effective={Snapshot.EffectiveMode}; nvidiaPresent={Snapshot.NvidiaPresent}; power={Snapshot.PowerSource}; {failure}; {DisplayQuery}",
+                Snapshot.NvidiaPresent);
             return;
         }
         if (Snapshot.EffectiveMode == target) return;

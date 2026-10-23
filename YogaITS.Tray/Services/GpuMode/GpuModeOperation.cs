@@ -21,10 +21,12 @@ internal sealed record GpuModeOperationFailure(GpuModeOperationStage Stage, stri
             ex is ManagementException management ? (int)management.ErrorCode : ex.HResult, ex.GetType().FullName);
 }
 
-internal sealed record GpuModeOperationResult(int Target, GpuModeOperationOutcome Outcome, int? EffectiveMode,
+internal sealed record GpuModeOperationResult(int Target, GpuModeOperationOutcome Outcome, int? RawWmiMode,
     bool SetInvoked, DgpuDisplayQueryResult Display, GpuModeOperationFailure? Failure,
-    GpuModeOperationFailure? AuxiliaryFailure, string Diagnostics)
+    GpuModeOperationFailure? AuxiliaryFailure, string Diagnostics, bool? NvidiaPresent)
 {
+    public int? EffectiveMode => RawWmiMode is { } raw && NvidiaPresent is { } present &&
+        GpuAutoPolicy.ConfirmedMode(raw, present, Display.State) is 0 or 1 ? raw : null;
     public bool Succeeded => Outcome is GpuModeOperationOutcome.Success or GpuModeOperationOutcome.SuccessWithWarning;
     public string Message => Failure?.Summary ?? AuxiliaryFailure?.Summary ?? "";
 }

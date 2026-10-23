@@ -178,9 +178,9 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 - `Services/GpuMode/` 拆分严格 WMI 后端、NVAPI 显示查询及单次切换事务。只有 `IsSupportIGPUMode` 调用成功、Data 为正常 Int32/UInt32 且大于零时显示整卡，不根据 1/2/3、型号或年份划分能力。能力不支持/探测失败分别记录 `CapabilityUnsupported/CapabilityProbeFailed`；两者都隐藏。能力成功后的运行态读取失败保留卡片但禁用操作。
 - 移除生产链的 `ExternalPath` 和 HDMI WMI 查询。参考 [NVIDIA nvapi.h](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h) 与 [接口 ID](https://github.com/NVIDIA/nvapi/blob/main/nvapi_interface.h)：枚举 physical GPU，逐个使用 `NvAPI_GPU_GetConnectedDisplayIds`（`0x0078DBA2`）；先查询数量，非零才分配，结构为 16 字节、VER2 实际修订号 3、`isConnected` 位为 bit6。查询使用 UNCACHED，不根据端口或 `isActive` 猜连接，也不区分 eGPU。缺 DLL/入口、初始化/枚举/数据查询失败或异常数量均为 Unknown，不降级为“无显示器”。NVAPI 生命周期与现有进程查询共用锁。
-- 手动进入集显：读取实际模式 → NVAPI Disconnected → 暂停并确认释放 helper → SET 一次 → 等待 1.5 秒 → GET 验证。Connected/Unknown 不 SET；保活暂停失败不 SET。已确认处于目标时不重复 SET，只协调保活运行态。SET 明确失败或回读仍为双显时按原状态恢复保活；确认集显后继续抑制；回读失败为 Indeterminate，继续暂停，直到后续读取确认实际模式。
+- 手动进入集显：读取 WMI 与独显设备存在状态 → NVAPI Disconnected → 暂停并确认释放 helper → SET 一次 → 等待 1.5 秒 → GET 并验证设备消失。Connected/Unknown 不 SET；保活暂停失败不 SET。WMI=1 且独显已消失、没有独显输出冲突时才接受已达集显目标。SET 明确失败或回读仍为双显时按已确认状态恢复保活；确认集显后继续抑制；回读失败为 Indeterminate，继续暂停，直到后续读取确认实际模式。
 - 返回双显不依赖 NVAPI guard。回读确认双显后恢复符合供电、屏幕、睡眠等条件的保活；新启动的 helper 还须健康应答确认 context。辅助恢复失败记录 SuccessWithWarning，不改写核心模式成功。用户 `KeepDGpuAwake` 偏好从不因切换清除。切换协调和快照带递增 revision，旧缓存不能恢复刚暂停的 helper。
-- `GpuModeOperationResult` 区分 Success / SuccessWithWarning / Blocked / Failed / Indeterminate，保留阶段、后端、原始代码、异常类型、目标、SET 是否完成和回读。UI 普通提示只展示原因；诊断卡片可复制完整记录，状态未知时仍可打开。记录写入 Trace 和最近一次诊断内存，不新建 logs 目录、不生成持久日志文件。
+- `GpuModeOperationResult` 区分 Success / SuccessWithWarning / Blocked / Failed / Indeterminate，分别保留原始 WMI、独显设备存在状态与确认后的模式，以及阶段、后端、原始代码、异常类型、目标和 SET 是否完成。UI 普通提示只展示原因；诊断卡片可复制完整记录，状态未知时仍可打开。记录写入 Trace 和最近一次诊断内存，不新建 logs 目录、不生成持久日志文件。
 - Auto 保留应用偏好，AC 返回双显，DC 必须经相同 NVAPI guard。初次尝试之外最多 5 次、每次间隔 5 秒，只对明确 SET 失败/状态未改变重试；Connected/Unknown、AC、取消、能力丢失或 Indeterminate 停止。每次记录 attempt，耗尽保留最终阶段和回读。SET 前再次检查供电；已经发出的 SET 不因取消而跳过回读。
 
 自动检查使用模拟 WMI、NVAPI 和保活接口，覆盖设计矩阵的能力/guard/暂停/SET/回读/辅助恢复/Auto 分支、结构 ABI、状态码、手动无重复 SET、有限重试及取消。不执行真实硬件调用；只读探针仅更新诊断输出并编译，不运行。现有串行服务的有限等待仍保留，无法强制中断的 native 调用返回前不释放资源或并发重试。
@@ -193,14 +193,25 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 用户在 Yoga Pro 16 IPH11 上确认：离电且独显连接显示器时 Auto 正确保持双显；移除显示器后已经进入集显，但 NVAPI 枚举入口不可用被误报为 guard 阻止；再次连接 HDMI 后固件自行恢复双显输出，界面却保留集显状态，插电再刷新才恢复。
 
-- Auto 先按供电判断目标是否已由有效回读满足，再检查切换前 guard。WMI=1、NVAPI=Unknown 时接受已集显，不伪造 Disconnected、不重复 SET。NVAPI 业务入口延迟到 Initialize 成功后解析，失败仍保留真实阶段。
+- 当时 Auto 先按供电判断目标是否已由 WMI 回读满足，再检查切换前 guard；WMI=1、NVAPI=Unknown 时接受已集显。这一判断不足，已由下述第二轮修复收紧。NVAPI 业务入口延迟到 Initialize 成功后解析，失败仍保留真实阶段。
 - 新增 `RawWmiMode`；当 WMI=1 且 NVAPI=Connected 时标记冲突，`EffectiveMode=-1`，显示“待确认”，保留 Auto 偏好。未确认时不选中集显/双显卡片，保活继续抑制。不能仅凭 NVAPI 把 WMI 原始值改成 0。
 - 显示事件后的初次策略执行之外，最多再进行 5 次只读补查，间隔 750 ms，调度窗口 6 秒；补查本身不执行 SET。固件回读延迟时可自动收敛为双显，持续不一致则保持待确认，不无限轮询。原有 native 调用不可强制中断，串行/超时资源所有权约束不变。新事件、手动选择与退出取消旧补查；能力丢失也停止。
 - 最近 8 条读取记录保存在内存，含 UTC 时间、来源、原始 WMI、有效模式、NVAPI、供电及 revision；诊断对话框区分这些运行态记录与最近一次策略/切换记录，不创建日志文件。只读探针也输出原始值与冲突标志。
 
 自动回归覆盖上述两种实机时序、持续冲突、只读补查不写硬件、取消/关闭及已达目标但已知存在连接冲突时不绕过 guard。本轮修复待用户启动新测试版复测，不宣称真实 WMI 一定会在补查窗口内更新。
 
-修复版构建目录为 `publish/5.3-gpu-nvapi-refresh-dev/`，不覆盖初版运行目录；完整发布及无硬件检查 **1484 项通过**，主程序与只读探针编译通过，版本命名检查通过。本轮未启动新版、未推送或合并 main，等待用户要求启动复测。
+第一轮修复版构建目录为 `publish/5.3-gpu-nvapi-refresh-dev/`；完整发布及无硬件检查 **1484 项通过**，主程序与只读探针编译通过，版本命名检查通过。随后按用户要求启动，收到下述第二轮反馈；未推送或合并 main。
+
+### HDMI 固件唤醒后再次拔屏
+
+用户在 Yoga Pro 16 IPH11 上复现：第一次离电、拔屏可移除独显；重新插屏后独显由固件唤醒，但 WMI 仍为 1；再次拔屏时界面声称集显，设备管理器中独显却仍存在。手动切换双显再切回集显可移除设备。这说明不能把 WMI=1 单独作为已完成集显切换的依据。
+
+- 复用既有 `ReadNvidiaPresence`（PnP/WMI 枚举），与 NVAPI 显示连接状态分开记录。WMI=1 但独显设备仍存在或仍有输出时，实际模式为待确认；只有 WMI=1、设备消失且无输出冲突才确认集显。设备存在不代表正在输出，更不用于替代 NVAPI guard。
+- Auto 的“已达目标”、事务短路、SET 后验证和重试完成条件统一使用确认后的模式。独显仍存在、NVAPI=Disconnected 时，即使 WMI 已为 1，也暂停 helper 并重新 SET1 一次；回读 WMI=1 但设备仍在属于 EffectiveStateVerify 失败，沿用已有最多五次的 Auto 重试，不增加 0→1 切换序列。手动操作仍只 SET 一次。
+- 原始 WMI 与设备存在状态独立保留在结果、内存诊断和只读探针输出中。设备查询异常不当作设备消失；SET 后查询失败为 Indeterminate，不盲目重试或恢复保活。显示事件后的五次补查仍只读。
+- 模拟后端新增独立设备存在值及查询失败注入，覆盖 WMI 保持 1 的两轮插拔、Unknown/Connected guard、设备未移除、查询失败、有限 Auto 重试和保活抑制。模拟检查不能证明直接重发 SET1 在实机上一定生效；这一点仍待复测。
+
+第二轮构建输出到 `publish/5.3-gpu-nvapi-eject-dev/`，不覆盖此前测试目录；1507 项不依赖发布物的无硬件检查通过，主程序及只读探针编译均为 0 警告、0 错误，版本命名检查通过。发布时另检查 PRI、图标及更新助手；本轮不自动启动、推送或合并 main。
 
 ## 保持 NVIDIA 独显唤醒
 

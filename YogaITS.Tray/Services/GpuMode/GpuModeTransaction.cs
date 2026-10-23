@@ -12,7 +12,10 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
         var trace = new List<string>();
         var display = observation ?? new DgpuDisplayQueryResult(DgpuDisplayState.Unknown);
         bool invoked = false;
-        int? effective = null;
+        int? raw = null;
+        bool? nvidiaPresent = null;
+        int? ConfirmedMode() => raw is { } mode && nvidiaPresent is { } present &&
+            GpuAutoPolicy.ConfirmedMode(mode, present, display.State) is 0 or 1 ? mode : null;
         void Log(string message)
         {
             trace.Add(message);
@@ -22,10 +25,10 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
         GpuModeOperationResult Finish(GpuModeOperationOutcome outcome, GpuModeOperationFailure? failure = null,
             GpuModeOperationFailure? auxiliary = null)
         {
-            Log($"outcome={outcome}; stage={failure?.Stage ?? auxiliary?.Stage}; readback={effective}; setInvoked={invoked}");
+            Log($"outcome={outcome}; stage={failure?.Stage ?? auxiliary?.Stage}; WMI={raw}; nvidiaPresent={nvidiaPresent}; confirmed={ConfirmedMode()}; setInvoked={invoked}");
             if (failure is not null) Log(failure.ToString());
             if (auxiliary is not null) Log(auxiliary.ToString());
-            return new(target, outcome, effective, invoked, display, failure, auxiliary, string.Join(Environment.NewLine, trace));
+            return new(target, outcome, raw, invoked, display, failure, auxiliary, string.Join(Environment.NewLine, trace), nvidiaPresent);
         }
         async Task<GpuModeOperationFailure?> CompleteAsync(int? actual, bool coreSuccess)
         {
@@ -45,16 +48,18 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
             if (CanceledOrPowerChanged()) return Finish(GpuModeOperationOutcome.Blocked,
                 new(GpuModeOperationStage.RuntimeStateRead, "Power/Retry", "供电条件已改变或请求已取消，未执行显卡切换。"));
             Log("stage=RuntimeStateRead; backend=LENOVO_GAMEZONE_DATA.GetIGPUModeStatus");
-            effective = backend.ReadMode();
-            if (effective is not (0 or 1)) throw new InvalidDataException("显卡实际状态未知。");
-            Log("runtimeState=" + effective);
+            raw = backend.ReadMode();
+            if (raw is not (0 or 1)) throw new InvalidDataException("显卡实际状态未知。");
+            Log("stage=RuntimeStateRead; backend=PnP/WMI NVIDIA presence");
+            nvidiaPresent = backend.ReadNvidiaPresence();
+            Log($"runtimeState={raw}; nvidiaPresent={nvidiaPresent}");
         }
         catch (Exception ex) { return Finish(GpuModeOperationOutcome.Failed,
-            GpuModeOperationFailure.From(GpuModeOperationStage.RuntimeStateRead, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus",
+            GpuModeOperationFailure.From(GpuModeOperationStage.RuntimeStateRead, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus / PnP/WMI",
                 "无法读取当前显卡状态，未执行切换。", ex)); }
-        if (effective == target && !GpuAutoPolicy.ConflictingObservation(effective.Value, display.State))
+        if (ConfirmedMode() == target)
         {
-            var warning = await CompleteAsync(effective, true);
+            var warning = await CompleteAsync(target, true);
             return Finish(warning is null ? GpuModeOperationOutcome.Success : GpuModeOperationOutcome.SuccessWithWarning,
                 auxiliary: warning);
         }
@@ -69,9 +74,9 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
                     display.State == DgpuDisplayState.Connected
                         ? "无法进入集显模式：独立显卡当前正在驱动外接显示器。"
                         : "无法检测独显显示状态，暂不允许关闭独立显卡。", display.Detail, display.NativeCode));
-            if (effective == target)
+            if (ConfirmedMode() == target)
             {
-                var warning = await CompleteAsync(effective, true);
+                var warning = await CompleteAsync(target, true);
                 return Finish(warning is null ? GpuModeOperationOutcome.Success : GpuModeOperationOutcome.SuccessWithWarning,
                     auxiliary: warning);
             }
@@ -81,7 +86,7 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
                 GpuModeOperationFailure.From(GpuModeOperationStage.KeepAwakeSuspend, "YogaITS.KeepAwake",
                     "无法暂停“保持独显唤醒”，未执行集显模式切换。", ex)); }
         }
-        int before = effective.Value;
+        int? before = ConfirmedMode();
         try
         {
             if (CanceledOrPowerChanged())
@@ -106,26 +111,31 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
         try
         {
             Log("stage=ModeReadback; backend=LENOVO_GAMEZONE_DATA.GetIGPUModeStatus");
+            raw = null;
+            nvidiaPresent = null;
             await (settle?.Invoke() ?? Task.Delay(1500)).ConfigureAwait(false);
-            effective = backend.ReadMode();
-            if (effective is not (0 or 1)) throw new InvalidDataException("切换后返回未知显卡状态。");
-            Log("GetIGPUModeStatus=" + effective);
+            raw = backend.ReadMode();
+            if (raw is not (0 or 1)) throw new InvalidDataException("切换后返回未知显卡状态。");
+            Log($"GetIGPUModeStatus={raw}; stage=ModeReadback; backend=PnP/WMI NVIDIA presence");
+            nvidiaPresent = backend.ReadNvidiaPresence();
+            Log($"GetIGPUModeStatus={raw}; nvidiaPresent={nvidiaPresent}");
         }
         catch (Exception ex)
         {
-            effective = null;
             var suppression = await CompleteAsync(null, false);
             return Finish(GpuModeOperationOutcome.Indeterminate,
-                GpuModeOperationFailure.From(GpuModeOperationStage.ModeReadback, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus",
+                GpuModeOperationFailure.From(GpuModeOperationStage.ModeReadback, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus / PnP/WMI",
                     "显卡模式请求已发送，但无法读取切换后的显卡状态。", ex), suppression);
         }
-        bool success = effective == target;
-        var completion = await CompleteAsync(effective, success);
+        bool success = ConfirmedMode() == target;
+        var completion = await CompleteAsync(ConfirmedMode(), success);
         if (!success)
             return Finish(GpuModeOperationOutcome.Failed,
-                new(GpuModeOperationStage.EffectiveStateVerify, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus",
-                    "显卡模式请求已发送，但实际显卡状态未切换到目标模式。",
-                    $"Requested={target}; Readback={effective}; Display={display.State}; SET=Invoked without exception"), completion);
+                new(GpuModeOperationStage.EffectiveStateVerify, "LENOVO_GAMEZONE_DATA.GetIGPUModeStatus / PnP/WMI",
+                    target == 1 && raw == 1 && nvidiaPresent == true
+                        ? "集显模式请求已发送，WMI 已返回集显，但独显设备仍然存在，尚未完成切换。"
+                        : "显卡模式请求已发送，但实际显卡状态未切换到目标模式。",
+                    $"Requested={target}; WMI={raw}; NvidiaPresent={nvidiaPresent}; Display={display.State}; SET=Invoked without exception"), completion);
         return Finish(completion is null ? GpuModeOperationOutcome.Success : GpuModeOperationOutcome.SuccessWithWarning,
             auxiliary: completion);
     }

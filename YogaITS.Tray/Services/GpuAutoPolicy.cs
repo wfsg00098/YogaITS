@@ -3,8 +3,11 @@ namespace YogaITS.Tray.Services;
 internal static class GpuAutoPolicy
 {
     public static int? DesiredTarget(int powerSource) => powerSource switch { 0 => 0, 1 => 1, _ => null };
-    public static bool ConflictingObservation(int wmiMode, DgpuDisplayState display) =>
-        wmiMode == 1 && display == DgpuDisplayState.Connected;
+    public static bool ConflictingObservation(int wmiMode, bool nvidiaPresent, DgpuDisplayState display) =>
+        wmiMode == 1 && (nvidiaPresent || display == DgpuDisplayState.Connected);
+
+    public static int ConfirmedMode(int wmiMode, bool nvidiaPresent, DgpuDisplayState display) =>
+        wmiMode is 0 or 1 && !ConflictingObservation(wmiMode, nvidiaPresent, display) ? wmiMode : -1;
 
     // Unknown power or NVAPI display state must never request iGPU-only.
     public static int? Target(int powerSource, DgpuDisplayState display) => powerSource switch

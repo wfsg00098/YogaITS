@@ -345,6 +345,108 @@ internal static class GpuModeChecks
             Check(backend.SetCalls == 0 && backend.DisplayCalls == 1 && result.Succeeded == (fresh == DgpuDisplayState.Disconnected),
                 "known WMI/display disagreement cannot bypass guard via an already-at-target shortcut");
         }
+        foreach (var display in Enum.GetValues<DgpuDisplayState>())
+        foreach (bool present in new[] { false, true })
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = present, DisplayState = display };
+            await using var service = Service(backend, null, new(), observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.RefreshAsync();
+            bool confirmed = !present && display != DgpuDisplayState.Connected;
+            Check((service.Snapshot.EffectiveMode == 1) == confirmed && service.Snapshot.ModeConflict != confirmed &&
+                service.Snapshot.Available && backend.SetCalls == 0,
+                "WMI=1 alone never confirms ejection: independently observe device presence and display output");
+            Check(service.RuntimeDiagnostic.Contains("nvidiaPresent=" + present),
+                "diagnostics preserve device presence independently of raw WMI and NVAPI");
+        }
+        foreach (var display in new[] { DgpuDisplayState.Connected, DgpuDisplayState.Unknown })
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, DisplayState = display };
+            var keeper = new FakeKeeper();
+            var result = await Transaction(backend, keeper).ExecuteAsync(1, 3, "firmware wake");
+            Check(result.Outcome == GpuModeOperationOutcome.Blocked && result.RawWmiMode == 1 &&
+                result.EffectiveMode is null && result.NvidiaPresent == true && backend.SetCalls == 0 && keeper.Suspends == 0,
+                "a still-present GPU with WMI=1 cannot bypass Connected/Unknown guard or masquerade as completed");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true };
+            backend.OnSet = () => backend.NvidiaPresent = false;
+            var keeper = new FakeKeeper();
+            var result = await Transaction(backend, keeper).ExecuteAsync(1, 3, "firmware wake");
+            Check(result.Succeeded && result.EffectiveMode == 1 && result.NvidiaPresent == false &&
+                backend.Order.SequenceEqual(new[] { "read", "display", "suspend", "set1", "read", "complete1" }),
+                "after firmware wake, Disconnected permits one guarded SET1 even while WMI already reads 1");
+        }
+        foreach (int initial in new[] { 0, 1 })
+        {
+            var backend = new FakeBackend { Mode = initial, NvidiaPresent = true };
+            var keeper = new FakeKeeper();
+            var result = await Transaction(backend, keeper).ExecuteAsync(1, 3, "device remains");
+            Check(!result.Succeeded && result.Failure?.Stage == GpuModeOperationStage.EffectiveStateVerify &&
+                result.RawWmiMode == 1 && result.EffectiveMode is null && result.NvidiaPresent == true &&
+                backend.SetCalls == 1 && keeper.Suppressed && !keeper.Active,
+                "SET1 followed by WMI=1 is not success while the device remains; ambiguous mode cannot resume keep-awake");
+            Check(result.Message.Contains("独显设备仍然存在") && !result.Diagnostics.Contains("set0"),
+                "failed ejection is explicit and never silently adds a Default-to-iGPU bounce");
+        }
+        foreach (int failedPresenceRead in new[] { 1, 2 })
+        {
+            var backend = new FakeBackend { FailPresenceAt = failedPresenceRead };
+            var keeper = new FakeKeeper();
+            var result = await Transaction(backend, keeper).ExecuteAsync(1, 3, "presence failure");
+            Check(result.EffectiveMode is null && result.NvidiaPresent is null && backend.SetCalls == failedPresenceRead - 1 &&
+                result.Outcome == (failedPresenceRead == 1 ? GpuModeOperationOutcome.Failed : GpuModeOperationOutcome.Indeterminate) &&
+                !GpuAutoPolicy.ShouldRetry(result, 1),
+                "unreadable device presence never means absent and cannot trigger blind SETs or retries");
+            Check(failedPresenceRead == 1 || result.RawWmiMode == 1 && keeper.Suppressed && !keeper.Active,
+                "post-SET presence failure retains the actual raw WMI while suppressing unverified keep-awake");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, SetError = new IOException("fixture") };
+            var keeper = new FakeKeeper();
+            var result = await Transaction(backend, keeper).ExecuteAsync(1, 3, "ambiguous prior mode");
+            Check(result.Failure?.Stage == GpuModeOperationStage.ModeSet && result.EffectiveMode is null &&
+                keeper.Suppressed && !keeper.Active && backend.SetCalls == 1,
+                "SET failure cannot restore keep-awake from an ambiguous pre-switch WMI=1 observation");
+        }
+        {
+            var backend = new FakeBackend { DisplayState = DgpuDisplayState.Connected, NvidiaPresent = true };
+            backend.OnSet = () => { backend.NvidiaPresent = false; backend.DisplayState = DgpuDisplayState.Unknown; };
+            var keeper = new FakeKeeper();
+            await using var service = Service(backend, GpuWorkingMode.Auto, keeper, observationDelay: TimeSpan.FromMilliseconds(10));
+            await service.InitializeAsync(() => true);
+            backend.Power = 1;
+            await service.HandleSystemChangeAsync();
+            Check(backend.SetCalls == 0 && service.Snapshot.EffectiveMode == 0, "unplug AC with a connected display preserves dual mode");
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 1 && service.Snapshot.EffectiveMode == 1 && !service.Snapshot.NvidiaPresent,
+                "first display unplug SETs and confirms ejection");
+            backend.NvidiaPresent = true;
+            backend.DisplayState = DgpuDisplayState.Connected;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 1 && service.Snapshot.RawWmiMode == 1 && service.Snapshot.ModeConflict &&
+                service.Snapshot.NvidiaPresent && service.Snapshot.EffectiveMode == -1,
+                "firmware HDMI wake is independently present while WMI stays 1; connected guard prevents SET");
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 2 && service.Snapshot.RawWmiMode == 1 && service.Snapshot.EffectiveMode == 1 &&
+                !service.Snapshot.NvidiaPresent && !service.Snapshot.ModeConflict && keeper.Suppressed && keeper.Enabled &&
+                service.Snapshot.LogicalMode == GpuWorkingMode.Auto && !backend.Order.Contains("set0"),
+                "second unplug reissues only SET1, confirms ejection, preserves Auto and saved keep-awake preference");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, Power = 1 };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), TimeSpan.FromMilliseconds(15));
+            await service.InitializeAsync(() => true);
+            await UntilAsync(() => backend.SetCalls == 6);
+            await Task.Delay(80);
+            Check(backend.SetCalls == 6 && service.Snapshot.ModeConflict && service.Snapshot.EffectiveMode == -1 &&
+                service.Snapshot.NvidiaPresent && service.LastOperation?.Failure?.Stage == GpuModeOperationStage.EffectiveStateVerify,
+                "device-still-present failure with WMI=1 uses bounded Auto retries and cannot terminate them as already satisfied");
+        }
         return checks;
     }
 
@@ -371,8 +473,9 @@ internal static class GpuModeChecks
 
     private sealed class FakeBackend : IGpuModeBackend
     {
-        public int Capability = 3, Mode, Power, SetCalls, ReadCalls, DisplayCalls, FailReadAt;
+        public int Capability = 3, Mode, Power, SetCalls, ReadCalls, DisplayCalls, FailReadAt, PresenceCalls, FailPresenceAt;
         public bool ApplySet = true;
+        public bool? NvidiaPresent;
         public Exception? CapabilityError, SetError;
         public Action? OnSet;
         public Func<DgpuDisplayState>? DisplayProvider;
@@ -402,7 +505,11 @@ internal static class GpuModeChecks
                 Detail: "NvAPI_GPU_GetConnectedDisplayIds fixture");
         }
         public int ReadPowerSource() => Power;
-        public bool ReadNvidiaPresence() => Mode != 1;
+        public bool ReadNvidiaPresence()
+        {
+            if (++PresenceCalls == FailPresenceAt) throw new IOException("presence fixture");
+            return NvidiaPresent ?? Mode != 1;
+        }
     }
 
     private sealed class FakeKeeper
