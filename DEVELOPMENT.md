@@ -107,7 +107,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 | --- | --- |
 | ITS 性能选项 | 保留型号筛选；Dispatcher Version ≥8192 走现代服务，查询 2 成功且含 `0x1` 才显示。较低/缺失版本走 LITSSVC，要求旧 MMC 状态键和 EnergyDrv 存在，不套用现代查询 2 门槛。 |
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
-| 显卡工作模式（实验分支） | `IsSupportIGPUMode.Data > 0` 且类型正常才显示；能力探测失败也隐藏整卡。偏好独立保存，实际状态另行显示。NVAPI `Disconnected` 才允许执行集显 SET；`Connected` 禁用集显偏好并将已有集显改为智能，`Unknown` 保留偏好但不执行关闭，不再读取 HDMI WMI guard。 |
+| 显卡工作模式 | `IsSupportIGPUMode.Data > 0` 且类型正常才显示；能力探测失败也隐藏整卡。偏好独立保存，实际状态另行显示。NVAPI `Disconnected` 才允许执行集显 SET；`Connected` 禁用集显偏好并将已有集显改为智能，`Unknown` 保留偏好但不执行关闭，不再读取 HDMI WMI guard。 |
 | 显卡偏好协调 | 手动集显/双显目标不随供电改变；Auto 要求电源通知可用，AC 目标双显、DC 目标集显、供电未知不切换。启动和电源/显示事件协调全部偏好；明确的集显切换失败最多追加 5 次重试、间隔 5 秒。手动点击立即 SET 最多一次，新事件或选择取消旧调度。 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配面板及有效的序列号、Machine Type。仅当后两者同时为 `INVALID` 时接受 Lenovo 的面板级配置，不放宽真实身份不匹配或空字段校验；恢复与实际切换共用校验逻辑。 |
 | HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
@@ -173,9 +173,9 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 用户确认的集成版完善测试机型包含 ThinkBook 14 G6+ AHP、G6+ IMH、G7+ IAH，重点验证 TCON P3/sRGB；Yoga Pro 16 IPH11 为 TCON 负样本。这些是既有版本的验证记录，不替代 5.2 回归。Adobe RGB 的验证限制只写在 README，应用不显示测试备注。
 
-## NVAPI 显卡工作模式实验（2026-10-23）
+## NVAPI 显卡工作模式（2026-10-23）
 
-分支 `experiment/gpu-mode-nvapi` 基于 `86f2fea`，验证工作区设计文件 `YogaITS_GPU_Working_Mode_NVAPI_Design_2026-10-23.md`。仅本地实验，不推送、不合并 main；初版已按用户要求启动并收到实机反馈，本轮修复只构建，不自动启动。5.2/5.3 的既有实机验收不覆盖此实验。
+该实现由基于 `86f2fea` 的 `experiment/gpu-mode-nvapi` 分支开发，参考工作区设计文件 `YogaITS_GPU_Working_Mode_NVAPI_Design_2026-10-23.md`，经本轮实机验证后并入 main。用户确认最终 dev 版 `07f7e66a` 在 Yoga Pro 16 IPH11 上验证成功；小新 Pro 14 IRH8 另确认可控制显卡工作模式。以下保留各轮实现与反馈记录，早期的实验限制和待测说明描述当时状态。
 
 - `Services/GpuMode/` 拆分严格 WMI 后端、NVAPI 显示查询及单次切换事务。只有 `IsSupportIGPUMode` 调用成功、Data 为正常 Int32/UInt32 且大于零时显示整卡，不根据 1/2/3、型号或年份划分能力。能力不支持/探测失败分别记录 `CapabilityUnsupported/CapabilityProbeFailed`；两者都隐藏。能力成功后的运行态读取失败保留卡片但禁用操作。
 - 移除生产链的 `ExternalPath` 和 HDMI WMI 查询。参考 [NVIDIA nvapi.h](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h) 与 [接口 ID](https://github.com/NVIDIA/nvapi/blob/main/nvapi_interface.h)：枚举 physical GPU，逐个使用 `NvAPI_GPU_GetConnectedDisplayIds`（`0x0078DBA2`）；先查询数量，非零才分配，结构为 16 字节、VER2 实际修订号 3、`isConnected` 位为 bit6。查询使用 UNCACHED，不根据端口或 `isActive` 猜连接，也不区分 eGPU。缺 DLL/入口、初始化/枚举/数据查询失败或异常数量均为 Unknown，不降级为“无显示器”。NVAPI 生命周期与现有进程查询共用锁。
@@ -186,7 +186,7 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 
 自动检查使用模拟 WMI、NVAPI 和保活接口，覆盖设计矩阵的能力/guard/暂停/SET/回读/辅助恢复/Auto 分支、结构 ABI、状态码、手动无重复 SET、有限重试及取消。不执行真实硬件调用；只读探针仅更新诊断输出并编译，不运行。现有串行服务的有限等待仍保留，无法强制中断的 native 调用返回前不释放资源或并发重试。
 
-待用户回来启动实验版后验收：无外接屏与独显外接屏、NVAPI Unknown 的按钮显隐、保活开/关进入集显、返回双显恢复、插拔电与显示器触发 Auto、详细诊断复制及原有息屏/离电暂停行为。模拟失败注入不能证明对应真实驱动场景已通过。
+本轮实机验证覆盖显卡模式控制、AC/DC 与独显外接屏插拔后的策略及状态显示，用户最终确认 Yoga Pro 16 IPH11 验证成功。自动检查另外覆盖 Unknown guard、保活协调、失败及取消等分支；模拟失败注入不能代替对应真实驱动场景的验证。
 
 2026-10-23：初版 `8191710` 完整实验构建输出到 `publish/5.3-gpu-nvapi-dev/`，包含主程序、两个助手和 PRI，**1469 项无硬件检查通过**，版本命名检查通过；主程序及只读探针编译无警告/错误。构建检查不访问真实显卡接口；随后按用户要求启动主程序，用户反馈以下两个状态同步问题，尚未完成全项验收。
 
@@ -254,7 +254,7 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - 回读结束在串行队列内提交最终显示状态；取消旧任务不会覆盖新任务或新选择，已最终显示未知后也不会复活更早的已知文字。界面不可用分支复用同一状态文字，避免覆盖成瞬时未知。
 - 显示缓冲不进入 `Snapshot`、用户偏好、guard、设备控制或保活判断；这些链路始终使用本次真实结果。只读探针仍不启动补查、改配置或写硬件。
 
-新增模拟检查覆盖短暂未知后直接显示已知、持续未知仅在补查结束后显示、首次读取失败、外接屏说明保持、WMI 失败、任务替换/取消和 SET 后回读失败恢复。基础自动检查 **1632 项通过**，版本命名检查通过，只读探针编译为 0 警告、0 错误；真实插拔屏交互仍待本轮测试版验收。
+新增模拟检查覆盖短暂未知后直接显示已知、持续未知仅在补查结束后显示、首次读取失败、外接屏说明保持、WMI 失败、任务替换/取消和 SET 后回读失败恢复。基础自动检查 **1632 项通过**，包含主程序及三个助手的完整发布物检查 **1640 项通过**；版本命名检查通过，只读探针编译为 0 警告、0 错误。用户已确认最终 dev 版在 Yoga Pro 16 IPH11 上实机验证成功。
 
 ### 独显重启助手与界面重建
 
@@ -364,7 +364,7 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 
 | 已完善测试的机型 | 重点验证路径 |
 | --- | --- |
-| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证；5.2 全功能回归、5.3 键盘背光均已实机验证通过。 |
+| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证；5.2 全功能回归、5.3 键盘背光与显卡工作模式更新均已实机验证通过。 |
 | 小新 Pro 16 IAH7 | 旧版 ITS 服务的性能选项切换。 |
 | 小新 Pro 16 IAH10 | 不同屏幕配置下的 ICC 色域切换。 |
 | ThinkBook 14 G6+ AHP | TCON 硬件色域控制，P3/sRGB 切换。 |
@@ -392,6 +392,8 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 2026-10-19：提交 `77c8984` 新增息屏暂停、亮屏按条件恢复独显 helper；主程序编译通过，包含两个助手的完整 dev 发布检查 **1267 项通过**。用户先确认该 dev 版息屏/亮屏测试成功，随后进一步确认 5.2 优化后的所有功能在 Yoga Pro 16 IPH11 上均已重新验证成功。
 
 2026-10-21：用户确认 5.3 键盘背光在 Yoga Pro 16 IPH11 上实机测试通过，最终 UI 为单行“关闭、自动、低亮度、高亮度”。ThinkBook、小新仅作为相同 EnergyDrv 协议的预期兼容对象，尚未收到本功能实机验收结果。
+
+2026-10-23：最终 dev 版 `5.3-20261023094009-07f7e66a` 在 Yoga Pro 16 IPH11 上获用户确认验证成功；显卡工作模式采用 NVAPI 显示占用保护、独立偏好协调及有限回读后的状态显示。小新 Pro 14 IRH8 已专项确认可由 YogaITS 控制显卡工作模式：用户反馈原机管家没有选项，安装 AI 智能场景版后虽出现选项，但调节无效且不同步。该机型当前验收范围为 YogaITS 的显卡控制路径，管家失败原因尚未确定。
 
 ## 提交与维护
 
