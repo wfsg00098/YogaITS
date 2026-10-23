@@ -63,7 +63,7 @@ internal static class Program
         await using var audio = new ElevocService();
         using var identity = WindowsIdentity.GetCurrent();
         bool elevated = new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
-        await Task.WhenAll(gpu.RefreshAsync(), hpd.RefreshAsync(), color.RefreshAsync(), audio.RefreshAsync());
+        await Task.WhenAll(gpu.RefreshReadOnlyAsync(), hpd.RefreshAsync(), color.RefreshAsync(), audio.RefreshAsync());
         Console.WriteLine($"Read-only capability probe. Administrator={elevated}");
         Console.WriteLine($"GPU: supported={gpu.Snapshot.Supported}, preference={gpu.Snapshot.PreferredMode}, target={gpu.Snapshot.DesiredMode}, satisfied={gpu.Snapshot.PreferenceSatisfied}, WMI={gpu.Snapshot.RawWmiMode}, effective={gpu.Snapshot.EffectiveMode}, actual={gpu.Snapshot.ActualMode}, nvidiaPresent={gpu.Snapshot.NvidiaPresent}, conflict={gpu.Snapshot.ModeConflict}, display={gpu.Snapshot.DgpuDisplayState}");
         Console.WriteLine($"GPU capability: {gpu.CapabilityDiagnostic}; NVAPI: {gpu.DisplayQuery}");

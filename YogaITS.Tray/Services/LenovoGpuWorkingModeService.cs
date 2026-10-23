@@ -13,6 +13,7 @@ internal sealed record GpuWorkingSnapshot(
         NvidiaPresent && DgpuDisplayState == DgpuDisplayState.Disconnected) ? 0 : EffectiveMode;
     public int? DesiredMode => GpuAutoPolicy.DesiredTarget(PreferredMode, PowerSource);
     public bool PreferenceSatisfied => DesiredMode is { } target && EffectiveMode == target && !ModeConflict;
+    public bool CanSelectIGpu => DgpuDisplayState != DgpuDisplayState.Connected;
     public static GpuWorkingSnapshot Unavailable { get; } = new(false, GpuWorkingMode.Default, -1,
         DgpuDisplayState.Unknown, -1, false, "", false);
 }
@@ -89,6 +90,20 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         };
     }
 
+    private bool AdaptPreferenceToDisplay()
+    {
+        if (!Snapshot.Supported || !Snapshot.Available || Snapshot.CanSelectIGpu || _preference != GpuWorkingMode.IGPUOnly)
+            return false;
+        // The sole automatic preference change: an attached dGPU display makes iGPU-only unavailable.
+        _savePreference(GpuWorkingMode.Auto);
+        _preference = GpuWorkingMode.Auto;
+        _hasPreference = true;
+        Snapshot = Snapshot with { PreferredMode = _preference,
+            Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
+        RecordRead("Connected display: preference IGPUOnly -> Auto");
+        return true;
+    }
+
     private void Read(string source = "Refresh")
     {
         long revision = Interlocked.Increment(ref _revision);
@@ -154,11 +169,17 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         if (Snapshot.ModeConflict) StartObservation();
     });
 
-    public Task RefreshAsync() => RefreshAsyncCore(() =>
+    public Task RefreshReadOnlyAsync() => RefreshAsyncCore(() =>
+    {
+        Read("Read-only refresh");
+        return Task.CompletedTask;
+    });
+
+    public Task RefreshAsync() => RefreshAsyncCore(async () =>
     {
         Read();
+        if (AdaptPreferenceToDisplay()) await ApplyPolicyAsync(true);
         if (Snapshot.ModeConflict && !IsObserving) StartObservation();
-        return Task.CompletedTask;
     });
 
     public Task SelectAsync(GpuWorkingMode mode)
@@ -172,6 +193,11 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             Read();
             if (!Snapshot.Supported) return;
+            if (mode == GpuWorkingMode.IGPUOnly && !Snapshot.CanSelectIGpu)
+            {
+                await ApplyPolicyAsync(true);
+                return;
+            }
             if (mode == GpuWorkingMode.Auto && !AutoEventsAvailable)
                 throw new InvalidOperationException("电源事件监听不可用，不能启用智能模式。");
             _savePreference(mode);
@@ -228,8 +254,9 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
 
     private async Task<GpuModeOperationResult?> ApplyPolicyAsync(bool allowRetry, CancellationToken token = default)
     {
-        if (!Snapshot.Supported || !Snapshot.Available ||
-            (_preference == GpuWorkingMode.Auto && !AutoEventsAvailable)) return null;
+        if (!Snapshot.Supported || !Snapshot.Available) return null;
+        AdaptPreferenceToDisplay();
+        if (_preference == GpuWorkingMode.Auto && !AutoEventsAvailable) return null;
         int? desired = Snapshot.DesiredMode;
         if (Snapshot.PreferenceSatisfied && desired is { } already)
         {
@@ -253,6 +280,8 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             return LastOperation;
         }
         var result = await ExecuteAsync(target, _preference == GpuWorkingMode.Auto ? Snapshot.PowerSource : null, token);
+        // The fresh transaction guard can discover a display connected after the initial read.
+        if (AdaptPreferenceToDisplay()) return await ApplyPolicyAsync(allowRetry, token);
         if (allowRetry && GpuAutoPolicy.ShouldRetry(result, Snapshot.PowerSource, _preference)) StartRetry();
         return result;
     }
@@ -324,7 +353,12 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
                 {
                     if (token.IsCancellationRequested) return;
                     Read($"Display observation {attempt}/5");
-                    if (deferred && Snapshot.Supported && Snapshot.Available && !Snapshot.PreferenceSatisfied &&
+                    if (AdaptPreferenceToDisplay())
+                    {
+                        var result = await ApplyPolicyAsync(true, token);
+                        deferred = result is { Outcome: GpuModeOperationOutcome.Blocked, SetInvoked: false };
+                    }
+                    else if (deferred && Snapshot.Supported && Snapshot.Available && !Snapshot.PreferenceSatisfied &&
                         GpuAutoPolicy.Target(_preference, Snapshot.PowerSource, Snapshot.DgpuDisplayState) is not null)
                     {
                         deferred = false;

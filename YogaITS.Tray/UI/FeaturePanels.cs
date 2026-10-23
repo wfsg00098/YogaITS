@@ -61,30 +61,30 @@ internal sealed class FeaturePanels : IDisposable
             var selected = current.PreferredMode;
             _gpuCard.Options(body,
                 _gpuCard.Option("集显模式", selected == GpuWorkingMode.IGPUOnly,
-                    () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly)),
+                    () => SelectGpuPreferenceAsync(GpuWorkingMode.IGPUOnly), current.CanSelectIGpu),
                 _gpuCard.Option("智能模式", selected == GpuWorkingMode.Auto,
-                    () => _gpu.SelectAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
+                    () => SelectGpuPreferenceAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
                 _gpuCard.Option("双显模式", selected == GpuWorkingMode.Default,
-                    () => _gpu.SelectAsync(GpuWorkingMode.Default)));
-            _gpuCard.Note(body, selected switch
-            {
-                GpuWorkingMode.IGPUOnly => "提供更佳的续航和更长的电池使用时间。",
-                GpuWorkingMode.Default => "提供更佳的性能。",
-                GpuWorkingMode.Auto => "智能模式：插电时双显，使用电池时自动尝试集显。外接独显显示器使用中时保留实际状态。",
-                _ => ""
-            });
-            string effective = current.ActualMode switch { 0 => "双显", 1 => "集显", _ => current.ModeConflict ? "待确认" : "未知" };
-            string preference = selected switch { GpuWorkingMode.IGPUOnly => "集显", GpuWorkingMode.Auto => "智能", _ => "双显" };
-            _gpuCard.SetStatus($"用户偏好：{preference}。当前实际状态：{effective}。{current.Message}");
+                    () => SelectGpuPreferenceAsync(GpuWorkingMode.Default)));
+            string effective = current.ActualMode switch { 0 => "双显", 1 => "集显", _ => "未知" };
+            _gpuCard.SetStatus($"当前实际工作模式：{effective}。" +
+                (current.CanSelectIGpu ? "" : "外接显示器正在通过独显输出。"));
             _gpuCard.Options(body, _gpuCard.Option("详细信息 / 复制诊断信息", false, ShowGpuDiagnosticsAsync,
                 keepInteractive: true, isAction: true, allowWhenUnavailable: true));
-        }, gpu.Available && _gpu.IsResponsive, unavailableMessage: !_gpu.IsResponsive
-            ? "显卡服务响应超时，当前操作结果待确认；原调用结束前不会再次执行切换。"
-            : string.IsNullOrEmpty(gpu.Message) ? null : gpu.Message);
+        }, gpu.Available && _gpu.IsResponsive, unavailableMessage: "当前实际工作模式：未知。");
         RenderHpd();
         RenderColor();
         RenderAudio();
         RenderKeyboardBacklight();
+    }
+
+    private async Task SelectGpuPreferenceAsync(GpuWorkingMode mode)
+    {
+        try { await _gpu.SelectAsync(mode); }
+        catch (GpuModeOperationException)
+        {
+            // The preference is saved; show actual mode and retain execution errors in diagnostics.
+        }
     }
 
     private async Task ShowGpuDiagnosticsAsync()
