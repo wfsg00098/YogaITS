@@ -66,12 +66,10 @@ internal sealed class FeaturePanels : IDisposable
                     () => SelectGpuPreferenceAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
                 _gpuCard.Option("双显模式", selected == GpuWorkingMode.Default,
                     () => SelectGpuPreferenceAsync(GpuWorkingMode.Default)));
-            string effective = current.ActualMode switch { 0 => "双显", 1 => "集显", _ => "未知" };
-            _gpuCard.SetStatus($"当前实际工作模式：{effective}。" +
-                (current.CanSelectIGpu ? "" : "外接显示器正在通过独显输出。"));
+            _gpuCard.SetStatus(_gpu.StatusMessage);
             _gpuCard.Options(body, _gpuCard.Option("详细信息 / 复制诊断信息", false, ShowGpuDiagnosticsAsync,
                 keepInteractive: true, isAction: true, allowWhenUnavailable: true));
-        }, gpu.Available && _gpu.IsResponsive, unavailableMessage: "当前实际工作模式：未知。");
+        }, gpu.Available && _gpu.IsResponsive, unavailableMessage: _gpu.StatusMessage);
         RenderHpd();
         RenderColor();
         RenderAudio();

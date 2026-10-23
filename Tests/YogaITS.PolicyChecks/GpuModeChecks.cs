@@ -654,6 +654,111 @@ internal static class GpuModeChecks
                 saved.SequenceEqual(new[] { GpuWorkingMode.Auto }),
                 "connecting a display during manual iGPU retries changes intent once and cannot continue the obsolete iGPU retry stream");
         }
+        foreach (int previous in new[] { 0, 1 })
+        {
+            var backend = new FakeBackend { Mode = previous, Power = 1,
+                DisplayState = previous == 0 ? DgpuDisplayState.Connected : DgpuDisplayState.Unknown };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(30));
+            await service.RefreshReadOnlyAsync();
+            string previousText = service.StatusMessage;
+            backend.Mode = 1;
+            backend.NvidiaPresent = true;
+            backend.DisplayState = DgpuDisplayState.Unknown;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            Check(service.IsObserving && service.Snapshot.ActualMode == -1 && service.DisplayedActualMode == previous &&
+                service.StatusMessage == previousText && backend.SetCalls == 0,
+                "transient unknown retains the last known text while the real snapshot and guard remain unknown");
+            backend.DisplayState = DgpuDisplayState.Connected;
+            await service.RefreshReadOnlyAsync();
+            Check(service.IsObserving && service.Snapshot.ActualMode == 0 && service.DisplayedActualMode == 0 &&
+                service.StatusMessage == "当前实际工作模式：双显。外接显示器正在通过独显输出。",
+                "a known connected output is displayed immediately without waiting for the remaining observations");
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 0 && service.DisplayedActualMode == 0,
+                "holding presentation never authorizes SET1 or alters the final known state");
+        }
+        {
+            var backend = new FakeBackend { Power = 1 };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(20));
+            await service.RefreshReadOnlyAsync();
+            var texts = new List<string> { service.StatusMessage };
+            service.Changed += () => { if (texts[^1] != service.StatusMessage) texts.Add(service.StatusMessage); };
+            backend.Mode = 1;
+            backend.NvidiaPresent = true;
+            backend.DisplayState = DgpuDisplayState.Unknown;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            Check(service.IsObserving && service.DisplayedActualMode == 0 && texts.Count == 1,
+                "an unresolved display event does not publish intermediate unknown text");
+            await UntilAsync(() => !service.IsObserving && texts.Count == 2);
+            Check(service.Snapshot.ActualMode == -1 && service.DisplayedActualMode == -1 &&
+                texts.SequenceEqual(new[] { "当前实际工作模式：双显。", "当前实际工作模式：未知。" }) &&
+                backend.ReadCalls == 7 && backend.SetCalls == 0,
+                "five unsuccessful follow-ups replace the text with unknown exactly once without requiring another refresh");
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            Check(service.IsObserving && service.DisplayedActualMode == -1 && service.StatusMessage.Contains("未知"),
+                "a later confirmation window cannot resurrect a state already superseded by final unknown");
+            backend.Mode = 1;
+            backend.NvidiaPresent = false;
+            await service.RefreshReadOnlyAsync();
+            Check(service.IsObserving && service.DisplayedActualMode == 1 && service.StatusMessage == "当前实际工作模式：集显。",
+                "a newly confirmed iGPU state immediately replaces final unknown during a later window");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, Power = 1, DisplayState = DgpuDisplayState.Unknown };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(20));
+            await service.InitializeAsync(() => true);
+            Check(service.IsObserving && service.DisplayedActualMode == -1 && service.StatusMessage.Length == 0,
+                "startup without a known state withholds unknown text until bounded confirmation finishes");
+            await UntilAsync(() => !service.IsObserving);
+            Check(service.StatusMessage == "当前实际工作模式：未知。" && backend.ReadCalls == 6 && backend.SetCalls == 0,
+                "startup publishes unknown only after its five read-only follow-ups cannot confirm a mode");
+        }
+        {
+            var backend = new FakeBackend();
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(20));
+            await service.RefreshReadOnlyAsync();
+            backend.ModeProvider = () => throw new IOException("temporary WMI read failure");
+            await service.HandleSystemChangeAsync();
+            Check(service.IsObserving && !service.Snapshot.Available && service.Snapshot.ActualMode == -1 &&
+                service.DisplayedActualMode == 0 && service.StatusMessage == "当前实际工作模式：双显。",
+                "runtime read failure gets bounded confirmation while retaining only presentation, never hardware availability");
+            await UntilAsync(() => !service.IsObserving);
+            Check(!service.Snapshot.Available && service.DisplayedActualMode == -1 && service.StatusMessage.Contains("未知") &&
+                backend.ReadCalls == 7 && backend.SetCalls == 0,
+                "persistent runtime failures end with unknown after a finite number of reads and no SET");
+        }
+        {
+            var backend = new FakeBackend { Power = 1 };
+            await using var service = Service(backend, GpuWorkingMode.Auto, new(), observationDelay: TimeSpan.FromMilliseconds(30));
+            await service.RefreshReadOnlyAsync();
+            backend.Mode = 1;
+            backend.NvidiaPresent = true;
+            backend.DisplayState = DgpuDisplayState.Unknown;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            var replacement = service.HandleSystemChangeAsync(displayChanged: true);
+            Check(service.StatusMessage == "当前实际工作模式：双显。",
+                "canceling for a replacement event cannot briefly expose unknown between observation windows");
+            await replacement;
+            Check(service.IsObserving && service.DisplayedActualMode == 0,
+                "canceling an old observer cannot complete or clear its replacement's retained text");
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await service.SelectAsync(GpuWorkingMode.Default);
+            await Task.Delay(100);
+            Check(!service.IsObserving && service.Snapshot.ActualMode == 0 && service.DisplayedActualMode == 0 &&
+                service.StatusMessage == "当前实际工作模式：双显。" && backend.SetCalls == 1,
+                "a canceled observer cannot overwrite a new, confirmed manual selection with unknown");
+        }
+        {
+            var backend = new FakeBackend { FailReadAt = 3 };
+            await using var service = Service(backend, null, new(), observationDelay: TimeSpan.FromMilliseconds(30));
+            try { await service.SelectAsync(GpuWorkingMode.IGPUOnly); } catch (GpuModeOperationException) { }
+            Check(service.IsObserving && !service.Snapshot.Available && service.Snapshot.ActualMode == -1 &&
+                service.DisplayedActualMode == 0 && backend.SetCalls == 1,
+                "a failed post-SET readback retains the previous text and begins bounded read-only confirmation");
+            await UntilAsync(() => service.DisplayedActualMode == 1);
+            Check(service.Snapshot.ActualMode == 1 && service.StatusMessage == "当前实际工作模式：集显。" && backend.SetCalls == 1,
+                "a later successful readback updates the text directly without repeating an indeterminate SET");
+        }
         return checks;
     }
 
