@@ -351,7 +351,7 @@ public sealed partial class MainWindow : Window
         // UI-only projection: leave actual presence and the persisted keep-awake
         // preference untouched so a paused preference can resume later.
         return state with { NvidiaGpuSupported = GpuKeepAwakePolicy.ShowGpuControls(
-            state.NvidiaGpuSupported, mode.Supported, mode.EffectiveMode),
+            state.NvidiaGpuSupported, mode.Supported, mode.ActualMode),
             ItsAvailable = state.ItsAvailable && _itsActions.IsResponsive,
             BatteryAvailable = state.BatteryAvailable && _chargeActions.IsResponsive,
             NightAvailable = state.NightAvailable && _chargeActions.IsResponsive,

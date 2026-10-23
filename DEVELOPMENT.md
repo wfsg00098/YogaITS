@@ -106,8 +106,8 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 | --- | --- |
 | ITS 性能选项 | 保留型号筛选；Dispatcher Version ≥8192 走现代服务，查询 2 成功且含 `0x1` 才显示。较低/缺失版本走 LITSSVC，要求旧 MMC 状态键和 EnergyDrv 存在，不套用现代查询 2 门槛。 |
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
-| 显卡工作模式（实验分支） | `IsSupportIGPUMode.Data > 0` 且类型正常才显示；能力探测失败也隐藏整卡。实际状态来自 `GetIGPUModeStatus`。NVAPI `Disconnected` 才允许进入集显，`Connected/Unknown` 禁用；不再读取 HDMI WMI guard。Auto 偏好由应用保存，其余选项跟随实际回读。 |
-| 显卡智能策略 | 电源通知必须可用；AC 目标双显，DC 且外接独显路径未占用时目标集显，供电未知不切换。DC 临时失败最多重试 5 次、间隔 5 秒；新事件或手动选择取消旧重试。 |
+| 显卡工作模式（实验分支） | `IsSupportIGPUMode.Data > 0` 且类型正常才显示；能力探测失败也隐藏整卡。三种用户偏好均独立保存，实际状态另行显示。NVAPI `Disconnected` 才允许执行集显 SET；`Connected/Unknown` 时可保存偏好但暂不执行，不再读取 HDMI WMI guard。 |
+| 显卡偏好协调 | 手动集显/双显目标不随供电改变；Auto 要求电源通知可用，AC 目标双显、DC 目标集显、供电未知不切换。启动和电源/显示事件协调全部偏好；明确的集显切换失败最多追加 5 次重试、间隔 5 秒。手动点击立即 SET 最多一次，新事件或选择取消旧调度。 |
 | 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配面板及有效的序列号、Machine Type。仅当后两者同时为 `INVALID` 时接受 Lenovo 的面板级配置，不放宽真实身份不匹配或空字段校验；恢复与实际切换共用校验逻辑。 |
 | HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
 | 唤醒/睡眠 | `GetAll rc=0` 且 `unAwareAbility` 非零。人员辅助判定还要求 `sensor_type != 4` 和 `capability & 0x40`。 |
@@ -181,7 +181,7 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - 手动进入集显：读取 WMI 与独显设备存在状态 → NVAPI Disconnected → 暂停并确认释放 helper → SET 一次 → 等待 1.5 秒 → GET 并验证设备消失。Connected/Unknown 不 SET；保活暂停失败不 SET。WMI=1 且独显已消失、没有独显输出冲突时才接受已达集显目标。SET 明确失败或回读仍为双显时按已确认状态恢复保活；确认集显后继续抑制；回读失败为 Indeterminate，继续暂停，直到后续读取确认实际模式。
 - 返回双显不依赖 NVAPI guard。回读确认双显后恢复符合供电、屏幕、睡眠等条件的保活；新启动的 helper 还须健康应答确认 context。辅助恢复失败记录 SuccessWithWarning，不改写核心模式成功。用户 `KeepDGpuAwake` 偏好从不因切换清除。切换协调和快照带递增 revision，旧缓存不能恢复刚暂停的 helper。
 - `GpuModeOperationResult` 区分 Success / SuccessWithWarning / Blocked / Failed / Indeterminate，分别保留原始 WMI、独显设备存在状态与确认后的模式，以及阶段、后端、原始代码、异常类型、目标和 SET 是否完成。UI 普通提示只展示原因；诊断卡片可复制完整记录，状态未知时仍可打开。记录写入 Trace 和最近一次诊断内存，不新建 logs 目录、不生成持久日志文件。
-- Auto 保留应用偏好，AC 返回双显，DC 必须经相同 NVAPI guard。初次尝试之外最多 5 次、每次间隔 5 秒，只对明确 SET 失败/状态未改变重试；Connected/Unknown、AC、取消、能力丢失或 Indeterminate 停止。每次记录 attempt，耗尽保留最终阶段和回读。SET 前再次检查供电；已经发出的 SET 不因取消而跳过回读。
+- 三种模式都保留应用偏好，启动和电源/显示事件在约束下协调；Auto 的 AC/DC 目标随供电改变，手动目标固定。进入集显必须经相同 NVAPI guard。后台初次尝试之外最多 5 次、每次间隔 5 秒，只对明确 SET 失败/状态未改变重试；Connected/Unknown、目标改变、取消、能力丢失或 Indeterminate 停止。每次记录 attempt，耗尽保留最终阶段和回读。Auto SET 前再次检查供电；已经发出的 SET 不因取消而跳过回读。
 
 自动检查使用模拟 WMI、NVAPI 和保活接口，覆盖设计矩阵的能力/guard/暂停/SET/回读/辅助恢复/Auto 分支、结构 ABI、状态码、手动无重复 SET、有限重试及取消。不执行真实硬件调用；只读探针仅更新诊断输出并编译，不运行。现有串行服务的有限等待仍保留，无法强制中断的 native 调用返回前不释放资源或并发重试。
 
@@ -221,7 +221,19 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - `EffectiveMode` 继续表示经 WMI 与设备状态共同确认的模式设置，用于已有策略、事务短路和完成验证。不能因为正在输出就认为 SET0 已生效；AC Auto 仍需将保留为 1 的 WMI 设置改为 0，手动 SET0 也须验证回读。DC 再次拔屏后的 SET1 与移除验证不变。原始 WMI 和冲突标记保留，新增诊断字段 `actual`，不改写底层回读。
 - Connected 时普通提示说明外接显示器正在使用独显、当前保持双显；只有设备仍在但输出状态无法确认等情况保留待确认。显卡占用 guard、有限只读补查和重试策略不变。
 
-新增回归覆盖持续 WMI=1 时的实际双显显示、两轮插拔后的实际集显、AC 仍需 SET0、SET0 回读不符不能伪报成功及不可用读取不复用旧显示状态。1516 项不依赖发布物的无硬件检查通过。构建目录 `publish/5.3-gpu-nvapi-state-dev/`；本轮不自动启动、推送或合并 main，实际状态显示仍待实机复测。
+第三轮 `61298757` 构建目录为 `publish/5.3-gpu-nvapi-state-dev/`，完整发布物检查 **1522 项通过**。按用户要求启动后，用户报告手动集显与插拔电源/显示器的组合仍会显示待确认；所贴日志为 WMI=1、设备存在、NVAPI=Disconnected，最近一次 SET1 曾成功移除独显。旧策略只协调 Auto，且手动选择会跟随回读改写内存状态，因此不能只修正显示文本。
+
+### 保存用户偏好，在约束下协调实际状态
+
+按用户明确要求，将偏好与实际状态分开表示，并在约束下尽量达成偏好。
+
+- `PreferredMode` 是唯一用户意图，沿用 `settings.json` 的 `GpuWorkingMode` 键和既有枚举值。显式选择时先保存，受阻或执行失败也不回滚偏好；正常读取、固件覆盖、供电和显示事件不改写它。无配置时仅在首次有效 WMI 回读初始化一次，后续不再跟随回读。卡片选中项与说明反映偏好，下方同时列出用户偏好和实际状态。
+- `DesiredMode` 由偏好产生：手动集显/双显固定为 1/0，与 AC/DC 无关；Auto 为 AC→0、DC→1、未知供电→无目标。`EffectiveMode` 仍校验 Lenovo WMI 与设备状态，`PreferenceSatisfied` 只接受已确认的目标。启动及电源/显示事件统一协调三种偏好，不再只执行 Auto。手动偏好不能因插电而被应用改成双显。
+- `ActualMode` 独立描述运行态：有效读取且 NVAPI=Connected 时确认双显；设备存在、NVAPI 成功枚举并返回 Disconnected 时也确认独显可用，即实际双显，不把“无显示器连接”误作独显关闭。Unknown 不伪造为 Disconnected；确认集显仍要求 WMI=1、设备消失且无输出冲突。实际双显不能替代 SET0 的 WMI=0 设置确认。
+- 集显卡片允许先选择偏好；Connected/Unknown 只阻止实际关闭，不丢弃选择。新事件会重新尝试；事件后最多五次补查、间隔 750 ms、调度窗口 6 秒。若开始受阻而约束在窗口内解除，最多延后触发一次经同一 guard 的协调；已发 SET 的失败不借补查重发，而走独立有限重试。手动点击立即 SET 最多一次；后台明确集显失败最多追加五次，读回未知不重试。新选择、事件及退出取消旧调度，native 调用返回前仍独占资源。
+- 内存诊断与只读探针新增 `preference/target/satisfied`，保留 WMI、effective、actual、设备存在、NVAPI、供电及 revision；不新增日志文件。只读探针仍只刷新，不启动偏好协调或发出 SET。
+
+回归覆盖三种偏好与电源/显示状态组合、偏好初始化/持久化、启动恢复、AC 手动集显、两轮 HDMI 插拔、固件覆盖、受阻后约束解除、失败不回滚、手动无重复 SET、后台有限重试及新选择取消旧延后操作。1568 项不依赖发布物的无硬件检查通过，主程序与只读探针编译均为 0 警告、0 错误，版本命名检查通过。新测试包目录 `publish/5.3-gpu-preference-dev/`；本轮不自动启动、推送或合并 main，实机回归待用户验证。
 
 ## 保持 NVIDIA 独显唤醒
 

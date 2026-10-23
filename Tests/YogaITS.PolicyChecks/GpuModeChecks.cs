@@ -187,7 +187,7 @@ internal static class GpuModeChecks
             await service.InitializeAsync(() => true);
             Check(backend.SetCalls == (power == 0 || display == DgpuDisplayState.Disconnected ? 1 : 0),
                 "Auto AC returns Default; DC only switches after Disconnected");
-            Check(service.Snapshot.LogicalMode == GpuWorkingMode.Auto, "Auto remains an application preference, not an OEM register");
+            Check(service.Snapshot.PreferredMode == GpuWorkingMode.Auto, "Auto remains an application preference, not an OEM register");
         }
         {
             var backend = new FakeBackend { ApplySet = false };
@@ -196,8 +196,9 @@ internal static class GpuModeChecks
             try { await service.SelectAsync(GpuWorkingMode.IGPUOnly); }
             catch (GpuModeOperationException ex) { failed = ex.Result.Failure?.Stage == GpuModeOperationStage.EffectiveStateVerify; }
             await Task.Delay(50);
-            Check(failed && backend.SetCalls == 1 && service.Snapshot.LogicalMode == GpuWorkingMode.Default,
-                "manual click makes exactly one attempt and does not select an unconfirmed target");
+            Check(failed && backend.SetCalls == 1 && service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly &&
+                service.Snapshot.ActualMode == 0 && !service.Snapshot.PreferenceSatisfied,
+                "manual click SETs once and retains user intent separately from unsuccessful actual state");
         }
         {
             int queries = 0;
@@ -293,7 +294,7 @@ internal static class GpuModeChecks
                 "NVAPI confirms actual dual mode during HDMI firmware wake without rewriting the retained WMI=1");
             await UntilAsync(() => !service.IsObserving);
             Check(service.Snapshot.EffectiveMode == 0 && !service.Snapshot.ModeConflict && backend.SetCalls == 0 &&
-                service.Snapshot.LogicalMode == GpuWorkingMode.Auto && service.Snapshot.Message.Contains("双显"),
+                service.Snapshot.PreferredMode == GpuWorkingMode.Auto && service.Snapshot.Message.Contains("双显"),
                 "finite observation converges delayed firmware WMI to Default without any SET or preference change");
             Check(service.RuntimeDiagnostic.Contains("WMI=1") && service.RuntimeDiagnostic.Contains("WMI=0"),
                 "diagnostics distinguish an old read from a delayed WMI update");
@@ -358,8 +359,8 @@ internal static class GpuModeChecks
                 "WMI=1 alone never confirms ejection: independently observe device presence and display output");
             Check(service.RuntimeDiagnostic.Contains("nvidiaPresent=" + present),
                 "diagnostics preserve device presence independently of raw WMI and NVAPI");
-            Check(service.Snapshot.ActualMode == (display == DgpuDisplayState.Connected ? 0 : confirmed ? 1 : -1),
-                "only a confirmed connected output resolves actual dual mode; present alone never proves it");
+            Check(service.Snapshot.ActualMode == (display == DgpuDisplayState.Connected || present && display == DgpuDisplayState.Disconnected ? 0 : confirmed ? 1 : -1),
+                "successful NVAPI enumeration and device presence establish an available dGPU independently of connected displays");
         }
         foreach (var display in new[] { DgpuDisplayState.Connected, DgpuDisplayState.Unknown })
         {
@@ -438,7 +439,7 @@ internal static class GpuModeChecks
             await UntilAsync(() => !service.IsObserving);
             Check(backend.SetCalls == 2 && service.Snapshot.RawWmiMode == 1 && service.Snapshot.EffectiveMode == 1 &&
                 !service.Snapshot.NvidiaPresent && !service.Snapshot.ModeConflict && service.Snapshot.ActualMode == 1 && keeper.Suppressed && keeper.Enabled &&
-                service.Snapshot.LogicalMode == GpuWorkingMode.Auto && !backend.Order.Contains("set0"),
+                service.Snapshot.PreferredMode == GpuWorkingMode.Auto && !backend.Order.Contains("set0"),
                 "second unplug reissues only SET1, confirms ejection, preserves Auto and saved keep-awake preference");
         }
         {
@@ -474,6 +475,120 @@ internal static class GpuModeChecks
                 1, true, "", Available: false, RawWmiMode: 1);
             Check(state.ActualMode == -1, "unavailable runtime cannot reuse an old connected output to claim a current actual mode");
         }
+        foreach (var preference in Enum.GetValues<GpuWorkingMode>())
+        foreach (int power in new[] { -1, 0, 1 })
+        {
+            int? target = preference == GpuWorkingMode.IGPUOnly ? 1 : preference == GpuWorkingMode.Default ? 0
+                : power == 0 ? 0 : power == 1 ? 1 : null;
+            Check(GpuAutoPolicy.DesiredTarget(preference, power) == target,
+                "manual preferences are independent of power; only Auto derives its target from AC/DC");
+            foreach (var display in Enum.GetValues<DgpuDisplayState>())
+                Check(GpuAutoPolicy.Target(preference, power, display) ==
+                    (target == 1 && display != DgpuDisplayState.Disconnected ? null : target),
+                    "all preferences share the same display guard; no-display Unknown never authorizes ejection");
+        }
+        {
+            var backend = new FakeBackend();
+            await using var service = Service(backend, null, new());
+            await service.RefreshAsync();
+            backend.Mode = 1;
+            await service.RefreshAsync();
+            Check(service.Snapshot.PreferredMode == GpuWorkingMode.Default && service.Snapshot.ActualMode == 1 &&
+                !service.Snapshot.PreferenceSatisfied && backend.SetCalls == 0,
+                "bootstrap preference only once: ordinary reads preserve intent and never perform a write");
+        }
+        foreach (var preference in new[] { GpuWorkingMode.Default, GpuWorkingMode.IGPUOnly })
+        {
+            var backend = new FakeBackend { Mode = preference == GpuWorkingMode.Default ? 1 : 0 };
+            var saved = new List<GpuWorkingMode>();
+            await using var service = Service(backend, preference, new(), savePreference: saved.Add);
+            await service.RefreshAsync();
+            Check(service.Snapshot.PreferredMode == preference && saved.Count == 0 && !service.Snapshot.PreferenceSatisfied,
+                "existing explicit preference survives opposing firmware readback without overwriting configuration");
+            await service.InitializeAsync(() => true);
+            Check(service.Snapshot.PreferredMode == preference && service.Snapshot.PreferenceSatisfied && backend.SetCalls == 1 && saved.Count == 0,
+                "startup reconciles an existing manual preference instead of adopting current firmware state");
+        }
+        {
+            var backend = new FakeBackend { DisplayState = DgpuDisplayState.Connected };
+            var saved = new List<GpuWorkingMode>();
+            await using var service = Service(backend, null, new(), observationDelay: TimeSpan.FromMilliseconds(10), savePreference: saved.Add);
+            await service.SelectAsync(GpuWorkingMode.IGPUOnly);
+            await UntilAsync(() => !service.IsObserving);
+            Check(saved.SequenceEqual(new[] { GpuWorkingMode.IGPUOnly }) && backend.SetCalls == 0 &&
+                service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly && service.Snapshot.ActualMode == 0 &&
+                service.LastOperation?.Outcome == GpuModeOperationOutcome.Blocked,
+                "selecting iGPU with a connected display saves intent without ejecting the display or raising a mode failure");
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 1 && service.Snapshot.PreferenceSatisfied && service.Snapshot.ActualMode == 1 &&
+                service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly && saved.Count == 1,
+                "removing the constraint applies the manual iGPU preference even on AC and never changes the saved preference");
+            backend.Mode = 1; backend.NvidiaPresent = true; backend.DisplayState = DgpuDisplayState.Connected;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 1 && service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly && service.Snapshot.ActualMode == 0,
+                "firmware HDMI wake changes actual state, never the retained manual preference");
+            backend.Power = 1;
+            await service.HandleSystemChangeAsync();
+            backend.Power = 0;
+            await service.HandleSystemChangeAsync();
+            Check(backend.SetCalls == 1 && !backend.Order.Contains("set0") && service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly,
+                "AC/DC events cannot turn a retained manual iGPU preference into Auto or dual mode");
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            backend.OnSet = () => backend.NvidiaPresent = false;
+            await service.HandleSystemChangeAsync(displayChanged: true);
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 2 && service.Snapshot.PreferenceSatisfied && saved.Count == 1,
+                "a second unplug reapplies retained iGPU intent even when the WMI register never changed from 1");
+        }
+        foreach (var block in new[] { DgpuDisplayState.Connected, DgpuDisplayState.Unknown })
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, DisplayState = block };
+            backend.OnSet = () => backend.NvidiaPresent = false;
+            await using var service = Service(backend, GpuWorkingMode.IGPUOnly, new(), observationDelay: TimeSpan.FromMilliseconds(20));
+            await service.InitializeAsync(() => true);
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await UntilAsync(() => !service.IsObserving);
+            Check(backend.SetCalls == 1 && service.Snapshot.PreferenceSatisfied && service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly,
+                "one deferred guarded attempt applies the retained preference when an event's Connected/Unknown constraint settles");
+        }
+        {
+            var backend = new FakeBackend { ApplySet = false };
+            var saved = new List<GpuWorkingMode>();
+            await using var service = Service(backend, null, new(), savePreference: saved.Add);
+            try { await service.SelectAsync(GpuWorkingMode.IGPUOnly); } catch (GpuModeOperationException) { }
+            await Task.Delay(60);
+            Check(saved.SequenceEqual(new[] { GpuWorkingMode.IGPUOnly }) && service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly &&
+                backend.SetCalls == 1 && !service.Snapshot.PreferenceSatisfied,
+                "a failed explicit SET preserves persisted intent while respecting the one-attempt click contract");
+            backend.ApplySet = true;
+            await service.HandleSystemChangeAsync();
+            Check(backend.SetCalls == 2 && service.Snapshot.PreferenceSatisfied && saved.Count == 1,
+                "a later event can fulfill a previously failed manual preference without another user click or preference write");
+        }
+        {
+            var backend = new FakeBackend { Mode = 1, NvidiaPresent = true, ApplySet = false };
+            await using var service = Service(backend, GpuWorkingMode.IGPUOnly, new(), TimeSpan.FromMilliseconds(15), TimeSpan.FromMilliseconds(10));
+            await service.InitializeAsync(() => true);
+            await UntilAsync(() => backend.SetCalls == 6);
+            await Task.Delay(100);
+            Check(backend.SetCalls == 6 && service.Snapshot.PreferredMode == GpuWorkingMode.IGPUOnly &&
+                service.Snapshot.ActualMode == 0 && !service.Snapshot.PreferenceSatisfied,
+                "manual preference reconciliation on AC is bounded to six attempts and reports actual availability independently");
+        }
+        {
+            var backend = new FakeBackend { DisplayState = DgpuDisplayState.Connected };
+            await using var service = Service(backend, GpuWorkingMode.IGPUOnly, new(), observationDelay: TimeSpan.FromMilliseconds(30));
+            await service.InitializeAsync(() => true);
+            await service.SelectAsync(GpuWorkingMode.Default);
+            backend.DisplayState = DgpuDisplayState.Disconnected;
+            await Task.Delay(100);
+            Check(!service.IsObserving && backend.SetCalls == 0 && service.Snapshot.PreferredMode == GpuWorkingMode.Default &&
+                service.Snapshot.PreferenceSatisfied,
+                "choosing another preference cancels a blocked deferred iGPU attempt before its constraint clears");
+        }
         return checks;
     }
 
@@ -489,10 +604,11 @@ internal static class GpuModeChecks
         return new(backend, keeper.SuspendAsync, keeper.CompleteAsync, () => Task.CompletedTask);
     }
     private static LenovoGpuWorkingModeService Service(FakeBackend backend, GpuWorkingMode? preference,
-        FakeKeeper keeper, TimeSpan? retryDelay = null, TimeSpan? observationDelay = null)
+        FakeKeeper keeper, TimeSpan? retryDelay = null, TimeSpan? observationDelay = null,
+        Action<GpuWorkingMode>? savePreference = null)
     {
         keeper.Order = backend.Order;
-        return new(backend, preference, _ => { }, () => Task.CompletedTask, retryDelay, observationDelay)
+        return new(backend, preference, savePreference ?? (_ => { }), () => Task.CompletedTask, retryDelay, observationDelay)
         {
             SuspendKeepAwake = keeper.SuspendAsync, CompleteKeepAwake = keeper.CompleteAsync
         };

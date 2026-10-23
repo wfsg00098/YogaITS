@@ -58,11 +58,10 @@ internal sealed class FeaturePanels : IDisposable
         _gpuCard.Update(gpu.Supported, body =>
         {
             var current = _gpu.Snapshot;
-            GpuWorkingMode? selected = current.LogicalMode == GpuWorkingMode.Auto ? GpuWorkingMode.Auto
-                : current.ActualMode switch { 0 => GpuWorkingMode.Default, 1 => GpuWorkingMode.IGPUOnly, _ => null };
+            var selected = current.PreferredMode;
             _gpuCard.Options(body,
                 _gpuCard.Option("集显模式", selected == GpuWorkingMode.IGPUOnly,
-                    () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly), current.DgpuDisplayState == DgpuDisplayState.Disconnected),
+                    () => _gpu.SelectAsync(GpuWorkingMode.IGPUOnly)),
                 _gpuCard.Option("智能模式", selected == GpuWorkingMode.Auto,
                     () => _gpu.SelectAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
                 _gpuCard.Option("双显模式", selected == GpuWorkingMode.Default,
@@ -75,7 +74,8 @@ internal sealed class FeaturePanels : IDisposable
                 _ => ""
             });
             string effective = current.ActualMode switch { 0 => "双显", 1 => "集显", _ => current.ModeConflict ? "待确认" : "未知" };
-            _gpuCard.SetStatus($"当前实际状态：{effective}。{current.Message}");
+            string preference = selected switch { GpuWorkingMode.IGPUOnly => "集显", GpuWorkingMode.Auto => "智能", _ => "双显" };
+            _gpuCard.SetStatus($"用户偏好：{preference}。当前实际状态：{effective}。{current.Message}");
             _gpuCard.Options(body, _gpuCard.Option("详细信息 / 复制诊断信息", false, ShowGpuDiagnosticsAsync,
                 keepInteractive: true, isAction: true, allowWhenUnavailable: true));
         }, gpu.Available && _gpu.IsResponsive, unavailableMessage: !_gpu.IsResponsive

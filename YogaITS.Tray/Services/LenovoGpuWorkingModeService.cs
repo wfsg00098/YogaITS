@@ -3,13 +3,16 @@ namespace YogaITS.Tray.Services;
 internal enum GpuWorkingMode { Default, IGPUOnly, Auto }
 
 internal sealed record GpuWorkingSnapshot(
-    bool Supported, GpuWorkingMode LogicalMode, int EffectiveMode, DgpuDisplayState DgpuDisplayState,
+    bool Supported, GpuWorkingMode PreferredMode, int EffectiveMode, DgpuDisplayState DgpuDisplayState,
     int PowerSource, bool NvidiaPresent, string Message, bool Available = true, long Revision = 0, int RawWmiMode = -1)
 {
     public bool ModeConflict => GpuAutoPolicy.ConflictingObservation(RawWmiMode, NvidiaPresent, DgpuDisplayState);
-    // Connected output confirms the GPU is awake even if Lenovo retains WMI=1.
-    // This display state must not satisfy a SET0 request: its WMI acknowledgement is still required.
-    public int ActualMode => !Available ? -1 : DgpuDisplayState == DgpuDisplayState.Connected ? 0 : EffectiveMode;
+    // Successful NVAPI enumeration plus PnP presence confirms an available dGPU,
+    // independently of display use or Lenovo's retained setting. SET acknowledgement is separate.
+    public int ActualMode => !Available ? -1 : (DgpuDisplayState == DgpuDisplayState.Connected ||
+        NvidiaPresent && DgpuDisplayState == DgpuDisplayState.Disconnected) ? 0 : EffectiveMode;
+    public int? DesiredMode => GpuAutoPolicy.DesiredTarget(PreferredMode, PowerSource);
+    public bool PreferenceSatisfied => DesiredMode is { } target && EffectiveMode == target && !ModeConflict;
     public static GpuWorkingSnapshot Unavailable { get; } = new(false, GpuWorkingMode.Default, -1,
         DgpuDisplayState.Unknown, -1, false, "", false);
 }
@@ -24,7 +27,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
     private readonly Queue<string> _recentReads = new();
     private CancellationTokenSource? _retry;
     private CancellationTokenSource? _observation;
-    private GpuWorkingMode _logical;
+    private GpuWorkingMode _preference;
     private bool _hasPreference;
     private long _capability;
     private long _revision;
@@ -51,7 +54,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         TimeSpan? observationDelay = null)
     {
         _backend = backend;
-        _logical = preference ?? GpuWorkingMode.Default;
+        _preference = preference ?? GpuWorkingMode.Default;
         _hasPreference = preference.HasValue;
         _savePreference = savePreference;
         _settle = settle;
@@ -59,14 +62,11 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         _observationDelay = observationDelay ?? TimeSpan.FromMilliseconds(750);
     }
 
-    private static string ConflictMessage(DgpuDisplayState display) => display == DgpuDisplayState.Connected
-        ? "外接显示器正在使用独立显卡输出，当前保持双显模式。"
-        : "WMI 报告集显，但独显设备仍然存在；实际模式待确认，尚未确认独显关闭。";
-
     private void RecordRead(string source)
     {
         var state = Snapshot;
         string entry = $"time={DateTimeOffset.UtcNow:O}; source={source}; WMI={state.RawWmiMode}; " +
+            $"preference={state.PreferredMode}; target={state.DesiredMode}; satisfied={state.PreferenceSatisfied}; " +
             $"effective={state.EffectiveMode}; actual={state.ActualMode}; nvidiaPresent={state.NvidiaPresent}; conflict={state.ModeConflict}; NVAPI={state.DgpuDisplayState}; " +
             $"nativeCode={DisplayQuery.NativeCode}; power={state.PowerSource}; revision={state.Revision}";
         _recentReads.Enqueue(entry);
@@ -77,14 +77,16 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
 
     private string ObservationMessage(int raw, bool nvidiaPresent, DgpuDisplayState display, int power)
     {
-        if (_logical == GpuWorkingMode.Auto && power == 1 && display == DgpuDisplayState.Connected)
-            return "智能模式：因独显正在驱动外接显示器，当前暂保持双显模式。";
-        if (GpuAutoPolicy.ConflictingObservation(raw, nvidiaPresent, display)) return ConflictMessage(display);
-        // An unavailable NVIDIA API after confirmed ejection is not a failed guard.
-        if (raw == 1) return "";
-        if (_logical == GpuWorkingMode.Auto && power == 1 && display == DgpuDisplayState.Unknown)
-            return "智能模式：无法确认独显显示状态，当前暂保持现有模式。";
-        return GuardMessage(display);
+        int? desired = GpuAutoPolicy.DesiredTarget(_preference, power);
+        if (desired is null) return "供电状态未知，保留智能模式偏好，暂不切换。";
+        if (GpuAutoPolicy.ConfirmedMode(raw, nvidiaPresent, display) == desired) return "";
+        if (desired == 0) return "双显模式偏好已保留，尚未确认联想模式设置生效。";
+        return display switch
+        {
+            DgpuDisplayState.Connected => "外接显示器正在使用独显，暂时保持双显；断开后将继续尝试集显。",
+            DgpuDisplayState.Unknown => "无法检测独显显示状态，保留集显偏好，暂不关闭独显。",
+            _ => "独显设备仍可用，尚未达成集显模式偏好。"
+        };
     }
 
     private void Read(string source = "Refresh")
@@ -98,7 +100,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             GpuModeDiagnostics.Write(CapabilityDiagnostic);
             if (_capability <= 0)
             {
-                Snapshot = GpuWorkingSnapshot.Unavailable with { Available = true, Revision = revision };
+                Snapshot = GpuWorkingSnapshot.Unavailable with { PreferredMode = _preference, Available = true, Revision = revision };
                 DisplayQuery = new(DgpuDisplayState.Unknown, Detail: "Capability unsupported; display query not run.");
                 CancelRetry();
                 RecordRead(source);
@@ -109,7 +111,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         {
             CapabilityDiagnostic = "CapabilityProbeFailed LENOVO_GAMEZONE_DATA.IsSupportIGPUMode: " + ex;
             GpuModeDiagnostics.Write(CapabilityDiagnostic);
-            Snapshot = GpuWorkingSnapshot.Unavailable with { Revision = revision };
+            Snapshot = GpuWorkingSnapshot.Unavailable with { PreferredMode = _preference, Revision = revision };
             DisplayQuery = new(DgpuDisplayState.Unknown, Detail: "Capability probe failed; display query not run.");
             CancelRetry();
             RecordRead(source);
@@ -122,11 +124,13 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             try { DisplayQuery = _backend.QueryDisplays(); }
             catch (Exception ex) { DisplayQuery = new(DgpuDisplayState.Unknown, NativeCode: ex.HResult, Detail: ex.ToString()); }
             bool present = _backend.ReadNvidiaPresence();
-            bool conflict = GpuAutoPolicy.ConflictingObservation(effective, present, DisplayQuery.State);
-            if ((!_hasPreference || _logical != GpuWorkingMode.Auto) && !conflict)
-                _logical = effective == 1 ? GpuWorkingMode.IGPUOnly : GpuWorkingMode.Default;
+            if (!_hasPreference)
+            {
+                _preference = effective == 1 ? GpuWorkingMode.IGPUOnly : GpuWorkingMode.Default;
+                _hasPreference = true;
+            }
             int power = _backend.ReadPowerSource();
-            Snapshot = new(true, _logical, GpuAutoPolicy.ConfirmedMode(effective, present, DisplayQuery.State), DisplayQuery.State, power,
+            Snapshot = new(true, _preference, GpuAutoPolicy.ConfirmedMode(effective, present, DisplayQuery.State), DisplayQuery.State, power,
                 present, ObservationMessage(effective, present, DisplayQuery.State, power),
                 Revision: revision, RawWmiMode: effective);
             if (DisplayQuery.State == DgpuDisplayState.Unknown) GpuModeDiagnostics.Write(DisplayQuery.ToString());
@@ -141,13 +145,6 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         }
         RecordRead(source);
     }
-
-    internal static string GuardMessage(DgpuDisplayState state) => state switch
-    {
-        DgpuDisplayState.Connected => "外接显示器正在使用独立显卡输出。",
-        DgpuDisplayState.Unknown => "无法检测独显显示状态，暂不允许关闭独立显卡。",
-        _ => ""
-    };
 
     public Task InitializeAsync(Func<bool> registerEvents) => RunAsync(async () =>
     {
@@ -170,26 +167,23 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         CancelObservation();
         return RunAsync(async () =>
         {
+            CancelRetry();
             CancelObservation();
             if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
             Read();
             if (!Snapshot.Supported) return;
-            if (mode == GpuWorkingMode.Auto)
-            {
-                if (!AutoEventsAvailable) throw new InvalidOperationException("电源事件监听不可用，不能启用智能模式。");
-                _logical = mode;
-                _savePreference(mode);
-                _hasPreference = true;
-                Snapshot = Snapshot with { LogicalMode = mode };
-                await ApplyPolicyAsync(true);
-                return;
-            }
-            var result = await ExecuteAsync(mode == GpuWorkingMode.IGPUOnly ? 1 : 0);
-            if (!result.Succeeded) throw new GpuModeOperationException(result);
-            _logical = mode;
+            if (mode == GpuWorkingMode.Auto && !AutoEventsAvailable)
+                throw new InvalidOperationException("电源事件监听不可用，不能启用智能模式。");
             _savePreference(mode);
+            _preference = mode;
             _hasPreference = true;
-            Snapshot = Snapshot with { LogicalMode = mode };
+            Snapshot = Snapshot with { PreferredMode = mode };
+            RecordRead("User preference");
+            var result = await ApplyPolicyAsync(mode == GpuWorkingMode.Auto);
+            if (result?.Outcome == GpuModeOperationOutcome.Blocked) StartObservation();
+            // A click saves intent even if execution fails. Manual clicks SET at most once.
+            if (mode != GpuWorkingMode.Auto && result is { Succeeded: false, Outcome: not GpuModeOperationOutcome.Blocked })
+                throw new GpuModeOperationException(result);
         });
     }
 
@@ -199,6 +193,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         CancelObservation();
         return RunAsync(async () =>
         {
+            CancelRetry();
             CancelObservation();
             Read(displayChanged ? "Display event" : "Power/resume event");
             await ApplyPolicyAsync(true);
@@ -216,54 +211,50 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             _settle, diagnostic => ActiveDiagnostic = diagnostic);
         var result = await transaction.ExecuteAsync(target, _capability, KeepAwakeDiagnostic?.Invoke() ?? "not available",
             requiredPower, token, DisplayQuery);
+        result = result with { Diagnostics = $"preference={_preference}; target={target}" + Environment.NewLine + result.Diagnostics };
         LastOperation = result;
         ActiveDiagnostic = "";
         DisplayQuery = result.Display;
-        Snapshot = Snapshot with { EffectiveMode = result.EffectiveMode ?? -1,
+        Snapshot = Snapshot with { PreferredMode = _preference, EffectiveMode = result.EffectiveMode ?? -1,
             Available = result.RawWmiMode.HasValue && result.NvidiaPresent.HasValue,
             NvidiaPresent = result.NvidiaPresent ?? Snapshot.NvidiaPresent,
             Message = result.Message, Revision = revision,
             RawWmiMode = result.RawWmiMode ?? -1, DgpuDisplayState = result.Display.State };
-        if (Snapshot.ModeConflict && result.Failure?.Stage != GpuModeOperationStage.EffectiveStateVerify)
-            Snapshot = Snapshot with { Message = ConflictMessage(result.Display.State) };
-        if (_logical != GpuWorkingMode.Auto && result.EffectiveMode is { } effective)
-            Snapshot = Snapshot with { LogicalMode = effective == 1 ? GpuWorkingMode.IGPUOnly : GpuWorkingMode.Default };
+        if (string.IsNullOrEmpty(Snapshot.Message))
+            Snapshot = Snapshot with { Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
         RecordRead("Transaction result");
         return result;
     }
 
-    private async Task ApplyPolicyAsync(bool allowRetry, CancellationToken token = default)
+    private async Task<GpuModeOperationResult?> ApplyPolicyAsync(bool allowRetry, CancellationToken token = default)
     {
-        if (!Snapshot.Supported || !Snapshot.Available || !AutoEventsAvailable || _logical != GpuWorkingMode.Auto) return;
-        int? desired = GpuAutoPolicy.DesiredTarget(Snapshot.PowerSource);
-        if (desired is { } already && Snapshot.EffectiveMode == already && !Snapshot.ModeConflict)
+        if (!Snapshot.Supported || !Snapshot.Available ||
+            (_preference == GpuWorkingMode.Auto && !AutoEventsAvailable)) return null;
+        int? desired = Snapshot.DesiredMode;
+        if (Snapshot.PreferenceSatisfied && desired is { } already)
         {
             Snapshot = Snapshot with { Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
             LastOperation = new(already, GpuModeOperationOutcome.Success, already, false, DisplayQuery, null, null,
-                $"time={DateTimeOffset.UtcNow:O}; Auto target={already}; WMI={Snapshot.RawWmiMode}; nvidiaPresent={Snapshot.NvidiaPresent}; already at target; no SET; NVAPI={DisplayQuery.State}",
+                $"time={DateTimeOffset.UtcNow:O}; preference={_preference}; target={already}; WMI={Snapshot.RawWmiMode}; nvidiaPresent={Snapshot.NvidiaPresent}; already at target; no SET; NVAPI={DisplayQuery.State}",
                 Snapshot.NvidiaPresent);
-            return;
+            return LastOperation;
         }
-        int? target = GpuAutoPolicy.Target(Snapshot.PowerSource, Snapshot.DgpuDisplayState);
-        if (target is null)
+        if (GpuAutoPolicy.Target(_preference, Snapshot.PowerSource, Snapshot.DgpuDisplayState) is not { } target)
         {
-            Snapshot = Snapshot with { LogicalMode = _logical, Message = Snapshot.PowerSource == 1
-                ? ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource)
-                : "智能模式：供电状态未知，当前暂保持现有模式。" };
+            Snapshot = Snapshot with { Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
             GpuModeDiagnostics.Write(Snapshot.Message + " " + DisplayQuery);
-            var failure = new GpuModeOperationFailure(Snapshot.PowerSource == 1 ? GpuModeOperationStage.DisplayGuard
-                : GpuModeOperationStage.RuntimeStateRead, Snapshot.PowerSource == 1 ? "NVAPI" : "Power",
+            var failure = new GpuModeOperationFailure(desired is not null ? GpuModeOperationStage.DisplayGuard
+                : GpuModeOperationStage.RuntimeStateRead, desired is not null ? "NVAPI" : "Power",
                 Snapshot.Message, DisplayQuery.Detail, DisplayQuery.NativeCode);
-            LastOperation = new(1, GpuModeOperationOutcome.Blocked, Snapshot.RawWmiMode, false, DisplayQuery,
-                failure, null, $"time={DateTimeOffset.UtcNow:O}; Auto; capability={_capability}; WMI={Snapshot.RawWmiMode}; " +
+            LastOperation = new(desired ?? 1, GpuModeOperationOutcome.Blocked, Snapshot.RawWmiMode, false, DisplayQuery,
+                failure, null, $"time={DateTimeOffset.UtcNow:O}; preference={_preference}; target={desired}; capability={_capability}; WMI={Snapshot.RawWmiMode}; " +
                 $"effective={Snapshot.EffectiveMode}; actual={Snapshot.ActualMode}; nvidiaPresent={Snapshot.NvidiaPresent}; power={Snapshot.PowerSource}; {failure}; {DisplayQuery}",
                 Snapshot.NvidiaPresent);
-            return;
+            return LastOperation;
         }
-        if (Snapshot.EffectiveMode == target) return;
-        var result = await ExecuteAsync(target.Value, Snapshot.PowerSource, token);
-        Snapshot = Snapshot with { LogicalMode = _logical };
-        if (allowRetry && target == 1 && GpuAutoPolicy.ShouldRetry(result, Snapshot.PowerSource)) StartRetry();
+        var result = await ExecuteAsync(target, _preference == GpuWorkingMode.Auto ? Snapshot.PowerSource : null, token);
+        if (allowRetry && GpuAutoPolicy.ShouldRetry(result, Snapshot.PowerSource, _preference)) StartRetry();
+        return result;
     }
 
     private void StartRetry()
@@ -288,19 +279,19 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
                 {
                     if (token.IsCancellationRequested) { done = true; return; }
                     Read();
-                    if (_logical != GpuWorkingMode.Auto || !Snapshot.Supported || !Snapshot.Available || Snapshot.PowerSource != 1)
-                    { done = true; GpuModeDiagnostics.Write("Auto retry stopped by runtime state: " + Snapshot); return; }
-                    GpuModeDiagnostics.Write($"Auto retry attempt={attempt}/5");
+                    if (!Snapshot.Supported || !Snapshot.Available || Snapshot.DesiredMode != 1)
+                    { done = true; GpuModeDiagnostics.Write("Preference retry stopped by runtime state: " + Snapshot); return; }
+                    GpuModeDiagnostics.Write($"Preference retry attempt={attempt}/5; preference={_preference}");
                     await ApplyPolicyAsync(false, token);
-                    done = LastOperation is null || !GpuAutoPolicy.ShouldRetry(LastOperation, Snapshot.PowerSource) ||
-                        Snapshot.EffectiveMode == 1;
+                    done = LastOperation is null || !GpuAutoPolicy.ShouldRetry(LastOperation, Snapshot.PowerSource, _preference) ||
+                        Snapshot.PreferenceSatisfied;
                 });
                 if (done) return;
             }
-            GpuModeDiagnostics.Write("Auto retries exhausted: " + LastOperation?.Diagnostics);
+            GpuModeDiagnostics.Write("Preference retries exhausted: " + LastOperation?.Diagnostics);
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) { GpuModeDiagnostics.Write("Auto retry stopped: " + ex); }
+        catch (Exception ex) { GpuModeDiagnostics.Write("Preference retry stopped: " + ex); }
     }
 
     public void CancelRetry()
@@ -316,20 +307,29 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         if (!Snapshot.Supported) return;
         var pending = new CancellationTokenSource(TimeSpan.FromSeconds(6));
         Interlocked.Exchange(ref _observation, pending);
-        _ = ObserveAsync(pending, pending.Token);
+        // A blocked preference may be attempted once if this event's constraints settle.
+        // A SET failure belongs to the separate bounded retry path, never to observation.
+        bool deferred = LastOperation is { Outcome: GpuModeOperationOutcome.Blocked, SetInvoked: false };
+        _ = ObserveAsync(pending, pending.Token, deferred);
     }
 
-    private async Task ObserveAsync(CancellationTokenSource pending, CancellationToken token)
+    private async Task ObserveAsync(CancellationTokenSource pending, CancellationToken token, bool deferred)
     {
         try
         {
             for (int attempt = 1; attempt <= 5; attempt++)
             {
                 await Task.Delay(_observationDelay, token).ConfigureAwait(false);
-                await RefreshAsyncCore(() =>
+                await RunAsync(async () =>
                 {
-                    if (!token.IsCancellationRequested) Read($"Display observation {attempt}/5 (read-only)");
-                    return Task.CompletedTask;
+                    if (token.IsCancellationRequested) return;
+                    Read($"Display observation {attempt}/5");
+                    if (deferred && Snapshot.Supported && Snapshot.Available && !Snapshot.PreferenceSatisfied &&
+                        GpuAutoPolicy.Target(_preference, Snapshot.PowerSource, Snapshot.DgpuDisplayState) is not null)
+                    {
+                        deferred = false;
+                        await ApplyPolicyAsync(true, token);
+                    }
                 });
                 if (!Snapshot.Supported) return;
             }
