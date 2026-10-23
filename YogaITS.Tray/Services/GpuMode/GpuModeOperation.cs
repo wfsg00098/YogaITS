@@ -23,7 +23,7 @@ internal sealed record GpuModeOperationFailure(GpuModeOperationStage Stage, stri
 
 internal sealed record GpuModeOperationResult(int Target, GpuModeOperationOutcome Outcome, int? RawWmiMode,
     bool SetInvoked, DgpuDisplayQueryResult Display, GpuModeOperationFailure? Failure,
-    GpuModeOperationFailure? AuxiliaryFailure, string Diagnostics, bool? NvidiaPresent)
+    GpuModeOperationFailure? AuxiliaryFailure, bool? NvidiaPresent)
 {
     public int? EffectiveMode => RawWmiMode is { } raw && NvidiaPresent is { } present &&
         GpuAutoPolicy.ConfirmedMode(raw, present, Display.State) is 0 or 1 ? raw : null;

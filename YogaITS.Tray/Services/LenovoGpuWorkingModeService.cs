@@ -25,7 +25,6 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
     private readonly Func<Task>? _settle;
     private readonly TimeSpan _retryDelay;
     private readonly TimeSpan _observationDelay;
-    private readonly Queue<string> _recentReads = new();
     private CancellationTokenSource? _retry;
     private CancellationTokenSource? _observation;
     private GpuWorkingMode _preference;
@@ -37,8 +36,6 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
     public long StateRevision => Interlocked.Read(ref _revision);
     public GpuWorkingSnapshot Snapshot { get; private set; } = GpuWorkingSnapshot.Unavailable;
     public GpuModeOperationResult? LastOperation { get; private set; }
-    public string ActiveDiagnostic { get; private set; } = "";
-    public string RuntimeDiagnostic { get; private set; } = "";
     public bool IsObserving => Volatile.Read(ref _observation) is not null;
     // Presentation only: a transient unknown must never replace the raw snapshot
     // used by the display guard, preference reconciliation or keep-awake policy.
@@ -50,7 +47,6 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
     public bool AutoEventsAvailable { get; set; }
     public Func<Task>? SuspendKeepAwake { get; set; }
     public Func<int?, Task>? CompleteKeepAwake { get; set; }
-    public Func<string>? KeepAwakeDiagnostic { get; set; }
 
     public LenovoGpuWorkingModeService() : this(new LenovoGpuModeBackend(),
         UserSettingsStore.Get<int?>("GpuWorkingMode", null) is >= 0 and <= 2
@@ -89,9 +85,6 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
             $"preference={state.PreferredMode}; target={state.DesiredMode}; satisfied={state.PreferenceSatisfied}; " +
             $"effective={state.EffectiveMode}; actual={state.ActualMode}; nvidiaPresent={state.NvidiaPresent}; conflict={state.ModeConflict}; NVAPI={state.DgpuDisplayState}; " +
             $"nativeCode={DisplayQuery.NativeCode}; power={state.PowerSource}; revision={state.Revision}";
-        _recentReads.Enqueue(entry);
-        while (_recentReads.Count > 8) _recentReads.Dequeue();
-        RuntimeDiagnostic = string.Join(Environment.NewLine, _recentReads);
         GpuModeDiagnostics.Write(entry);
     }
 
@@ -254,12 +247,9 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         var transaction = new GpuModeTransaction(_backend,
             () => SuspendKeepAwake?.Invoke() ?? throw new InvalidOperationException("未建立保活暂停链路。"),
             actual => CompleteKeepAwake?.Invoke(actual) ?? throw new InvalidOperationException("未建立保活恢复链路。"),
-            _settle, diagnostic => ActiveDiagnostic = diagnostic);
-        var result = await transaction.ExecuteAsync(target, _capability, KeepAwakeDiagnostic?.Invoke() ?? "not available",
-            requiredPower, token, DisplayQuery);
-        result = result with { Diagnostics = $"preference={_preference}; target={target}" + Environment.NewLine + result.Diagnostics };
+            _settle);
+        var result = await transaction.ExecuteAsync(target, _capability, requiredPower, token, DisplayQuery);
         LastOperation = result;
-        ActiveDiagnostic = "";
         DisplayQuery = result.Display;
         Snapshot = Snapshot with { PreferredMode = _preference, EffectiveMode = result.EffectiveMode ?? -1,
             Available = result.RawWmiMode.HasValue && result.NvidiaPresent.HasValue,
@@ -282,7 +272,6 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
         {
             Snapshot = Snapshot with { Message = ObservationMessage(Snapshot.RawWmiMode, Snapshot.NvidiaPresent, Snapshot.DgpuDisplayState, Snapshot.PowerSource) };
             LastOperation = new(already, GpuModeOperationOutcome.Success, already, false, DisplayQuery, null, null,
-                $"time={DateTimeOffset.UtcNow:O}; preference={_preference}; target={already}; WMI={Snapshot.RawWmiMode}; nvidiaPresent={Snapshot.NvidiaPresent}; already at target; no SET; NVAPI={DisplayQuery.State}",
                 Snapshot.NvidiaPresent);
             return LastOperation;
         }
@@ -294,9 +283,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
                 : GpuModeOperationStage.RuntimeStateRead, desired is not null ? "NVAPI" : "Power",
                 Snapshot.Message, DisplayQuery.Detail, DisplayQuery.NativeCode);
             LastOperation = new(desired ?? 1, GpuModeOperationOutcome.Blocked, Snapshot.RawWmiMode, false, DisplayQuery,
-                failure, null, $"time={DateTimeOffset.UtcNow:O}; preference={_preference}; target={desired}; capability={_capability}; WMI={Snapshot.RawWmiMode}; " +
-                $"effective={Snapshot.EffectiveMode}; actual={Snapshot.ActualMode}; nvidiaPresent={Snapshot.NvidiaPresent}; power={Snapshot.PowerSource}; {failure}; {DisplayQuery}",
-                Snapshot.NvidiaPresent);
+                failure, null, Snapshot.NvidiaPresent);
             return LastOperation;
         }
         var result = await ExecuteAsync(target, _preference == GpuWorkingMode.Auto ? Snapshot.PowerSource : null, token);
@@ -343,7 +330,7 @@ internal sealed class LenovoGpuWorkingModeService : SerializedFeatureService
                 });
                 if (done) return;
             }
-            GpuModeDiagnostics.Write("Preference retries exhausted: " + LastOperation?.Diagnostics);
+            GpuModeDiagnostics.Write("Preference retries exhausted: " + LastOperation);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { GpuModeDiagnostics.Write("Preference retry stopped: " + ex); }

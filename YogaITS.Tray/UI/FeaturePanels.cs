@@ -67,8 +67,6 @@ internal sealed class FeaturePanels : IDisposable
                 _gpuCard.Option("双显模式", selected == GpuWorkingMode.Default,
                     () => SelectGpuPreferenceAsync(GpuWorkingMode.Default)));
             _gpuCard.SetStatus(_gpu.StatusMessage);
-            _gpuCard.Options(body, _gpuCard.Option("详细信息 / 复制诊断信息", false, ShowGpuDiagnosticsAsync,
-                keepInteractive: true, isAction: true, allowWhenUnavailable: true));
         }, gpu.Available && _gpu.IsResponsive, unavailableMessage: _gpu.StatusMessage);
         RenderHpd();
         RenderColor();
@@ -81,31 +79,7 @@ internal sealed class FeaturePanels : IDisposable
         try { await _gpu.SelectAsync(mode); }
         catch (GpuModeOperationException)
         {
-            // The preference is saved; show actual mode and retain execution errors in diagnostics.
-        }
-    }
-
-    private async Task ShowGpuDiagnosticsAsync()
-    {
-        string diagnostics = _gpu.CapabilityDiagnostic + "\n" + _gpu.DisplayQuery + "\n\n最近运行态读取（UTC）：\n" +
-            _gpu.RuntimeDiagnostic + "\n\n最近一次策略 / 切换记录：\n" +
-            (!string.IsNullOrEmpty(_gpu.ActiveDiagnostic) ? _gpu.ActiveDiagnostic
-                : _gpu.LastOperation?.Diagnostics ?? "尚未执行显卡切换事务。");
-        var dialog = new ContentDialog
-        {
-            XamlRoot = _host.XamlRoot, Title = "显卡工作模式诊断",
-            Content = new ScrollViewer
-            {
-                MaxHeight = 420, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = new TextBlock { Text = diagnostics, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true }
-            },
-            PrimaryButtonText = "复制诊断信息", CloseButtonText = "关闭", DefaultButton = ContentDialogButton.Close
-        };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-        {
-            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
-            package.SetText(diagnostics);
-            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+            // The preference is saved; the status text follows confirmed actual mode.
         }
     }
 

@@ -2,33 +2,27 @@ namespace YogaITS.Tray.Services;
 
 // One attempt: guard -> suspend our context -> SET once -> verify -> reconcile.
 internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> suspendKeepAwake,
-    Func<int?, Task> completeKeepAwake, Func<Task>? settle = null, Action<string>? observe = null)
+    Func<int?, Task> completeKeepAwake, Func<Task>? settle = null)
 {
     public async Task<GpuModeOperationResult> ExecuteAsync(int target, long capability,
-        string keepAwakeContext, int? requiredPower = null, CancellationToken cancellationToken = default,
+        int? requiredPower = null, CancellationToken cancellationToken = default,
         DgpuDisplayQueryResult? observation = null)
     {
         if (target is not (0 or 1)) throw new ArgumentOutOfRangeException(nameof(target));
-        var trace = new List<string>();
         var display = observation ?? new DgpuDisplayQueryResult(DgpuDisplayState.Unknown);
         bool invoked = false;
         int? raw = null;
         bool? nvidiaPresent = null;
         int? ConfirmedMode() => raw is { } mode && nvidiaPresent is { } present &&
             GpuAutoPolicy.ConfirmedMode(mode, present, display.State) is 0 or 1 ? mode : null;
-        void Log(string message)
-        {
-            trace.Add(message);
-            GpuModeDiagnostics.Write(message);
-            observe?.Invoke(string.Join(Environment.NewLine, trace));
-        }
+        static void Log(string message) => GpuModeDiagnostics.Write(message);
         GpuModeOperationResult Finish(GpuModeOperationOutcome outcome, GpuModeOperationFailure? failure = null,
             GpuModeOperationFailure? auxiliary = null)
         {
             Log($"outcome={outcome}; stage={failure?.Stage ?? auxiliary?.Stage}; WMI={raw}; nvidiaPresent={nvidiaPresent}; confirmed={ConfirmedMode()}; setInvoked={invoked}");
             if (failure is not null) Log(failure.ToString());
             if (auxiliary is not null) Log(auxiliary.ToString());
-            return new(target, outcome, raw, invoked, display, failure, auxiliary, string.Join(Environment.NewLine, trace), nvidiaPresent);
+            return new(target, outcome, raw, invoked, display, failure, auxiliary, nvidiaPresent);
         }
         async Task<GpuModeOperationFailure?> CompleteAsync(int? actual, bool coreSuccess)
         {
@@ -42,7 +36,7 @@ internal sealed class GpuModeTransaction(IGpuModeBackend backend, Func<Task> sus
         }
         bool CanceledOrPowerChanged() => cancellationToken.IsCancellationRequested ||
             requiredPower is { } expected && backend.ReadPowerSource() != expected;
-        Log($"time={DateTimeOffset.UtcNow:O}; target={target}; capability={capability}; Keep Awake: {keepAwakeContext}");
+        Log($"time={DateTimeOffset.UtcNow:O}; target={target}; capability={capability}");
         try
         {
             if (CanceledOrPowerChanged()) return Finish(GpuModeOperationOutcome.Blocked,

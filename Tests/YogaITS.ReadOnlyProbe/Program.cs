@@ -67,7 +67,6 @@ internal static class Program
         Console.WriteLine($"Read-only capability probe. Administrator={elevated}");
         Console.WriteLine($"GPU: supported={gpu.Snapshot.Supported}, preference={gpu.Snapshot.PreferredMode}, target={gpu.Snapshot.DesiredMode}, satisfied={gpu.Snapshot.PreferenceSatisfied}, WMI={gpu.Snapshot.RawWmiMode}, effective={gpu.Snapshot.EffectiveMode}, actual={gpu.Snapshot.ActualMode}, nvidiaPresent={gpu.Snapshot.NvidiaPresent}, conflict={gpu.Snapshot.ModeConflict}, display={gpu.Snapshot.DgpuDisplayState}");
         Console.WriteLine($"GPU capability: {gpu.CapabilityDiagnostic}; NVAPI: {gpu.DisplayQuery}");
-        Console.WriteLine(gpu.RuntimeDiagnostic);
         if (!gpu.Snapshot.Supported && gpu.Snapshot.Message.Length > 0)
             Console.WriteLine("GPU read diagnostic: " + gpu.Snapshot.Message);
         Console.WriteLine($"HPD: wakeSleep={hpd.Snapshot.Features.WakeSleepSection}, cameraAssist={hpd.Snapshot.Features.CameraAssist}, videoPause={hpd.Snapshot.Features.AutoVideoPause}");

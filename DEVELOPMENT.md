@@ -47,7 +47,7 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 
 `.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
 
-根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.3`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
+根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.4`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
 
 版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`；`5.0` 已封存至 `4ece4e7`（包含双路更新竞速）。
 
@@ -56,6 +56,8 @@ dotnet publish .\YogaITS.Tray\YogaITS.Tray.csproj -c Release -r win-x64 --self-c
 2026-10-21：`5.2` 封存分支固定在 `319d7bb`，包含本轮稳定性优化、息屏暂停/亮屏恢复独显保活及完整验收记录。main 开始 `5.3` 开发；5.2 的验收结论不自动覆盖后续 5.3 改动。
 
 5.3 首个新增功能为 EnergyDrv 键盘背光，按实时 capability 动态显示。用户已于 2026-10-21 确认在 Yoga Pro 16 IPH11 上完成集成版实机测试；自动检查、协议样本与实机验收分别记录，不将此结论扩大至其他机型。
+
+2026-10-23：合入显卡工作模式更新前，将 main 的 `86f2fea` 原样封存为 `5.3` 分支。新版 `VERSION` 为 `5.4`，包含经实机验证的 NVAPI 显卡控制、状态确认及独立设备重启助手；正式界面移除实验诊断入口。
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
@@ -181,7 +183,7 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - 移除生产链的 `ExternalPath` 和 HDMI WMI 查询。参考 [NVIDIA nvapi.h](https://github.com/NVIDIA/nvapi/blob/main/nvapi.h) 与 [接口 ID](https://github.com/NVIDIA/nvapi/blob/main/nvapi_interface.h)：枚举 physical GPU，逐个使用 `NvAPI_GPU_GetConnectedDisplayIds`（`0x0078DBA2`）；先查询数量，非零才分配，结构为 16 字节、VER2 实际修订号 3、`isConnected` 位为 bit6。查询使用 UNCACHED，不根据端口或 `isActive` 猜连接，也不区分 eGPU。缺 DLL/入口、初始化/枚举/数据查询失败或异常数量均为 Unknown，不降级为“无显示器”。NVAPI 生命周期与现有进程查询共用锁。
 - 手动进入集显：读取 WMI 与独显设备存在状态 → NVAPI Disconnected → 暂停并确认释放 helper → SET 一次 → 等待 1.5 秒 → GET 并验证设备消失。Connected/Unknown 不 SET；保活暂停失败不 SET。WMI=1 且独显已消失、没有独显输出冲突时才接受已达集显目标。SET 明确失败或回读仍为双显时按已确认状态恢复保活；确认集显后继续抑制；回读失败为 Indeterminate，继续暂停，直到后续读取确认实际模式。
 - 返回双显不依赖 NVAPI guard。回读确认双显后恢复符合供电、屏幕、睡眠等条件的保活；新启动的 helper 还须健康应答确认 context。辅助恢复失败记录 SuccessWithWarning，不改写核心模式成功。用户 `KeepDGpuAwake` 偏好从不因切换清除。切换协调和快照带递增 revision，旧缓存不能恢复刚暂停的 helper。
-- `GpuModeOperationResult` 区分 Success / SuccessWithWarning / Blocked / Failed / Indeterminate，分别保留原始 WMI、独显设备存在状态与确认后的模式，以及阶段、后端、原始代码、异常类型、目标和 SET 是否完成。UI 普通提示只展示原因；诊断卡片可复制完整记录，状态未知时仍可打开。记录写入 Trace 和最近一次诊断内存，不新建 logs 目录、不生成持久日志文件。
+- `GpuModeOperationResult` 区分 Success / SuccessWithWarning / Blocked / Failed / Indeterminate，分别保留原始 WMI、独显设备存在状态与确认后的模式，以及阶段、后端、原始代码、异常类型、目标和 SET 是否完成，用于协调和有限重试。界面仅显示偏好及实际模式；开发追踪写入 Trace，不缓存供界面复制的事务记录，不新建 logs 目录、不生成持久日志文件。
 - 三种模式都保留应用偏好，启动和电源/显示事件在约束下协调；Auto 的 AC/DC 目标随供电改变，手动目标固定。进入集显必须经相同 NVAPI guard。后台初次尝试之外最多 5 次、每次间隔 5 秒，只对明确 SET 失败/状态未改变重试；Connected/Unknown、目标改变、取消、能力丢失或 Indeterminate 停止。每次记录 attempt，耗尽保留最终阶段和回读。Auto SET 前再次检查供电；已经发出的 SET 不因取消而跳过回读。
 
 自动检查使用模拟 WMI、NVAPI 和保活接口，覆盖设计矩阵的能力/guard/暂停/SET/回读/辅助恢复/Auto 分支、结构 ABI、状态码、手动无重复 SET、有限重试及取消。不执行真实硬件调用；只读探针仅更新诊断输出并编译，不运行。现有串行服务的有限等待仍保留，无法强制中断的 native 调用返回前不释放资源或并发重试。
@@ -232,7 +234,7 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - `DesiredMode` 由偏好产生：手动集显/双显固定为 1/0，与 AC/DC 无关；Auto 为 AC→0、DC→1、未知供电→无目标。`EffectiveMode` 仍校验 Lenovo WMI 与设备状态，`PreferenceSatisfied` 只接受已确认的目标。启动及电源/显示事件统一协调三种偏好，不再只执行 Auto。手动偏好不能因插电而被应用改成双显。
 - `ActualMode` 独立描述运行态：有效读取且 NVAPI=Connected 时确认双显；设备存在、NVAPI 成功枚举并返回 Disconnected 时也确认独显可用，即实际双显，不把“无显示器连接”误作独显关闭。Unknown 不伪造为 Disconnected；确认集显仍要求 WMI=1、设备消失且无输出冲突。实际双显不能替代 SET0 的 WMI=0 设置确认。
 - Unknown 时可选择集显偏好，但不执行关闭；Connected 则按下节例外处理。新事件会重新尝试；事件后最多五次补查、间隔 750 ms、调度窗口 6 秒。若开始受阻而约束在窗口内解除，最多延后触发一次经同一 guard 的协调；已发 SET 的失败不借补查重发，而走独立有限重试。手动点击立即 SET 最多一次；后台明确集显失败最多追加五次，读回未知不重试。新选择、事件及退出取消旧调度，native 调用返回前仍独占资源。
-- 内存诊断与只读探针新增 `preference/target/satisfied`，保留 WMI、effective、actual、设备存在、NVAPI、供电及 revision；不新增日志文件。只读探针仍只刷新，不启动偏好协调或发出 SET。
+- Trace 与只读探针输出 `preference/target/satisfied` 及 WMI、effective、actual、设备存在和 NVAPI 状态；不新增日志文件。只读探针仍只刷新，不启动偏好协调或发出 SET。
 
 该轮 `0ee6f8dd` 输出到 `publish/5.3-gpu-preference-dev/`，完整发布物检查 **1574 项通过**，主程序与只读探针编译均为 0 警告、0 错误，版本命名检查通过。按用户要求启动测试后，新增以下偏好例外与提示精简要求；未推送或合并 main。
 
@@ -255,6 +257,8 @@ G7+ 的历史集成反馈显示类和方法存在，但实例枚举 Next（含 e
 - 显示缓冲不进入 `Snapshot`、用户偏好、guard、设备控制或保活判断；这些链路始终使用本次真实结果。只读探针仍不启动补查、改配置或写硬件。
 
 新增模拟检查覆盖短暂未知后直接显示已知、持续未知仅在补查结束后显示、首次读取失败、外接屏说明保持、WMI 失败、任务替换/取消和 SET 后回读失败恢复。基础自动检查 **1632 项通过**，包含主程序及三个助手的完整发布物检查 **1640 项通过**；版本命名检查通过，只读探针编译为 0 警告、0 错误。用户已确认最终 dev 版在 Yoga Pro 16 IPH11 上实机验证成功。
+
+合入 5.4 前移除“详细信息 / 复制诊断信息”按钮、说明弹窗和剪贴板复制，并删除专用的最近八条读取缓存、在途事务文本回调、累计事务字符串及保活诊断快照。策略所需的结构化结果、真实回读和 Trace 保留；能力探测和只读探针继续可用。
 
 ### 独显重启助手与界面重建
 
@@ -364,7 +368,7 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 
 | 已完善测试的机型 | 重点验证路径 |
 | --- | --- |
-| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证；5.2 全功能回归、5.3 键盘背光与显卡工作模式更新均已实机验证通过。 |
+| Yoga Pro 16 IPH11 | 基准机型，完整功能及交互验证；5.2 全功能回归、5.3 键盘背光与 5.4 显卡工作模式更新均已实机验证通过。 |
 | 小新 Pro 16 IAH7 | 旧版 ITS 服务的性能选项切换。 |
 | 小新 Pro 16 IAH10 | 不同屏幕配置下的 ICC 色域切换。 |
 | ThinkBook 14 G6+ AHP | TCON 硬件色域控制，P3/sRGB 切换。 |

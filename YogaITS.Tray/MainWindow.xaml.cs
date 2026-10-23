@@ -52,7 +52,6 @@ public sealed partial class MainWindow : Window
         _gpu.SuspendKeepAwake = () => _keepAwake.SuspendForGpuModeAsync(_gpu.StateRevision);
         _gpu.CompleteKeepAwake = actual => _keepAwake.CompleteGpuModeAsync(
             actual == 0 ? NvidiaGpuHelper.HasNvidiaDisplayDevice() : _stateCache.Snapshot.NvidiaGpuSupported, actual, _gpu.StateRevision);
-        _gpu.KeepAwakeDiagnostic = () => $"Enabled={_keepAwake.Snapshot.Enabled}; Active={_keepAwake.Snapshot.Active}";
 
         Closed += MainWindow_Closed;
         InitializeHiddenTrayHost();
