@@ -56,7 +56,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed.' }
 
 `.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
 
-根目录 `VERSION` 保存人工维护的 `x.y`（当前 `5.4`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
+根目录 `VERSION` 保存人工维护的 `x.y`（当前 `6.0`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
 
 版本验收后，从当前 main 创建并推送对应 `x.y` 分支封存，再在 main 修改 VERSION 开始下一版本；数字分支不自动移动，推送它们不触发 Actions。`4.0` 已封存至 `ea2bbf7`；`5.0` 已封存至 `4ece4e7`（包含双路更新竞速）。
 
@@ -67,6 +67,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed.' }
 5.3 首个新增功能为 EnergyDrv 键盘背光，按实时 capability 动态显示。用户已于 2026-10-21 确认在 Yoga Pro 16 IPH11 上完成集成版实机测试；自动检查、协议样本与实机验收分别记录，不将此结论扩大至其他机型。
 
 2026-10-23：合入显卡工作模式更新前，将 main 的 `86f2fea` 原样封存为 `5.3` 分支并推送。新版 `VERSION` 为 `5.4`，包含经实机验证的 NVAPI 显卡控制、状态确认及独立设备重启助手；正式界面移除实验诊断入口。
+
+2026-10-25：将 main 的 `d7c74050` 原样封存并推送为 `5.4` 分支，包含显卡工作模式更新、独立设备重启助手、保活开启时允许重启及独显控制单行三列布局。main 的 `VERSION` 更新为 `6.0`，开始下一阶段开发；既有功能与验证记录保留。
 
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
