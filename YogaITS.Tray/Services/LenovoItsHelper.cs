@@ -319,16 +319,11 @@ public static class LenovoItsHelper
 
     private static int ReadRegistryInt(RegistryKey key, string valueName, int defaultValue)
     {
-        return key.GetValue(valueName, defaultValue) switch
-        {
-            int i => i,
-            long l => (int)l,
-            uint u => (int)u,
-            short s => s,
-            ushort us => us,
-            byte b => b,
-            _ => defaultValue
-        };
+        // Registry DWORD/QWORD values are returned as Int32/Int64 by .NET.
+        // Strings, binary values and missing values are not ITS integers.
+        object? value = key.GetValue(valueName);
+        if (value is long qword) return unchecked((int)qword);
+        return value is int dword ? dword : defaultValue;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]

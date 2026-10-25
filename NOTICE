@@ -1,0 +1,26 @@
+YogaITS / Yoga控制中心
+Copyright (c) 2026, wfsg00098 and YogaITS contributors
+Project: https://github.com/wfsg00098/YogaITS
+
+YogaITS original code is licensed under the BSD 3-Clause License in LICENSE.
+This permits use, modification, commercial use, and source or binary
+redistribution subject to retaining the required notices. No warranty or
+support commitment is made. The license contains a limitation of liability;
+mandatory rights that cannot legally be excluded are unaffected.
+
+Third-party code, binaries, SDKs, and notices retain their respective licenses.
+The project license does not relicense them or grant rights to OEM drivers,
+services, firmware, or downloaded ICC/ICM calibration data. See
+ThirdPartyNotices/ in a release and ThirdParty/Licenses/components.json in source.
+Use of separately licensed Microsoft binaries is subject to their included
+terms; distributors must pass the applicable terms to recipients. These terms
+do not replace the BSD license for YogaITS original code.
+
+YogaITS is an independent community project. It is not an official Lenovo,
+Microsoft, NVIDIA, X-Rite, Elevoc, or Apple product and is not sponsored,
+approved, or endorsed by those companies. Product and company names identify
+compatibility or acknowledge sources; their marks belong to their owners.
+No trademark rights or permission to imply endorsement are granted.
+
+For source references and the scope of the licensing review, see DEVELOPMENT.md.
+This NOTICE explains scope and attribution; it adds no conditions to LICENSE.

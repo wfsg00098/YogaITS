@@ -87,11 +87,6 @@ if ($LiquidGlass) {
     @{ windowsAppSdk='2.2.0'; files=$hashes } | ConvertTo-Json -Depth 4 |
         Set-Content -LiteralPath (Join-Path $output 'runtime.lock.json') -Encoding utf8NoBOM
     & (Join-Path $projectDir 'Prepare-Identity.ps1') -OutputDirectory $output
-    $notices = Join-Path $output 'ThirdPartyNotices'
-    [IO.Directory]::CreateDirectory($notices) | Out-Null
-    Copy-Item (Join-Path $root 'ThirdParty/LiquidGlassWinUI/LICENSE') (Join-Path $notices 'LiquidGlassWinUI-LICENSE.txt')
-    Copy-Item (Join-Path $root 'ThirdParty/LiquidGlassTabBars/LICENSE.txt') (Join-Path $notices 'LiquidGlassTabBars-LICENSE.txt')
-    Copy-Item (Join-Path $projectDir 'ThirdPartyNotices.txt') $notices
 } else {
     $deps = [IO.File]::ReadAllText((Join-Path $output "$name.deps.json"))
     if ($deps -match 'LiquidGlassWinUI|Microsoft.Graphics.Win2D|Microsoft.Graphics.Canvas|CustomEffectRuntimeNative') { throw 'Native build references a glass dependency.' }
@@ -100,6 +95,7 @@ if ($LiquidGlass) {
         if (Test-Path (Join-Path $output $file)) { throw "Glass file leaked into native build: $file" }
     }
 }
+& (Join-Path $root 'scripts/Copy-DistributionNotices.ps1') -OutputDirectory $output -Flavor $flavor
 if ($Checks) {
     & (Join-Path $root 'Tests/ReleaseVersionChecks.ps1')
     dotnet run --project (Join-Path $root 'Tests/YogaITS.UiPolicyChecks') -c Release "-p:EnableLiquidGlass=$enabled"

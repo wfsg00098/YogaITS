@@ -406,6 +406,23 @@ dotnet run --project .\Tests\YogaITS.ReadOnlyProbe -c Release -- --check-calibra
 
 2026-10-23：最终 dev 版 `5.3-20261023094009-07f7e66a` 在 Yoga Pro 16 IPH11 上获用户确认验证成功；其显卡工作模式实现作为 5.4 合入 main，包含 NVAPI 显示占用保护、独立偏好协调及有限回读后的状态显示。小新 Pro 14 IRH8 已专项确认可由 YogaITS 控制显卡工作模式：原机普通版管家没有选项，安装 AI 智能场景版后虽出现选项，但调节无效且不同步；随后换回普通版管家，YogaITS 仍然有效。该机型当前验收范围为显卡控制路径，管家失败原因尚未确定。
 
+## 许可证、来源核查与分发（6.0）
+
+YogaITS 原创部分采用标准 `BSD-3-Clause`，正文为根目录 `LICENSE`，版权声明为 `wfsg00098 and YogaITS contributors`。允许商用、修改、闭源及源码/二进制再发布；保留版权、条件及免责条款，禁止未经允许以权利人或贡献者名义背书。`NOTICE` 补充独立项目、非厂商官方产品和第三方范围说明，不给标准 BSD 另加条件，也不承诺绝对排除法律规定不能免除的责任。
+
+2026-10-26 核查范围为当前源码、直接与传递 NuGet 依赖，以及普通版/玻璃版实际发布文件。`ThirdParty/Licenses/components.json` 固定组件版本、适用构建、来源、原始许可/NOTICE 路径及 SHA-256；原件按字节保留，相同文档去重保存。不要把包内许可链接或上游仓库的 MIT 标记直接当作二进制分发许可。
+
+- **玻璃 UI**：LiquidGlassWinUI 1.0.3（含包内原样使用的 `CustomEffectRuntimeNative.dll`）和 LiquidGlassTabBars 参考动效为 MIT。保留各自许可及版本，材质本地修改见 `ThirdParty/LiquidGlassWinUI/UPSTREAM`。不分发 Apple 平台玻璃 API。
+- **微软依赖**：Windows App SDK / WinUI 成品包按其各自微软条款分发；WinUI 2.2.1 的许可与 SDK 总包并不相同，两份都保留。.NET 库为 MIT，WebView2 该版 SDK 为 BSD 三条款式许可；随包保留其第三方声明。Windows SDK .NET 投影另保留 SDK 原始许可及 NOTICE，C#/WinRT、C++/WinRT 保留 MIT。未分发完整 .NET、Edge/WebView2 浏览器运行时或 OEM 驱动。SDK 的 AI/ML/Widgets 禁用包不是已交付功能，不能仅因存在于 restore/deps 元数据就计为分发的二进制。
+- **Win2D 1.3.2**：NuGet 明确指向 `eula_win2d_10012014.htm`，没有内嵌许可；上游 [#912](https://github.com/microsoft/Win2D/issues/912)、[#997](https://github.com/microsoft/Win2D/issues/997) 也记录了二进制许可及失效链接问题。已从原微软网页存档取回完整 HTML，按原始字节保存为 `Microsoft-Win2D-binary-EULA.html`，来源请求与哈希见清单。它允许随具有主要功能的 Windows 程序分发目标代码，要求保留声明及传递适用条款，并限制背书、平台和再许可。源代码 MIT 文本单独保留；不声称这会替代 NuGet 二进制条款。存档是原网页的历史证据，并非微软对本项目的单独授权或新的许可确认。
+- **LLT 来源边界**：逐项对照固定 master `d0c57bfc` 中 ITSModeFeature/Driver、BatteryFeature、BatteryNightChargeFeature、FlipToStart 三种 Feature、GPUController、PhyscialGPUExtensions、Compatibility、DgpuAwakeManager，以及 dev `9baf5a01` 的保活管理。YogaITS 不链接/分发 LLT、NVAPIWrapper 或其类实现。相同项主要为设备路径、IOCTL、寄存器/注册表字段、模式编码、ABI 与兼容性事实；异步队列、状态机、独立助手、回读和 UI 为本项目实现。发现 ITS 中一段与 LLT 相同的通用整数转换辅助函数，已移除该实现，改为按 .NET 注册表 DWORD/QWORD 文档处理真实 Int32/Int64；不再保留复制的转换分支。此处理不把 LLT 改为 BSD，后续复制或改编其受保护代码须另行遵守 GPLv3，不能凭“没有引用 DLL”或改名排除 GPL。
+- **键盘背光参考**：SaltwaterC 项目为 MIT；gonwan 仓库未找到明确源码许可。仅使用接口/协议事实和本机回读验证，未搬入后者的 C 实现；公开可读不等于允许复制。保持底层能力检测和 YogaITS 自有后端，不重现 OEM 业务系统。
+- **NVIDIA/OEM**：手写互操作调用系统已装驱动，未打包 `nvapi64.dll`、NVAPI 静态库、联想/音频厂商 DLL 或固件。校色文件在用户机器按需取得，不随源码或程序包分发，也不由项目 BSD 许可授权。
+
+这是所列版本与代码范围的工程来源核查记录，不把短片段比较视为法律认定，也不将第三方条款转授为 BSD。新增外部源码、改编代码、包或静态链接内容时，应先更新记录并保留上游声明；来源不清或 GPL 派生边界未解决时，不得将它直接标为项目原创 BSD。
+
+正式构建在全部 publish 完成后执行 `scripts/Copy-DistributionNotices.ps1`，两版均附带根 `LICENSE`/`NOTICE`、第三方汇总、分构建清单和相应原件。脚本按实际发布资产核对 `.deps.json`，发现未登记的组件版本或许可文本哈希变化即终止构建；不在 CI 联网临时抓取许可。四个 YogaITS EXE 的版本信息含本项目版权，第三方项目不套用该字段；`PublishedAssemblyChecks` 检查发布后的归属、版权、构建类型和每份原件哈希，完整 ZIP 提取/更新验证继续执行。Actions 复用同一构建入口；裸 `dotnet publish` 不是完整的发布流程。
+
 ## 提交与维护
 
 使用简明祈使句提交标题，例如 `Fix tray recovery after Explorer restart`。提交说明应区分 UI 变化、硬件写入与只读检查；PR 提供行为变化、相关问题、构建/硬件验证记录和 UI 截图，不提交生成产物或敏感日志。保留可回滚的独立提交，涉及驱动、声纹或校色写入时明确验证范围。

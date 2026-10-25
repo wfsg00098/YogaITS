@@ -1,0 +1,491 @@
+{
+  "schemaVersion": 1,
+  "reviewedOn": "2026-10-26",
+  "scope": "Runtime and source components used by YogaITS releases; build-only tools and installed OEM/system drivers are not redistributed components.",
+  "components": [
+    {
+      "id": "Microsoft.WindowsAppSDK.Base",
+      "version": "2.0.4",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Base/2.0.4",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Foundation",
+      "version": "2.3.12",
+      "flavors": [
+        "native"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Foundation/2.3.12",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
+      "version": "2.1.9",
+      "flavors": [
+        "native"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.InteractiveExperiences/2.1.9",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Runtime",
+      "version": "2.5.1",
+      "flavors": [
+        "native"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Runtime/2.5.1",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": "Official Microsoft package; these terms are not replaced by the YogaITS license. System Windows App Runtime is not bundled with the native distribution."
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.WinUI",
+      "version": "2.3.9",
+      "flavors": [
+        "native"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.WinUI/2.3.9",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WinUI-NOTICE.txt",
+          "sha256": "e25393c0d340a1821827b093fa4dbbfcccd8feb7bf769e7fa773e3955cd5314b"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK",
+      "version": "2.2.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK/2.2.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Foundation",
+      "version": "2.1.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Foundation/2.1.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.InteractiveExperiences",
+      "version": "2.0.15",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.InteractiveExperiences/2.0.15",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.DWrite",
+      "version": "2.1.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.DWrite/2.1.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.Runtime",
+      "version": "2.2.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.Runtime/2.2.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-LICENSE.txt",
+          "sha256": "5b11e6347756e40fe0274bc08c97f89201b94f0d50181a09a00f1f4740840501"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsAppSDK-NOTICE.txt",
+          "sha256": "572b43d41dea717dae7dc5de69acb20a74df025e8f5a3c0aa6f7bca02615e23c"
+        }
+      ],
+      "note": "Official Microsoft package; these terms are not replaced by the YogaITS license. System Windows App Runtime is not bundled with the native distribution."
+    },
+    {
+      "id": "Microsoft.WindowsAppSDK.WinUI",
+      "version": "2.2.1",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Windows App SDK software license terms",
+      "source": "https://www.nuget.org/packages/Microsoft.WindowsAppSDK.WinUI/2.2.1",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WinUI-2.2.1-LICENSE.txt",
+          "sha256": "c2f1d9efba5864366335c007d51cab1d5b07005e9f1a67d7ca90b7b2a01fd615"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WinUI-NOTICE.txt",
+          "sha256": "e25393c0d340a1821827b093fa4dbbfcccd8feb7bf769e7fa773e3955cd5314b"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "System.Management",
+      "version": "10.0.0",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/System.Management/10.0.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/DotNet-MIT-LICENSE.txt",
+          "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310"
+        },
+        {
+          "source": "ThirdParty/Licenses/DotNet-10-THIRD-PARTY-NOTICES.txt",
+          "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "System.ServiceProcess.ServiceController",
+      "version": "10.0.0",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/System.ServiceProcess.ServiceController/10.0.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/DotNet-MIT-LICENSE.txt",
+          "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310"
+        },
+        {
+          "source": "ThirdParty/Licenses/DotNet-10-THIRD-PARTY-NOTICES.txt",
+          "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "System.CodeDom",
+      "version": "10.0.0",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/System.CodeDom/10.0.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/DotNet-MIT-LICENSE.txt",
+          "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310"
+        },
+        {
+          "source": "ThirdParty/Licenses/DotNet-10-THIRD-PARTY-NOTICES.txt",
+          "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "System.Diagnostics.EventLog",
+      "version": "10.0.0",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/System.Diagnostics.EventLog/10.0.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/DotNet-MIT-LICENSE.txt",
+          "sha256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310"
+        },
+        {
+          "source": "ThirdParty/Licenses/DotNet-10-THIRD-PARTY-NOTICES.txt",
+          "sha256": "6d15e10a101c6bfff2ab4429ed061bf76c456fc4b23ad6b03e0d0f8377148a21"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "System.Numerics.Tensors",
+      "version": "9.0.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://www.nuget.org/packages/System.Numerics.Tensors/9.0.0",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/DotNet-9-LICENSE.txt",
+          "sha256": "d7a68596ab69b06f51ca278a6545148e4269a9381c26d597c13df5d88e08cf5b"
+        },
+        {
+          "source": "ThirdParty/Licenses/DotNet-9-THIRD-PARTY-NOTICES.txt",
+          "sha256": "40686c6447a7d5b5d3693068e4571b5f483d7ed335aeee773ef662440de4c5d5"
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "Microsoft.Web.WebView2",
+      "version": "1.0.3719.77",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "BSD-3-Clause",
+      "source": "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WebView2-LICENSE.txt",
+          "sha256": "0af8f1b807512aae39c2ac1aa4d0cae65cabecb6fd554b8439a5162a0d6eca55"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WebView2-NOTICE.txt",
+          "sha256": "106423785c5b7eba0a8e61d1837f2132e9c828e20ad530f565d981c1df60dd90"
+        }
+      ],
+      "note": "SDK loader/projection only; the Edge/WebView2 browser runtime is not redistributed."
+    },
+    {
+      "id": "Microsoft.Web.WebView2.Core.Projection",
+      "version": "1.0.3719.77",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "BSD-3-Clause",
+      "source": "https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WebView2-LICENSE.txt",
+          "sha256": "0af8f1b807512aae39c2ac1aa4d0cae65cabecb6fd554b8439a5162a0d6eca55"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WebView2-NOTICE.txt",
+          "sha256": "106423785c5b7eba0a8e61d1837f2132e9c828e20ad530f565d981c1df60dd90"
+        }
+      ],
+      "note": "SDK loader/projection only; the Edge/WebView2 browser runtime is not redistributed."
+    },
+    {
+      "id": "runtimepack.Microsoft.Windows.SDK.NET.Ref",
+      "version": "10.0.26100.57",
+      "flavors": [
+        "native",
+        "liquid-glass"
+      ],
+      "license": "Windows SDK terms; C#/WinRT runtime MIT",
+      "source": "https://aka.ms/WinSDKLicenseURL",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsSDK-LICENSE.rtf",
+          "sha256": "0f4a26ac9dc50066f8a1bfeaaf3f092d1b9e4791df5487b9f3c31e7c3dc4d7f5"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-WindowsSDK-THIRD-PARTY-NOTICES.rtf",
+          "sha256": "ebb6640a8246b39b70322c5cec9aad7a71e86ea7b86c9c604d3a7f3ff1b30e89"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-CsWinRT-LICENSE.txt",
+          "sha256": "9906940f61b1f0b533fa7d99baf55178b2808fbe113ea51dfbfad8572ccd5f2b"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-CppWinRT-LICENSE.txt",
+          "sha256": "f60485948865406bbc0998b4062b1280887d3083304d69ba1dbd5fcc8c24f59c"
+        }
+      ],
+      "note": "Windows SDK .NET projections and WinRT.Runtime.dll. SDK documents retained from the installed Windows SDK 10.0.26100.0; C#/WinRT license from its upstream repository."
+    },
+    {
+      "id": "Microsoft.Graphics.Win2D",
+      "version": "1.3.2",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "Microsoft Win2D binary terms; upstream source MIT",
+      "source": "https://www.nuget.org/packages/Microsoft.Graphics.Win2D/1.3.2",
+      "documents": [
+        {
+          "source": "ThirdParty/Licenses/Microsoft-Win2D-binary-EULA.html",
+          "sha256": "7b10b2c7d15a3062037d3820bfd5528235f8a287ded3d131e22c2f5286e61633"
+        },
+        {
+          "source": "ThirdParty/Licenses/Microsoft-Win2D-source-LICENSE.txt",
+          "sha256": "c3ba493105fa52657c4c60d9b1680da7c01b188a8665d7a823c2a187fd259808"
+        }
+      ],
+      "note": "The package declares http://www.microsoft.com/web/webpi/eula/eula_win2d_10012014.htm. The original Microsoft HTML was retrieved through https://web.archive.org/web/20250113180923id_/https://www.microsoft.com/web/webpi/eula/eula_win2d_10012014.htm (capture 2025-01-13 18:09:23 GMT) during the 2026-10-25/26 review. It is retained byte-for-byte, not rewritten as MIT or BSD. See upstream issues 912 and 997. The MIT document covers upstream source, not a claim that the NuGet binary terms are MIT."
+    },
+    {
+      "id": "LiquidGlassWinUI",
+      "version": "1.0.3",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://github.com/luckyelysia/LiquidGlassWinUI",
+      "documents": [
+        {
+          "source": "ThirdParty/LiquidGlassWinUI/LICENSE",
+          "sha256": "15d258a39650df54791f572580c645a50cc993afabe465f13922cdd707f41d07"
+        }
+      ],
+      "note": "Pinned 1.0.3 material source and its unmodified CustomEffectRuntimeNative.dll; the other IDs are local assembly/dependency aliases, not additional upstream products."
+    },
+    {
+      "id": "YogaITS.Tray.Material",
+      "version": "1.0.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://github.com/luckyelysia/LiquidGlassWinUI",
+      "documents": [
+        {
+          "source": "ThirdParty/LiquidGlassWinUI/LICENSE",
+          "sha256": "15d258a39650df54791f572580c645a50cc993afabe465f13922cdd707f41d07"
+        }
+      ],
+      "note": "Pinned 1.0.3 material source and its unmodified CustomEffectRuntimeNative.dll; the other IDs are local assembly/dependency aliases, not additional upstream products."
+    },
+    {
+      "id": "LiquidGlassWinUI.Reference",
+      "version": "1.0.0.0",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://github.com/luckyelysia/LiquidGlassWinUI",
+      "documents": [
+        {
+          "source": "ThirdParty/LiquidGlassWinUI/LICENSE",
+          "sha256": "15d258a39650df54791f572580c645a50cc993afabe465f13922cdd707f41d07"
+        }
+      ],
+      "note": "Pinned 1.0.3 material source and its unmodified CustomEffectRuntimeNative.dll; the other IDs are local assembly/dependency aliases, not additional upstream products."
+    },
+    {
+      "id": "LiquidGlassTabBars",
+      "version": "828ded25395e66fa7640d496ecc18cc83e6b1777",
+      "flavors": [
+        "liquid-glass"
+      ],
+      "license": "MIT",
+      "source": "https://github.com/mikonyaa/LiquidGlassTabBars",
+      "documents": [
+        {
+          "source": "ThirdParty/LiquidGlassTabBars/LICENSE.txt",
+          "sha256": "4fef9760c560e921785a32f38c8dfc8165f08c26ca76a80e29bce66934a17628"
+        }
+      ],
+      "note": "UI motion/reference adaptation; no Apple platform API is redistributed."
+    }
+  ]
+}

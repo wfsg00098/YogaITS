@@ -1,20 +1,77 @@
-LiquidGlassWinUI 1.0.3
+YogaITS third-party notices
+==========================
+
+YogaITS original code: BSD-3-Clause; see ../LICENSE and ../NOTICE.
+Third-party components remain under their own licenses, not the YogaITS license.
+The flavor-specific components.json identifies reviewed versions, original
+source paths and SHA-256 checksums of the accompanying unmodified documents.
+Some records describe SDK deployment prerequisites or dependency aliases, not
+additional bundled products. No warranty or endorsement is implied.
+
+COMMON COMPONENTS
+
+Microsoft Windows App SDK / WinUI 3 / Windows SDK .NET projections
+Copyright Microsoft Corporation.
+Official NuGet binaries retain Microsoft software license terms. The upstream
+repositories' MIT licenses do not replace the terms of the binaries we use.
+See Microsoft-WindowsAppSDK-LICENSE.txt, Microsoft-WindowsAppSDK-NOTICE.txt,
+Microsoft-WinUI-NOTICE.txt, and Microsoft-WindowsSDK-*.rtf.
+Native uses system Windows App Runtime; glass privately deploys SDK 2.2.0.
+Source: https://github.com/microsoft/WindowsAppSDK
+SDK projections: https://aka.ms/WinSDKLicenseURL
+
+C#/WinRT and C++/WinRT
+MIT; see Microsoft-CsWinRT-LICENSE.txt and Microsoft-CppWinRT-LICENSE.txt.
+Sources: https://github.com/microsoft/CsWinRT and https://github.com/microsoft/cppwinrt
+
+System.Management / System.ServiceProcess.ServiceController 10.0.0
+System.CodeDom / System.Diagnostics.EventLog 10.0.0 (transitive)
+MIT; see DotNet-MIT-LICENSE.txt and DotNet-10-THIRD-PARTY-NOTICES.txt.
+Source: https://github.com/dotnet/runtime
+The complete .NET 10 runtime is required on the machine, not redistributed.
+
+Microsoft.Web.WebView2 1.0.3719.77 (transitive SDK loader/projection)
+BSD three-clause terms in Microsoft-WebView2-LICENSE.txt; retain its NOTICE too.
+The Edge/WebView2 browser runtime is not bundled.
+Package: https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.3719.77
+
+GLASS DISTRIBUTION ONLY
+
+LiquidGlassWinUI 1.0.3 and CustomEffectRuntimeNative.dll
+MIT; see LiquidGlassWinUI-LICENSE.txt.
+The DLL is the unmodified x64 native effect from the pinned NuGet package.
+Local managed/shader adaptations: ThirdParty/LiquidGlassWinUI/UPSTREAM in source.
 Source: https://github.com/luckyelysia/LiquidGlassWinUI
-MIT license: LiquidGlassWinUI-LICENSE.txt in this directory.
-Local managed/DPI/AA/fallback changes: ThirdParty/LiquidGlassWinUI/UPSTREAM.
-
-Microsoft.Graphics.Win2D 1.3.2
-Source: https://github.com/microsoft/Win2D
-Package: https://www.nuget.org/packages/Microsoft.Graphics.Win2D/1.3.2
-Copyright Microsoft Corporation. All rights reserved.
-Package license URL: http://www.microsoft.com/web/webpi/eula/eula_win2d_10012014.htm
-
-Microsoft Windows App SDK 2.2.0 is privately deployed through its official
-NuGet/runtime packs. This application uses the system-installed .NET 10 x64 runtime;
-it does not redistribute or install .NET.
 
 LiquidGlassTabBars / LiquidUI reference adaptation
+MIT; see LiquidGlassTabBars-LICENSE.txt.
 Source: https://github.com/mikonyaa/LiquidGlassTabBars
-Commit: 828ded25395e66fa7640d496ecc18cc83e6b1777
-MIT license: LiquidGlassTabBars-LICENSE.txt in this directory.
-Windows implementation uses the provided UI reference material; Apple system glass APIs are not redistributed.
+Reference commit: 828ded25395e66fa7640d496ecc18cc83e6b1777
+Apple platform glass APIs are not redistributed.
+
+Microsoft.Graphics.Win2D 1.3.2
+The upstream source is MIT: Microsoft-Win2D-source-LICENSE.txt.
+The NuGet binary declares separate Microsoft Win2D terms, retained in
+Microsoft-Win2D-binary-EULA.html. That original Microsoft document was retrieved
+through an archive because the package's license URL now redirects elsewhere.
+It is not reclassified as MIT or BSD; provenance is recorded in components.json.
+Original URL: http://www.microsoft.com/web/webpi/eula/eula_win2d_10012014.htm
+Source: https://github.com/microsoft/Win2D
+Package: https://www.nuget.org/packages/Microsoft.Graphics.Win2D/1.3.2
+Upstream reports: https://github.com/microsoft/Win2D/issues/912 and /issues/997
+
+Windows App SDK WinUI 2.2.1
+See Microsoft-WinUI-2.2.1-LICENSE.txt for this package's own Microsoft terms.
+Those terms differ from the umbrella SDK license; both are retained.
+
+System.Numerics.Tensors 9.0.0 (transitive)
+MIT; see DotNet-9-LICENSE.txt and DotNet-9-THIRD-PARTY-NOTICES.txt.
+
+PROTOCOL AND DESIGN REFERENCES
+
+Lenovo Legion Toolkit (GPLv3), SaltwaterC/KeyboardBacklightForLenovo (MIT),
+and gonwan/ideapad-keyboard-backlight informed hardware protocol verification.
+These are references, not linked libraries or redistributed applications.
+Their code is not relicensed by YogaITS. See the source review in DEVELOPMENT.md.
+OEM drivers/services, NVIDIA's installed nvapi64.dll, firmware and calibration
+profiles are not bundled and are not covered by the YogaITS source license.

@@ -12,6 +12,7 @@
     <BaseOutputPath>$(MSBuildThisFileDirectory)bin/$(BuildFlavor)/$(MSBuildProjectName)/</BaseOutputPath>
     <DefaultItemExcludes>$(DefaultItemExcludes);**/obj/**;**/bin/**;**/Output/**;$(MSBuildThisFileDirectory)obj/**;$(MSBuildThisFileDirectory)bin/**</DefaultItemExcludes>
     <SelfContained>false</SelfContained>
+    <Copyright Condition="'$(MSBuildProjectName)' == 'YogaITS.Tray' Or '$(MSBuildProjectName)' == 'YogaITS.Updater' Or '$(MSBuildProjectName)' == 'YogaITS.dGPUKeepAwake' Or '$(MSBuildProjectName)' == 'YogaITS.dGPURestart'">Copyright (c) 2026, wfsg00098 and YogaITS contributors</Copyright>
     <DebugType>none</DebugType><DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
   <PropertyGroup Condition="'$(EnableLiquidGlass)' == 'true'">

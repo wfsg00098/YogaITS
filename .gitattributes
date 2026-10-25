@@ -1,0 +1,6 @@
+# Legal snapshots are hash-checked and must retain the upstream bytes on Windows.
+ThirdParty/Licenses/** -text -whitespace
+ThirdParty/Licenses/*.rtf -diff
+ThirdParty/Licenses/*.html -diff
+ThirdParty/LiquidGlassWinUI/LICENSE -text
+ThirdParty/LiquidGlassTabBars/LICENSE.txt -text
