@@ -139,6 +139,20 @@ internal static class UiContractChecks
             completion.SetResult();
             await request;
             Ensure(refreshes == before, "Closed windows must ignore late completions.");
+            using var measured = new HardwareChoiceGroup(window, "色彩管理", () => { }, _ => { }, fitToContent: true);
+            var modes = Enumerable.Range(0, 25).Select(index => new HardwareChoice("raw_" + index,
+                index == 0 ? "暗室医学影像模拟 (DICOM Dim SIM)" : "Future_Mode_" + index, () => Task.CompletedTask)).ToArray();
+            measured.Update(modes, "raw_24", true, 2);
+            foreach (double width in new[] { 300.0, 500, 250, 700 })
+            {
+                measured.View.Width = width;
+                measured.View.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
+                measured.View.Arrange(new Windows.Foundation.Rect(0, 0, width, measured.View.DesiredSize.Height));
+                Ensure(measured.ConfirmedId == "raw_24", "Resizing adaptive rows must preserve the selected raw profile ID.");
+            }
+            measured.Update([new("first", "same label", () => Task.CompletedTask),
+                new("second", "same label", () => Task.CompletedTask)], "second", true, 2);
+            Ensure(measured.ConfirmedId == "second", "Equal display labels cannot hide or merge different raw modes.");
         }
         finally { window.Close(); }
     }

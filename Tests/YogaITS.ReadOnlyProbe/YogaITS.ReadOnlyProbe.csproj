@@ -8,6 +8,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../YogaITS.Tray/Services/AppBuild.cs" Link="Services/AppBuild.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AsyncOperationQueue.cs" Link="Services/AsyncOperationQueue.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ReadbackPolicy.cs" Link="Services/ReadbackPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuKeepAwakePolicy.cs" Link="Services/GpuKeepAwakePolicy.cs" />

@@ -16,15 +16,12 @@ internal static class FactoryRecoveryService
     private const string Endpoint = "https://supportapi.lenovo.com/v3/ColorCalibration/GetFileBySn?sn=";
     private const string ClientId = "Hr0Z3kZYsCync4KzAjLqqg==";
 
-    public static FactoryValidationResult ValidateCurrent(MachineIdentity machine, DisplayInfo d) =>
+    public static FactoryValidationResult ValidateCurrent(MachineIdentity? machine, DisplayInfo d) =>
         IccInspector.ValidateFactoryDirectory(FactoryRoot, machine, d.HardwareId);
 
     public static async Task<FactoryRecoveryResult> RecoverAsync(MachineIdentity machine, DisplayInfo d,
         Action<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(d.HardwareId))
-            return new(false, "Current panel Hardware ID is unavailable.", FactoryRoot, 0, 0);
-
         Directory.CreateDirectory(CacheRoot);
         string staging = Path.Combine(CacheRoot, ".download_" + Guid.NewGuid().ToString("N"));
         string extract = Path.Combine(staging, "extract");
@@ -56,33 +53,40 @@ internal static class FactoryRecoveryService
             if (string.IsNullOrWhiteSpace(url))
                 return new(false, "Metadata response did not contain a usable download URL.", FactoryRoot, 0, 0);
 
-            progress?.Invoke("Metadata PASS. Downloading calibration ZIP ...");
-            using var dl = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, token);
-            if (!dl.IsSuccessStatusCode)
-                return new(false, $"ZIP download failed: HTTP {(int)dl.StatusCode} {dl.ReasonPhrase}.", FactoryRoot, 0, 0);
-            const long maximum = 128L * 1024 * 1024;
-            if (dl.Content.Headers.ContentLength is > maximum) throw new InvalidDataException("校色包超过允许大小。");
-            long zipBytes;
-            await using (var input = await dl.Content.ReadAsStreamAsync(token))
-            await using (var output = new FileStream(zipTmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
-                zipBytes = await BoundedFileTransfer.CopyAsync(input, output, maximum, token);
-            using (var header = File.OpenRead(zipTmp))
-                if (zipBytes < 4 || header.ReadByte() != 'P' || header.ReadByte() != 'K')
-                    return new(false, "Downloaded payload is not a ZIP archive.", FactoryRoot, 0, zipBytes);
-
-            Directory.CreateDirectory(extract);
-            BoundedFileTransfer.ExtractZip(zipTmp, extract, token);
-            string? candidate = FindBestFactoryDirectory(extract);
-            if (candidate is null)
-                return new(false, "ZIP extracted, but no directory contained at least two recognized gamut ICC profiles.", FactoryRoot, 0, zipBytes);
-
-            var valid = IccInspector.ValidateFactoryDirectory(candidate, machine, d.HardwareId);
+            long zipBytes = 0;
+            string candidate = extract;
+            var valid = await CalibrationDownloadPolicy.ValidateAsync(async attempt =>
+            {
+                progress?.Invoke(attempt == 0 ? "Metadata PASS. Downloading calibration ZIP ..."
+                    : $"Corrupt calibration file(s); redownload {attempt}/{CalibrationDownloadPolicy.Redownloads} ...");
+                string attemptRoot = Path.Combine(staging, attempt.ToString());
+                candidate = Path.Combine(attemptRoot, "extract");
+                zipTmp = Path.Combine(attemptRoot, "ColorCalibration.zip");
+                Directory.CreateDirectory(attemptRoot);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+                using var dl = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+                dl.EnsureSuccessStatusCode();
+                const long maximum = 128L * 1024 * 1024;
+                if (dl.Content.Headers.ContentLength is > maximum) throw new InvalidDataException("校色包超过允许大小。");
+                await using (var input = await dl.Content.ReadAsStreamAsync(token))
+                await using (var output = new FileStream(zipTmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
+                    zipBytes = await BoundedFileTransfer.CopyAsync(input, output, maximum, token);
+                Directory.CreateDirectory(candidate);
+                try { BoundedFileTransfer.ExtractZip(zipTmp, candidate, token); }
+                catch (InvalidDataException)
+                {
+                    return new FactoryValidationResult(false, "Downloaded calibration ZIP is corrupt.", [], 0,
+                        false, false, [zipTmp], IccInspector.Sha256(zipTmp));
+                }
+                return IccInspector.ValidateFactoryDirectory(candidate, machine, d.HardwareId);
+            }, token);
             if (!valid.Ok)
                 return new(false, "Downloaded Factory package failed validation: " + valid.Message, FactoryRoot, valid.ProfileCount, zipBytes);
 
             progress?.Invoke($"Validation PASS ({valid.ProfileCount} profiles). Replacing YogaITS Factory cache atomically ...");
             string newRoot = Path.Combine(CacheRoot, ".Factory.new." + Guid.NewGuid().ToString("N"));
-            CopyDirectory(candidate, newRoot);
+            CopyDirectory(candidate, newRoot, valid.CorruptProfiles ?? []);
             // Validate the exact copy that will become live.
             var newValid = IccInspector.ValidateFactoryDirectory(newRoot, machine, d.HardwareId);
             if (!newValid.Ok)
@@ -116,7 +120,7 @@ internal static class FactoryRecoveryService
             }
 
             return new(true,
-                $"Online recovery PASS: {valid.ProfileCount} Factory profiles validated and cached. No serial value was written to the log.",
+                $"Online recovery PASS: {valid.ProfileCount} Factory profiles validated and cached. {valid.Message}",
                 FactoryRoot, valid.ProfileCount, zipBytes);
         }
         catch (Exception ex)
@@ -168,24 +172,14 @@ internal static class FactoryRecoveryService
         return null;
     }
 
-    private static string? FindBestFactoryDirectory(string root)
-    {
-        var groups = Directory.EnumerateFiles(root, "*.icm", SearchOption.AllDirectories)
-            .Select(p => new { Path = p, Mode = ProfileService.ModeFromFileName(p), Dir = Path.GetDirectoryName(p)! })
-            .Where(x => x.Mode != "Unknown")
-            .GroupBy(x => x.Dir, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(g => g.Select(x => x.Mode).Distinct(StringComparer.OrdinalIgnoreCase).Count())
-            .ToList();
-        return groups.FirstOrDefault(g => g.Select(x => x.Mode).Distinct(StringComparer.OrdinalIgnoreCase).Count() >= 2)?.Key;
-    }
-
-    private static void CopyDirectory(string source, string dest)
+    private static void CopyDirectory(string source, string dest, IReadOnlyList<string> excluded)
     {
         Directory.CreateDirectory(dest);
         foreach (string dir in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
             Directory.CreateDirectory(Path.Combine(dest, Path.GetRelativePath(source, dir)));
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
         {
+            if (excluded.Contains(file, StringComparer.OrdinalIgnoreCase)) continue;
             string target = Path.Combine(dest, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, true);

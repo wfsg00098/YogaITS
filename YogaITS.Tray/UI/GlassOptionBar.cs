@@ -25,6 +25,8 @@ internal sealed class GlassOptionBar : Grid, IDisposable
     private readonly string _groupName;
     private readonly double _fontSize;
     private readonly bool _compactLabels;
+    private readonly bool _fitToContent;
+    private double[]? _naturalWidths;
     private readonly string _radioGroup;
     private readonly AccelerationLayoutMotion _labelLayout;
     private sealed record LabelCell(RadioButton Tab, TextBlock Caption, SolidColorBrush Foreground, bool Enabled);
@@ -62,13 +64,14 @@ internal sealed class GlassOptionBar : Grid, IDisposable
     public event Action<int>? SelectionChanged;
 
     public GlassOptionBar(Window window, bool acceleration = false,
-        IReadOnlyList<string>? options = null, string groupName = "性能选项", double fontSize = TrayMenuWindow.ControlCenterButtonFontSize, bool compactLabels = false, int columns = 0)
+        IReadOnlyList<string>? options = null, string groupName = "性能选项", double fontSize = TrayMenuWindow.ControlCenterButtonFontSize, bool compactLabels = false, int columns = 0, bool fitToContent = false)
     {
         var labels = options?.ToArray() ?? FluidTabBar.Labels.ToArray();
         _optionLabels = labels;
         _groupName = groupName;
         _fontSize = fontSize;
         _compactLabels = compactLabels;
+        _fitToContent = fitToContent;
         _selection = new(labels.Length);
         _tabs = new RadioButton[labels.Length];
         _captions = new TextBlock[labels.Length];
@@ -346,7 +349,15 @@ internal sealed class GlassOptionBar : Grid, IDisposable
     {
         animate &= _hasPresentedLayout;
         if (Visibility == Visibility.Visible && ActualWidth > 0 && ActualHeight > 0) _hasPresentedLayout = true;
-        _layout = SwiftTabLayout.Create(ActualWidth, ActualHeight, _tabs.Length, _columns);
+        if (_fitToContent && _naturalWidths?.Length == _tabs.Length)
+        {
+            _layout = SwiftTabLayout.CreateMeasured(ActualWidth, _naturalWidths);
+            double height = _layout.Track.Height + 20;
+            if (Height != height) Height = height;
+            _input.ManipulationMode = _layout.Rows > 1 ? ManipulationModes.None : ManipulationModes.System;
+            foreach (var caption in _captions) { caption.MaxLines = 0; caption.TextTrimming = TextTrimming.None; }
+        }
+        else _layout = SwiftTabLayout.Create(ActualWidth, ActualHeight, _tabs.Length, _columns);
         LayoutLabels(_tabs, _layout);
         _labelLayout.UpdateNow();
         SetReveal(_reveal);
@@ -356,6 +367,13 @@ internal sealed class GlassOptionBar : Grid, IDisposable
         else _track.SetFrame(_layout.Track, false);
         _acceleration?.ConfigureTrack(_layout, preserveFrame: animate);
         MoveCapsule(_layout.Capsule(_selection.DisplayIndex), animate, layoutChange);
+    }
+
+    internal void SetNaturalWidths(double[] widths)
+    {
+        if (!_fitToContent || _naturalWidths?.SequenceEqual(widths) == true) return;
+        _naturalWidths = widths;
+        ApplyLayout(true, layoutChange: true);
     }
 
     internal void SetReveal(double progress)

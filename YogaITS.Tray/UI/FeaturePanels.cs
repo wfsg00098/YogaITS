@@ -97,11 +97,11 @@ internal sealed class FeaturePanels : IDisposable
 
     private void Choices(FeatureCard card, StackPanel body, string id, string title,
         IEnumerable<HardwareChoice> options, string? confirmed, bool available, int columns,
-        bool visible = true, string? domain = null)
+        bool visible = true, string? domain = null, bool fitToContent = false)
     {
         if (!_choices.TryGetValue(id, out var choices))
         {
-            choices = new(_window, title, Render, error => card.SetStatus(error.Message, announce: true));
+            choices = new(_window, title, Render, error => card.SetStatus(error.Message, announce: true), fitToContent: fitToContent);
             _choices.Add(id, choices);
         }
         choices.Update(options, confirmed, available, columns, visible, domain);
@@ -251,7 +251,7 @@ internal sealed class FeaturePanels : IDisposable
                     SettingsOptionText.ColorLabel(mode.Name, mode.Brightness), () => _color.ApplyAsync(mode.Name))),
                 current.CurrentMode, current.Available && _color.IsResponsive && !current.Blocked, 2,
                 visible: !advancedColorActive && current.Modes.Count > 0,
-                domain: current.DisplayIdentity + "|" + current.Backend);
+                domain: current.DisplayIdentity + "|" + current.Backend, fitToContent: true);
             if (!advancedColorActive)
             {
                 if (current.Backend == ColorGamutBackend.Icc)

@@ -38,18 +38,20 @@ internal static class SettingsOptionText
 
     public static string ColorLabel(string mode, int? brightness = null)
     {
-        string label = mode switch
+        string label = mode.ToUpperInvariant() switch
         {
-            "TconP3" => "P3",
-            "TconSrgb" => "sRGB",
-            "TconAdobeRgb" => "Adobe RGB",
-            "Default" => "出厂默认（D65）",
-            "Native" => "鲜艳（Native）",
-            "sRGB" => "网页办公（sRGB-D65）",
-            "DisplayP3" => "摄影/数码影院（P3-D65）",
-            "DCIP3" => "原生数码影院（DCI-P3）",
-            "AdobeRGB" => "摄影印刷（Adobe-RGB-D65）",
-            "REC709" => "SDTV视频（REC709）",
+            "TCONP3" => "P3",
+            "TCONSRGB" => "sRGB",
+            "TCONADOBERGB" => "Adobe RGB",
+            "DEFAULT" => "默认 (D65)",
+            "NATIVE" => "鲜艳 (Native)",
+            "SRGB" => "网页办公 (sRGB-D65)",
+            "DISPLAYP3" => "摄影/数码影院 (P3-D65)",
+            "DCIP3" => "原生数码影院 (P3-DCI)",
+            "ADOBERGB" => "摄影印刷 (Adobe RGB)",
+            "REC709" => "HDTV视频 (REC709)",
+            "DICOM_DIM" => "暗室医学影像模拟 (DICOM Dim SIM)",
+            "DICOM_OFFICE" => "办公室医学影像模拟 (DICOM Office SIM)",
             _ => mode
         };
         return brightness is int value ? $"{label}[{value}]" : label;

@@ -22,7 +22,7 @@ internal sealed record GamutApplyResult(
 
 internal static class GamutApplyService
 {
-    public static GamutApplyResult Apply(DisplayInfo requestedDisplay, GamutProfile source, MachineIdentity machine, bool applyBrightness = true)
+    public static GamutApplyResult Apply(DisplayInfo requestedDisplay, GamutProfile source, MachineIdentity? machine, bool applyBrightness = true)
     {
         var sw = Stopwatch.StartNew();
         string managedName = ProfileService.ManagedProfileName(source.Mode);
@@ -42,13 +42,14 @@ internal static class GamutApplyService
             if (d.IsBlocked) return Fail("BLOCKED: HDR/ACM/WCG is active or Advanced Color state is unreadable.");
             if (string.IsNullOrWhiteSpace(d.WcsDeviceId)) return Fail("Dynamic WCS monitor DeviceID discovery failed: " + d.WcsDiscovery);
 
-            var identity = IccInspector.ReadCxfIdentity(source.Path);
-            if (!IccInspector.ValidateIdentity(identity, machine, d.HardwareId, out string identityDetail))
-                return Fail("Factory ICC failed identity validation: " + identityDetail);
+            if (!IccCalibrationData.Validate(source.Path, out string calibrationDetail))
+                return Fail("Factory ICC calibration data is invalid: " + calibrationDetail);
 
             var brMeta = IccMetaBrightness.Read(source.Path);
-            if (!brMeta.Ok) return Fail("Cannot read profile Brightness metadata: " + brMeta.Detail);
-            targetBrightness = brMeta.Brightness;
+            // Recommended brightness is optional metadata, never a condition
+            // for using an otherwise complete calibration profile.
+            applyBrightness &= brMeta.Ok;
+            if (brMeta.Ok) targetBrightness = brMeta.Brightness;
 
             standardBefore = ProfileService.GetStandardDefault(d);
             string currentMode = ProfileService.ModeFromCurrent(standardBefore);

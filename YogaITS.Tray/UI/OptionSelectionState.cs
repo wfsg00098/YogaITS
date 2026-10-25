@@ -11,7 +11,7 @@ internal sealed class OptionSelectionState
     public bool IsBusy => PendingIndex.HasValue;
     public OptionSelectionState(int count)
     {
-        if (count < 1 || count > 16) throw new ArgumentOutOfRangeException(nameof(count));
+        if (count < 1) throw new ArgumentOutOfRangeException(nameof(count));
         _enabled = Enumerable.Repeat(true, count).ToArray();
     }
     public bool IsEnabled(int index) => index >= 0 && index < Count && _enabled[index];

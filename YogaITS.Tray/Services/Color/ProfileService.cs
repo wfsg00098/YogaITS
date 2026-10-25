@@ -31,32 +31,39 @@ internal static class ProfileService
 
     public static string ManagedProfileName(string mode)
     {
-        string safe = new(mode.Where(char.IsLetterOrDigit).ToArray());
-        if (string.IsNullOrWhiteSpace(safe)) throw new ArgumentException("Invalid gamut mode.", nameof(mode));
-        return $"YogaITS_{safe}.icm";
+        if (string.IsNullOrWhiteSpace(mode) || mode.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new ArgumentException("Invalid gamut mode.", nameof(mode));
+        return $"YogaITS_{mode}.icm";
     }
 
-    public static string ModeFromCurrent(string? profileName)
+    public static IEnumerable<string> EnumerateProfiles(string root) => Directory.Exists(root)
+        ? Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(path => Path.GetExtension(path).Equals(".icm", StringComparison.OrdinalIgnoreCase) ||
+                Path.GetExtension(path).Equals(".icc", StringComparison.OrdinalIgnoreCase))
+            .Order(StringComparer.OrdinalIgnoreCase)
+        : [];
+
+    public static string ModeFromCurrent(string? profileName, IEnumerable<GamutProfile>? profiles = null)
     {
         if (string.IsNullOrWhiteSpace(profileName)) return "<none>";
-        string m = ModeFromFileName(profileName);
-        return m == "Unknown" ? "Custom / Unknown" : m;
+        string mode = ModeFromFileName(profileName);
+        return profiles?.FirstOrDefault(profile => profile.Mode.Equals(mode, StringComparison.OrdinalIgnoreCase))?.Mode ?? mode;
     }
 
-    public static string ModeFromFileName(string p)
+    public static string ModeFromFileName(string path)
     {
-        string n = Path.GetFileNameWithoutExtension(p);
-        if (n.EndsWith("_Native", StringComparison.OrdinalIgnoreCase)) return "Native";
-        if (n.EndsWith("_sRGB", StringComparison.OrdinalIgnoreCase)) return "sRGB";
-        if (n.EndsWith("_DisplayP3", StringComparison.OrdinalIgnoreCase)) return "DisplayP3";
-        if (n.EndsWith("_AdobeRGB", StringComparison.OrdinalIgnoreCase)) return "AdobeRGB";
-        if (n.EndsWith("_DCIP3", StringComparison.OrdinalIgnoreCase)) return "DCIP3";
-        if (n.EndsWith("_REC709", StringComparison.OrdinalIgnoreCase)) return "REC709";
-        if (n.EndsWith("_Default", StringComparison.OrdinalIgnoreCase)) return "Default";
-        return "Unknown";
+        string name = Path.GetFileNameWithoutExtension(path);
+        if (name.Length == 0) return Path.GetFileName(path);
+        if (name.StartsWith("YogaITS_", StringComparison.OrdinalIgnoreCase)) return name[8..];
+        // Lenovo package filenames use TPLCD_<panel>_<mode> or <panel>_<mode>.
+        // Keep the entire remaining suffix, including underscores and its casing.
+        int separator = name.IndexOf('_');
+        if (name.StartsWith("TPLCD_", StringComparison.OrdinalIgnoreCase) && separator >= 0)
+            separator = name.IndexOf('_', separator + 1);
+        return separator >= 0 && separator + 1 < name.Length ? name[(separator + 1)..] : name;
     }
 
-    public static int ModeOrder(string m) => m.ToUpperInvariant() switch
+    public static int ModeOrder(string mode) => mode.ToUpperInvariant() switch
     {
         "NATIVE" => 0,
         "SRGB" => 1,
@@ -65,6 +72,8 @@ internal static class ProfileService
         "DCIP3" => 4,
         "REC709" => 5,
         "DEFAULT" => 6,
+        "DICOM_DIM" => 7,
+        "DICOM_OFFICE" => 8,
         _ => 99
     };
 

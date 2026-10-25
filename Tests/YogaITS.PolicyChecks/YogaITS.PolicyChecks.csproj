@@ -56,6 +56,8 @@
     <Compile Include="../../YogaITS.Tray/Services/Color/ProfileService.cs" Link="ProfileService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/MachineIdentity.cs" Link="MachineIdentity.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/IccInspector.cs" Link="IccInspector.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Color/IccCalibrationData.cs" Link="IccCalibrationData.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/Color/CalibrationDownloadPolicy.cs" Link="CalibrationDownloadPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/IccMetaBrightness.cs" Link="IccMetaBrightness.cs" />
   </ItemGroup>
 </Project>

@@ -25,14 +25,14 @@ internal sealed class ChoiceBar : IDisposable
 
     public ChoiceBar(Window window, bool acceleration = true, IReadOnlyList<string>? options = null,
         string groupName = "性能选项", double fontSize = TrayMenuWindow.ControlCenterButtonFontSize,
-        bool compactLabels = false, int columns = 0)
+        bool compactLabels = false, int columns = 0, bool fitToContent = false)
     {
         var labels = options?.ToArray() ?? ["智能模式", "安静模式", "性能模式", "创作模式"];
         if (columns == 0) columns = labels.Length;
         if (columns < 1 || columns > labels.Length) throw new ArgumentOutOfRangeException(nameof(columns));
         _ = OptionSetPolicy.RemapConfirmed(labels, 0, labels);
 #if LIQUID_GLASS
-        _glass = new(window, acceleration, labels, groupName, fontSize, compactLabels, columns);
+        _glass = new(window, acceleration, labels, groupName, fontSize, compactLabels, columns, fitToContent);
         _glass.SelectionRequested += index =>
         {
             if (SelectionRequested is { } requested) requested(index);
@@ -102,6 +102,13 @@ internal sealed class ChoiceBar : IDisposable
     {
 #if LIQUID_GLASS
         _glass.SetReveal(progress);
+#endif
+    }
+
+    internal void SetNaturalWidths(double[] widths)
+    {
+#if LIQUID_GLASS
+        _glass.SetNaturalWidths(widths);
 #endif
     }
 

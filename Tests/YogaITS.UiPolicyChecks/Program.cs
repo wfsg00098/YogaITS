@@ -2,7 +2,7 @@ using System.Numerics;
 using YogaITS.Tray.Services;
 using YogaITS.Tray.UI;
 
-int checks = AccelerationChecks.Run() + TrackEndpointChecks.Run() + OptionBarChecks.Run() + MultiRowOptionChecks.Run() + ButtonPressChecks.Run() + DynamicOptionChecks.Run() + ReflowChecks.Run() + LayoutTimingChecks.Run() + ImageBackgroundChecks.Run() + CaptureRetirementChecks.Run() + ElasticLayoutChecks.Run();
+int checks = AccelerationChecks.Run() + TrackEndpointChecks.Run() + OptionBarChecks.Run() + MultiRowOptionChecks.Run() + ButtonPressChecks.Run() + DynamicOptionChecks.Run() + ReflowChecks.Run() + LayoutTimingChecks.Run() + ImageBackgroundChecks.Run() + CaptureRetirementChecks.Run() + ElasticLayoutChecks.Run() + MeasuredChoiceChecks.Run();
 void Check(bool pass, string message)
 {
     checks++;

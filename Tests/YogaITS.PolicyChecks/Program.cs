@@ -463,9 +463,9 @@ Check(!ElevocMicrophonePolicy.SupportsMultiplePeople((arrayMic with { JackSubTyp
     "Unknown microphone type conservatively hides multi-person mode");
 foreach (var (mode, label) in new[]
 {
-    ("Default", "出厂默认（D65）"), ("Native", "鲜艳（Native）"), ("sRGB", "网页办公（sRGB-D65）"),
-    ("DisplayP3", "摄影/数码影院（P3-D65）"), ("DCIP3", "原生数码影院（DCI-P3）"),
-    ("AdobeRGB", "摄影印刷（Adobe-RGB-D65）"), ("REC709", "SDTV视频（REC709）")
+    ("Default", "默认 (D65)"), ("Native", "鲜艳 (Native)"), ("sRGB", "网页办公 (sRGB-D65)"),
+    ("DisplayP3", "摄影/数码影院 (P3-D65)"), ("DCIP3", "原生数码影院 (P3-DCI)"),
+    ("AdobeRGB", "摄影印刷 (Adobe RGB)"), ("REC709", "HDTV视频 (REC709)")
 })
 {
     Check(SettingsOptionText.ColorLabel(mode) == label, "Color display labels preserve profile IDs");
@@ -476,7 +476,7 @@ foreach (var (hdr, acm) in new[] { (true, false), (false, true), (true, true) })
     Check(SettingsOptionText.ColorStatus("Native", "旧提示", hdr, acm) ==
         "当前颜色配置：不适用。HDR或者ACM已开启。", "Advanced color status replaces inactive ICC name and old hint");
 Check(SettingsOptionText.ColorStatus("Native", "校色文件状态", false, false) ==
-    "当前颜色配置：鲜艳（Native）。校色文件状态", "SDR status retains profile name and relevant messages");
+    "当前颜色配置：鲜艳 (Native)。校色文件状态", "SDR status retains profile name and relevant messages");
 Check(SettingsOptionText.MicrophoneDescription("environmental").Contains("所有"), "Off microphone description");
 Check(SettingsOptionText.MicrophoneDescription("voiceid").Contains("学习"), "Voice ID microphone description");
 Check(SettingsOptionText.MicrophoneDescription("special").Contains("空间"), "Position microphone description");
@@ -544,9 +544,9 @@ try
     File.WriteAllBytes(native, Icc("SERIAL", "PANEL", 100));
     File.WriteAllBytes(srgb, Icc("SERIAL", "PANEL", 48));
     Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Factory package matches unit/panel and NUL-terminated CxF XML");
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine with { SerialNumber = "OTHER" }, "PANEL").Ok, "Other unit rejected");
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "OTHER").Ok, "Other panel rejected");
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine with { MachineType = "OTHER" }, "PANEL").Ok, "Other machine type rejected");
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine with { SerialNumber = "OTHER" }, "PANEL").Ok, "Complete calibration remains available with different serial metadata");
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "OTHER").Ok, "Complete calibration remains available with different panel metadata");
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine with { MachineType = "OTHER" }, "PANEL").Ok, "Complete calibration remains available with different machine metadata");
     var placeholder = new CxfIdentity(true, "INVALID", "INVALID", "PANEL", "test");
     Check(IccInspector.ValidateIdentity(placeholder, machine, "PANEL", out _), "Lenovo paired INVALID identities accept matching panel");
     Check(!IccInspector.ValidateIdentity(placeholder, machine, "OTHER", out _), "Placeholder identity still rejects another panel");
@@ -559,20 +559,20 @@ try
     File.WriteAllBytes(native, Icc("INVALID", "PANEL", 100, "INVALID"));
     File.WriteAllBytes(srgb, Icc("INVALID", "PANEL", 48, "INVALID"));
     Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Factory recovery accepts Lenovo panel-only package");
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "OTHER").Ok, "Panel-only package cannot be used on another panel");
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "OTHER").Ok, "Placeholder metadata does not restrict complete calibration");
     File.WriteAllBytes(srgb, Icc("OTHER", "PANEL", 48));
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Placeholder package cannot hide a different unit's profile");
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Different serial metadata does not discard complete calibration");
     File.WriteAllBytes(native, Icc("SERIAL", "PANEL", 100));
     File.WriteAllBytes(srgb, Icc("SERIAL", "PANEL", 48));
     Check(IccMetaBrightness.Read(native).Brightness == 100 && IccMetaBrightness.Read(srgb).Brightness == 48, "Brightness comes from ICC metadata");
     File.WriteAllBytes(srgb, Icc("SERIAL", "PANEL", 101));
     Check(!IccMetaBrightness.Read(srgb).Ok, "Out-of-range brightness rejected");
     File.WriteAllBytes(srgb, Icc("OTHER", "PANEL", 48));
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Every advertised ICC must match the unit");
+    Check(IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Complete profiles remain available despite serial mismatch");
     File.WriteAllBytes(srgb, [0, 1, 2]);
     Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Malformed ICC rejected");
     File.Delete(native);
-    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Missing Native/cache rejected");
+    Check(!IccInspector.ValidateFactoryDirectory(temporary, machine, "PANEL").Ok, "Remaining corrupt profile is rejected even after removing Native");
 }
 finally { Directory.Delete(temporary, recursive: true); }
 
@@ -581,7 +581,7 @@ if (factoryDirectoryIndex >= 0)
 {
     string directory = args[factoryDirectoryIndex + 1];
     var validation = IccInspector.ValidateFactoryDirectory(directory, new("TEST", "SERIAL", "TEST", ""), "LEN8BAD");
-    Check(validation.Ok && validation.ProfileCount == 7, "Real Lenovo LEN8BAD panel-only package passes full factory validation");
+    Check(validation.Ok && validation.ProfileCount == 7, "Real seven-mode Lenovo package passes calibration-data validation");
 }
 
 await using (var service = new FakeService())
@@ -632,6 +632,7 @@ int updaterIndex = Array.IndexOf(args, "--updater-executable");
 checks += await UpdateChecks.RunAsync(updaterIndex >= 0 ? args[updaterIndex + 1] : null);
 checks += await BuildFlavorChecks.RunAsync();
 checks += await BackgroundImageChecks.RunAsync();
+checks += await FactoryCalibrationChecks.RunAsync(Icc);
 checks += await OptimizationChecks.RunAsync();
 checks += await KeyboardBacklightChecks.RunAsync();
 checks += await GpuModeChecks.RunAsync();
@@ -659,10 +660,16 @@ static byte[] Icc(string serial, string panel, int brightness, string machineTyp
     U32(meta, 16, 32); U32(meta, 20, key.Length);
     U32(meta, 24, 32 + key.Length); U32(meta, 28, value.Length);
     key.CopyTo(meta, 32); value.CopyTo(meta, 32 + key.Length);
-    var tags = new[] { ("CxF ", cxf), ("MHC2", new byte[4]), ("meta", meta) };
+    byte[] xyz = new byte[20]; Encoding.ASCII.GetBytes("XYZ ").CopyTo(xyz, 0);
+    byte[] curve = new byte[12]; Encoding.ASCII.GetBytes("curv").CopyTo(curve, 0);
+    byte[] mhc = new byte[36]; Encoding.ASCII.GetBytes("MHC2").CopyTo(mhc, 0);
+    var tags = new[] { ("CxF ", cxf), ("MHC2", mhc), ("meta", meta),
+        ("rXYZ", xyz), ("gXYZ", xyz), ("bXYZ", xyz), ("wtpt", xyz), ("lumi", xyz),
+        ("rTRC", curve), ("gTRC", curve), ("bTRC", curve) };
     int offset = 132 + tags.Length * 12;
     byte[] icc = new byte[offset + tags.Sum(t => t.Item2.Length)];
     U32(icc, 0, icc.Length); U32(icc, 128, tags.Length);
+    Encoding.ASCII.GetBytes("acsp").CopyTo(icc, 36);
     for (int i = 0; i < tags.Length; i++)
     {
         int entry = 132 + i * 12;

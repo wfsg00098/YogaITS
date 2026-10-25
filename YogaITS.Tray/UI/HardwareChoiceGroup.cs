@@ -15,7 +15,10 @@ internal sealed class HardwareChoiceGroup : IDisposable
     private readonly Action _refresh;
     private readonly Action<Exception> _reportError;
     private readonly double _height, _fontSize;
-    private readonly bool _compact;
+    private readonly bool _compact, _fitToContent;
+    private readonly TextBlock _measure;
+    private readonly List<Grid> _nativeRows = [];
+    private bool _needsNativeWrapping;
     private readonly Grid _native = new() { Margin = new Thickness(5, 0, 5, 0) };
     private readonly Dictionary<string, (Border Host, Button Button)> _cards = new(StringComparer.Ordinal);
     private HardwareChoice[] _choices = [];
@@ -33,7 +36,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
 
     public HardwareChoiceGroup(Window window, string title, Action refresh, Action<Exception> reportError,
         double height = TrayMenuWindow.OptionTileHeightDip, double fontSize = TrayMenuWindow.ControlCenterButtonFontSize,
-        bool compact = false)
+        bool compact = false, bool fitToContent = false)
     {
         _window = window;
         _title = title;
@@ -42,11 +45,18 @@ internal sealed class HardwareChoiceGroup : IDisposable
         _height = height;
         _fontSize = fontSize;
         _compact = compact;
+        _fitToContent = fitToContent;
+        _measure = new TextBlock { FontSize = fontSize, TextWrapping = TextWrapping.NoWrap };
+
         View = new(() => WindowMaterial.EffectsEnabled(window), progress =>
         {
             _bar?.SetReveal(progress);
             WindowMaterial.SetReveal(_native, progress);
         });
+        View.SizeChanged += (_, args) =>
+        {
+            if (_fitToContent && !_disposed && args.NewSize.Width != args.PreviousSize.Width) RefreshNative();
+        };
         RebuildPresentation(null, [], [], 1);
     }
 
@@ -55,9 +65,8 @@ internal sealed class HardwareChoiceGroup : IDisposable
     {
         if (_disposed) return;
         var next = choices.ToArray();
-        if (next.Length > 16 || next.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != next.Length ||
-            next.Select(item => item.Label).Distinct(StringComparer.Ordinal).Count() != next.Length)
-            throw new ArgumentException("Each hardware choice needs a unique ID and label.", nameof(choices));
+        if (next.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != next.Length)
+            throw new ArgumentException("Each hardware choice needs a unique ID.", nameof(choices));
         columns = next.Length == 0 ? 1 : Math.Clamp(columns, 1, next.Length);
         bool domainChanged = domain != _domain;
         bool changed = domainChanged || !_choices.Select(item => (item.Id, item.Label))
@@ -81,7 +90,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
         bool canRemap = _bar is not null && selected >= 0 &&
             Array.IndexOf(_barIds, _confirmed) is var old && old >= 0 &&
             labels.Contains(_barLabels[old], StringComparer.Ordinal) && _barLabels[old] == labels[selected];
-        if (selected < 0)
+        if (selected < 0 || labels.Distinct(StringComparer.Ordinal).Count() != labels.Length)
         {
             if (_bar is not null) RebuildPresentation(null, [], [], columns);
         }
@@ -119,7 +128,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
         if (selected is { } actual)
         {
             var bar = new ChoiceBar(_window, options: labels, groupName: _title, columns: columns,
-                fontSize: _fontSize, compactLabels: _compact);
+                fontSize: _fontSize, compactLabels: _compact, fitToContent: _fitToContent);
             _bar = bar;
             bar.SelectIndex(actual);
             bar.SelectionRequested += async index =>
@@ -129,7 +138,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
             };
         }
         _presentation = new(_bar?.View, _native,
-            () => _bar is not null && WindowMaterial.EffectsEnabled(_window), () => _bar?.CancelPreview());
+            () => _bar is not null && !_needsNativeWrapping && WindowMaterial.EffectsEnabled(_window), () => _bar?.CancelPreview());
         _presentation.PresentationChanged += () => { View.RefreshMotion(); PresentationChanged?.Invoke(); };
         View.SetChild(_presentation);
     }
@@ -139,13 +148,17 @@ internal sealed class HardwareChoiceGroup : IDisposable
         foreach (string id in _cards.Keys.Except(_choices.Select(item => item.Id), StringComparer.Ordinal).ToArray())
         {
             _native.Children.Remove(_cards[id].Host);
+            foreach (var row in _nativeRows) row.Children.Remove(_cards[id].Host);
             _cards.Remove(id);
         }
-        while (_native.ColumnDefinitions.Count > _columns) _native.ColumnDefinitions.RemoveAt(_native.ColumnDefinitions.Count - 1);
-        while (_native.ColumnDefinitions.Count < _columns) _native.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
-        int rows = (_choices.Length + _columns - 1) / _columns;
-        while (_native.RowDefinitions.Count > rows) _native.RowDefinitions.RemoveAt(_native.RowDefinitions.Count - 1);
-        while (_native.RowDefinitions.Count < rows) _native.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        if (!_fitToContent)
+        {
+            while (_native.ColumnDefinitions.Count > _columns) _native.ColumnDefinitions.RemoveAt(_native.ColumnDefinitions.Count - 1);
+            while (_native.ColumnDefinitions.Count < _columns) _native.ColumnDefinitions.Add(new() { Width = new(1, GridUnitType.Star) });
+            int rows = (_choices.Length + _columns - 1) / _columns;
+            while (_native.RowDefinitions.Count > rows) _native.RowDefinitions.RemoveAt(_native.RowDefinitions.Count - 1);
+            while (_native.RowDefinitions.Count < rows) _native.RowDefinitions.Add(new() { Height = GridLength.Auto });
+        }
         for (int i = 0; i < _choices.Length; i++)
         {
             var choice = _choices[i];
@@ -163,16 +176,70 @@ internal sealed class HardwareChoiceGroup : IDisposable
                 };
                 card = (new Border { Margin = new Thickness(3), MinHeight = _height, Child = button }, button);
                 _cards.Add(id, card);
-                _native.Children.Add(card.Item1);
+                if (!_fitToContent) _native.Children.Add(card.Item1);
             }
             TrayMenuWindow.SetOptionText(card.Button, choice.Label);
             AutomationProperties.SetName(card.Button, UiAccessibility.GroupedName(_title, choice.Label));
             card.Button.IsEnabled = _available && choice.Enabled;
             TrayMenuWindow.RefreshOptionTile(card.Button, choice.Id == _confirmed, choice.Id == _pending);
+            if (_fitToContent) continue;
             Grid.SetRow(card.Host, i / _columns);
             Grid.SetColumn(card.Host, i % _columns);
             Grid.SetColumnSpan(card.Host, i == _choices.Length - 1 && _choices.Length % _columns == 1 ? _columns : 1);
         }
+        if (_fitToContent) RefreshMeasuredLayout();
+    }
+
+    private void RefreshMeasuredLayout()
+    {
+        double width = View.ActualWidth > 28 ? View.ActualWidth - 28 : 572;
+        var sizes = _choices.Select(choice =>
+        {
+            _measure.Text = choice.Label;
+            _measure.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+            return _measure.DesiredSize.Width + 16;
+        }).ToArray();
+        var rows = ChoiceLayout.Rows(width, sizes);
+        _needsNativeWrapping = sizes.Any(size => size > width);
+        while (_nativeRows.Count < rows.Length)
+        {
+            var row = new Grid();
+            _nativeRows.Add(row);
+            _native.RowDefinitions.Add(new() { Height = GridLength.Auto });
+            Grid.SetRow(row, _nativeRows.Count - 1);
+            _native.Children.Add(row);
+        }
+        for (int r = 0; r < rows.Length; r++)
+        {
+            var row = _nativeRows[r];
+            var (start, count) = rows[r];
+            var widths = ChoiceLayout.Fill(width, sizes, start, count);
+            while (row.ColumnDefinitions.Count > count) row.ColumnDefinitions.RemoveAt(row.ColumnDefinitions.Count - 1);
+            while (row.ColumnDefinitions.Count < count) row.ColumnDefinitions.Add(new());
+            for (int column = 0; column < count; column++)
+            {
+                var card = _cards[_choices[start + column].Id];
+                row.ColumnDefinitions[column].Width = new(widths[column] + 6, GridUnitType.Star);
+                if (!row.Children.Contains(card.Host))
+                {
+                    FocusState focus = card.Button.FocusState;
+                    foreach (var previous in _nativeRows) previous.Children.Remove(card.Host);
+                    row.Children.Add(card.Host);
+                    if (focus != FocusState.Unfocused) card.Button.Focus(focus);
+                }
+                Grid.SetRow(card.Host, 0);
+                Grid.SetColumn(card.Host, column);
+                Grid.SetColumnSpan(card.Host, 1);
+            }
+        }
+        while (_nativeRows.Count > rows.Length)
+        {
+            _native.Children.Remove(_nativeRows[^1]);
+            _nativeRows.RemoveAt(_nativeRows.Count - 1);
+            _native.RowDefinitions.RemoveAt(_native.RowDefinitions.Count - 1);
+        }
+        _bar?.SetNaturalWidths(sizes);
+        _presentation?.Refresh();
     }
 
     internal async Task RequestAsync(string id)

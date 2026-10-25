@@ -40,7 +40,7 @@ Windows x64、PowerShell 7 与 .NET 10 SDK。普通版使用系统 Windows App R
 
 完整构建发布主程序及更新、独显保活、独显重启三个助手，统一内嵌版本/完整 SHA，验证 PRI、依赖隔离和 .NET 运行模式。玻璃版先构建捕获桥接、HDR shader 与原生 DWM shader 检查，再生成全部 DLL 的 `runtime.lock.json`，准备 `CaptureIdentity` 清单/徽标和第三方许可。构建不注册身份、不启动硬件控制器、不捕获桌面；`-BuildOnly` 保留参考项目的命令形式。图标继续使用 YogaITS 原图并内置于 EXE；身份所需的 PNG 是系统包徽标。
 
-`-Checks` 执行版本命名检查、400713 项 UI/捕获/HDR/物理策略检查及应用策略检查；玻璃版还执行 WARP 合成像素检查和真实 WinUI dispatcher 下的无可见窗口控件契约检查。后者仅在临时副本改为 asInvoker，执行 `--check-ui-contract` 后退出，不实例化 `MainWindow` 或真实服务，不影响交付文件的管理员清单。普通版可在装有兼容系统运行时的本机手工运行 `./Tests/UiContractChecks.ps1 -PublishedDirectory ./dist/native`。
+`-Checks` 执行版本命名检查、UI/捕获/HDR/物理与自适应布局策略检查及应用策略检查；玻璃版还执行 WARP 合成像素检查和真实 WinUI dispatcher 下的无可见窗口控件契约检查。后者仅在临时副本改为 asInvoker，执行 `--check-ui-contract` 后退出，不实例化 `MainWindow` 或真实服务，不影响交付文件的管理员清单。普通版可在装有兼容系统运行时的本机手工运行 `./Tests/UiContractChecks.ps1 -PublishedDirectory ./dist/native`。
 
 非打包 WinUI 必须保留 PRI，`AddProjectPriToResolvedFileToPublish` 补充 SDK 的发布遗漏。交付需完整解压选中 ZIP，禁止混合两个构建的运行文件。
 
@@ -132,7 +132,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 | 极客/创作模式 | 查询 10 满足 `0x00020001`，且 `ITS_CurrentSettingV` 是可读 DWORD/int；不回退旧字段，不要求当前值为 4。电池/未知供电时保持可见但禁用，写入前再次检查 AC。 |
 | 显卡工作模式 | `IsSupportIGPUMode.Data > 0` 且类型正常才显示；能力探测失败也隐藏整卡。偏好独立保存，实际状态另行显示。NVAPI `Disconnected` 才允许执行集显 SET；`Connected` 禁用集显偏好并将已有集显改为智能，`Unknown` 保留偏好但不执行关闭，不再读取 HDMI WMI guard。 |
 | 显卡偏好协调 | 手动集显/双显目标不随供电改变；Auto 要求电源通知可用，AC 目标双显、DC 目标集显、供电未知不切换。启动和电源/显示事件协调全部偏好；明确的集显切换失败最多追加 5 次重试、间隔 5 秒。手动点击立即 SET 最多一次，新事件或选择取消旧调度。 |
-| 色域 | 内屏、HWID、动态 WCS DeviceID、机器身份和亮度通道可读取。Factory 缺失是可恢复状态；ICC CxF 必须匹配面板及有效的序列号、Machine Type。仅当后两者同时为 `INVALID` 时接受 Lenovo 的面板级配置，不放宽真实身份不匹配或空字段校验；恢复与实际切换共用校验逻辑。 |
+| 色域 | 内屏、动态 WCS DeviceID 及原有 ICC 控制通道可读取。Factory 缺失可在线恢复；按所有实际 ICC/ICM 的结构完整性生成模式，不要求数量、Native 或固定组合。序列号、机型及面板 HWID 等描述性元数据不作为筛选条件；恢复和切换都检查校色数据完整性。 |
 | HDR/ACM | HDR 卡片及色域保护使用实际 `activeColorMode`，ACM 卡片使用独立 `wideColorUserEnabled` 设置。HDR 仅在 `HighDynamicRangeSupported` 为真时显示；ACM 按自身能力/启用偏好显示。未知颜色状态保守阻止色域写入。 |
 | 唤醒/睡眠 | `GetAll rc=0` 且 `unAwareAbility` 非零。人员辅助判定还要求 `sensor_type != 4` 和 `capability & 0x40`。 |
 | 播放/暂停 | `GetAll rc=0`，且 `sensor_type` 为 3/4 或 `unAwareAbility` 非零。 |
@@ -168,21 +168,34 @@ ACM 卡片选中状态读取 `wideColorUserEnabled`，不能用 `activeColorMode
 
 | 配置标识 | 用户名称（颜色配置） |
 | --- | --- |
-| Default | 出厂默认（D65） |
-| Native | 鲜艳（Native） |
-| sRGB | 网页办公（sRGB-D65） |
-| DisplayP3 | 摄影/数码影院（P3-D65） |
-| DCIP3 | 原生数码影院（DCI-P3） |
-| AdobeRGB | 摄影印刷（Adobe-RGB-D65） |
-| REC709 | SDTV视频（REC709） |
+| Default | 默认 (D65) |
+| Native | 鲜艳 (Native) |
+| sRGB | 网页办公 (sRGB-D65) |
+| DisplayP3 | 摄影/数码影院 (P3-D65) |
+| DCIP3 | 原生数码影院 (P3-DCI) |
+| AdobeRGB | 摄影印刷 (Adobe RGB) |
+| REC709 | HDTV视频 (REC709) |
+| DICOM_Dim | 暗室医学影像模拟 (DICOM Dim SIM) |
+| DICOM_Office | 办公室医学影像模拟 (DICOM Office SIM) |
+| 其他后缀 | 原始后缀，保留大小写及下划线 |
 
-可附加 ICC 建议亮度。HDR/ACM 写入只反转启用偏好，随后刷新实际模式；HDR 不覆盖 Windows 的电池策略，也不要求实际模式立即等于偏好。实际 SDR 可切色域，即使电池导致 HDR 暂时关闭但偏好仍为真。实际 HDR/ACM 时隐藏色域、亮度联动和恢复操作，只显示不适用提示；恢复 SDR 后重新显示。
+可附加有效的 ICC 建议亮度；元数据缺失/无效时省略数值并保留当前亮度，不阻止 ICC 激活。HDR/ACM 写入只反转启用偏好，随后刷新实际模式；HDR 不覆盖 Windows 的电池策略，也不要求实际模式立即等于偏好。实际 SDR 可切色域，即使电池导致 HDR 暂时关闭但偏好仍为真。实际 HDR/ACM 时隐藏色域、亮度联动和恢复操作，只显示不适用提示；恢复 SDR 后重新显示。
 
 HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回读；不暴露距离或 YogaMode。自动睡眠关闭时隐藏速度与人员辅助判定。自动唤醒/睡眠、播放/暂停仅开启时显示对应说明。
 
+## Factory Calibration 动态发现（6.0）
+
+`ProfileService.EnumerateProfiles` 同时扫描 `.icc`/`.icm`，文件扩展名及已知名称映射不区分大小写，保留模式原始拼写。解析 `TPLCD_<面板>_<完整后缀>`、`<面板>_<完整后缀>`；自己的安装副本为 `YogaITS_<完整后缀>.icm`。下划线不再删除，DICOM_Dim 与其他未知复合名称可完整回读；既有七种模式的安装名不变。已有七种模式相对顺序不变，随后是 DICOM Dim/Office，再是其他模式。未知名称不作为错误或 Default/Native 的别名。同模式大小写重复项稳定去重；文件内容不修改。
+
+`IccCalibrationData` 检查 ICC 头、大小、tag table、校色标签范围和已知矩阵/TRC/LUT/MHC2 数据边界；无全包 Native、数量或 MHC2 要求。参照 [ICC 官方格式说明](https://github.com/InternationalColorConsortium/iccDEV/blob/master/iccdev-mcp/docs/icc-format-guide.md) 和 [微软 MHC2 结构](https://learn.microsoft.com/windows/win32/wcs/display-calibration-mhc)，MHC2 的零矩阵/零 LUT 偏移按规范允许 identity transform，不要求所有模式都有 MHC2。CxF、meta 等描述性信息缺失、损坏或身份不匹配不剔除完整的校色数据。本地发现与应用不依赖 SMBIOS 身份可读；只有在线下载才读取请求所需的机型/序列号。原有 `ValidateIdentity` 保留为诊断工具，已退出发现和应用的资格判定。Windows 安装/关联/STANDARD/WCS/字节比对/DWM 刷新链路保留，最终可用性仍由系统调用及回读确认；不修补或重写 ICC 内容。
+
+在线恢复取得用户确认后，在同一个三分钟总等待边界内执行初次下载及最多三次重新下载。只有四次候选文件指纹一致且仍含坏文件、同时至少有一个好模式时，才跳过坏文件；指纹变化、取消、超时或全部损坏都不接受部分包。下载和每次解压相互隔离，缓存复制时排除坏文件，再完整验证新副本后替换 Factory；最后 ZIP 保留下载原件。普通刷新不自行上传序列号或发起恢复。`CalibrationDownloadPolicy` 通过模拟下载验证次数、修复后提前结束、稳定部分包、变化结果和取消。
+
+色域专用的 `HardwareChoiceGroup` 测量当前字体下的完整标签，`ChoiceLayout` 贪心分行后分配剩余宽度；普通卡片与玻璃选择条共用行计划，最终行也铺满。`SwiftTabLayout` 支持可变行长，命中、上下键和胶囊目标均跟随实际行；不设置 16 项模式上限。单个名称长到必须多行，或不同原始模式具有相同显示名时，保留原生卡片呈现及完整文字，不通过省略或隐藏模式处理。玻璃材质和物理积分算法不变。
+
 ## TCON 与 ICC 自动选择
 
-2026-10-18：用户确认小新 Pro 16 IAH10 的在线恢复校色文件及 ICC 色域切换实机通过。联想服务器的 LEN8BAD 七档包使用成对 `INVALID` 机型/序列号占位；仅对这一明确组合按屏幕 HWID 验证，正常逐机文件仍严格匹配身份，恢复与切换共用校验。
+2026-10-18：用户确认小新 Pro 16 IAH10 的在线恢复校色文件及 ICC 色域切换实机通过。当时 LEN8BAD 包的成对 `INVALID` 身份占位按面板匹配兼容。此为历史版本记录；6.0 已按用户明确要求改为校色数据完整即可，机型、序列号及面板 HWID 不匹配也不剔除。
 
 `ColorGamutService` 统一选择 backend；不按 ThinkBook/Yoga 名称或代际硬编码。内屏存在后先执行 TCON native WMI preflight，只有 `LENOVO_TCON_DATA`、`SetTconSwitch`、实例、live `F3 00` 总能力/模式位和 `F0 1D` GET 均通过才选择 TCON。类不存在立即返回，不打开 SPB。已验证的 ICC 文件仍可作为非 TCON 路径；TCON 检测不确定且没有有效 ICC 时，不提供盲目的 ICC 在线恢复。
 

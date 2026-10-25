@@ -13,7 +13,9 @@ internal sealed record FactoryValidationResult(
     IReadOnlyList<GamutProfile> Profiles,
     int ProfileCount,
     bool NativePresent,
-    bool Mhc2Present);
+    bool Mhc2Present,
+    IReadOnlyList<string>? CorruptProfiles = null,
+    string Fingerprint = "");
 
 internal static class IccInspector
 {
@@ -56,39 +58,34 @@ internal static class IccInspector
         }
     }
 
-    public static FactoryValidationResult ValidateFactoryDirectory(string root, MachineIdentity machine, string? panelHardwareId)
+    public static FactoryValidationResult ValidateFactoryDirectory(string root, MachineIdentity? machine, string? panelHardwareId)
     {
-        if (string.IsNullOrWhiteSpace(panelHardwareId))
-            return new(false, "Panel Hardware ID is unavailable.", Array.Empty<GamutProfile>(), 0, false, false);
         if (!Directory.Exists(root))
-            return new(false, "Factory cache directory does not exist.", Array.Empty<GamutProfile>(), 0, false, false);
-
-        var profiles = Directory.EnumerateFiles(root, "*.icm", SearchOption.AllDirectories)
-            .Select(p => new GamutProfile(ProfileService.ModeFromFileName(p), p))
-            .Where(p => p.Mode != "Unknown")
-            .GroupBy(p => p.Mode, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .OrderBy(p => ProfileService.ModeOrder(p.Mode))
-            .ToList();
-
-        if (profiles.Count < 2)
-            return new(false, $"Only {profiles.Count} recognized gamut ICC profile(s) found.", profiles, profiles.Count, false, false);
-
-        bool native = profiles.Any(p => p.Mode.Equals("Native", StringComparison.OrdinalIgnoreCase));
-        bool mhc2 = profiles.Any(p => HasTag(p.Path, "MHC2"));
-        if (!native) return new(false, "Native profile is missing.", profiles, profiles.Count, false, mhc2);
-        if (!mhc2) return new(false, "No profile contains an MHC2 tag.", profiles, profiles.Count, true, false);
-
-        foreach (var p in profiles)
+            return new(false, "Factory cache directory does not exist.", [], 0, false, false);
+        var valid = new List<GamutProfile>();
+        var corrupt = new List<string>();
+        var fingerprints = new List<string>();
+        bool readable = true;
+        foreach (string path in ProfileService.EnumerateProfiles(root))
         {
-            var id = ReadCxfIdentity(p.Path);
-            if (!ValidateIdentity(id, machine, panelHardwareId, out string detail))
-                return new(false, $"{p.FileName}: {detail}", profiles, profiles.Count, native, mhc2);
+            if (IccCalibrationData.Validate(path, out _))
+                valid.Add(new(ProfileService.ModeFromFileName(path), path));
+            else corrupt.Add(path);
+            try { fingerprints.Add(Path.GetRelativePath(root, path) + ":" + Sha256(path)); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { readable = false; }
         }
-
-        return new(true,
-            $"VALID: {profiles.Count} Factory ICC profiles; Native present; MHC2 present; CxF identity validated.",
-            profiles, profiles.Count, native, mhc2);
+        var profiles = valid.GroupBy(profile => profile.Mode, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .OrderBy(profile => ProfileService.ModeOrder(profile.Mode))
+            .ThenBy(profile => profile.Mode, StringComparer.OrdinalIgnoreCase).ToArray();
+        bool native = profiles.Any(profile => profile.Mode.Equals("Native", StringComparison.OrdinalIgnoreCase));
+        bool mhc2 = profiles.Any(profile => HasTag(profile.Path, "MHC2"));
+        bool ok = profiles.Length > 0 && corrupt.Count == 0;
+        string message = corrupt.Count > 0 ? $"{corrupt.Count} calibration file(s) are corrupt; redownload required."
+            : profiles.Length == 0 ? "No ICC/ICM calibration files found."
+            : $"VALID: {profiles.Length} Factory ICC/ICM profiles; calibration data validated.";
+        string fingerprint = readable ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", fingerprints)))) : "";
+        return new(ok, message, profiles, profiles.Length, native, mhc2, corrupt, fingerprint);
     }
 
     public static bool ValidateIdentity(CxfIdentity identity, MachineIdentity machine, string? panelHardwareId, out string detail)

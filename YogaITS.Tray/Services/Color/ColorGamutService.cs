@@ -56,10 +56,9 @@ internal sealed class ColorGamutService : SerializedFeatureService
                 throw new InvalidOperationException("ICC 控制通道暂不可读，保留能力但不允许写入。");
             if (iccEligible)
             {
-                _machine ??= MachineIdentityService.Read();
                 string fingerprint = _display.HardwareId + "|" + string.Join("|",
                     Directory.Exists(FactoryRecoveryService.FactoryRoot)
-                        ? Directory.EnumerateFiles(FactoryRecoveryService.FactoryRoot, "*.icm", SearchOption.AllDirectories)
+                        ? ProfileService.EnumerateProfiles(FactoryRecoveryService.FactoryRoot)
                             .Order(StringComparer.OrdinalIgnoreCase).Select(path =>
                             {
                                 var file = new FileInfo(path);
@@ -92,7 +91,7 @@ internal sealed class ColorGamutService : SerializedFeatureService
                 ? _display.ColorBlockReason
                 : !_factory.Ok ? "本机校色文件缺失或未通过验证，请在线恢复校色文件。" : "";
             Snapshot = new(true, _display.IsBlocked, _factory.Ok, _applyBrightness,
-                ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display)), modes, message, _display.AdvancedColor,
+                ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display), _factory.Profiles), modes, message, _display.AdvancedColor,
                 DisplayIdentity: _display.DevicePath);
             _lastPanel = _display.HardwareId;
         }
@@ -151,9 +150,9 @@ internal sealed class ColorGamutService : SerializedFeatureService
     public Task RecoverAsync() => RunAsync(async () =>
     {
         Read();
-        if (!Snapshot.Available || !Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || _machine is null || _display is null)
+        if (!Snapshot.Available || !Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || _display is null)
             throw new InvalidOperationException("无法确定本机和内屏身份，不能恢复校色文件。");
-        var machine = _machine;
+        var machine = _machine ??= MachineIdentityService.Read();
         var result = await FactoryRecoveryService.RecoverAsync(machine, _display, cancellationToken: _shutdown.Token).ConfigureAwait(false);
         Read(fullValidation: true);
         if (!result.Ok)
@@ -173,7 +172,7 @@ internal sealed class ColorGamutService : SerializedFeatureService
             return Task.CompletedTask;
         }
         if (!Snapshot.Supported || Snapshot.Backend != ColorGamutBackend.Icc || Snapshot.Blocked ||
-            _machine is null || _display is null || _factory?.Ok != true)
+            _display is null || _factory?.Ok != true)
             throw new InvalidOperationException("色域切换不可用。请检查 HDR / ACM 和本机校色文件。");
         var profile = _factory.Profiles.SingleOrDefault(p => p.Mode == mode)
             ?? throw new InvalidOperationException("该色域没有经过本机校色文件验证。");
