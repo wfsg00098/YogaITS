@@ -497,8 +497,8 @@ public sealed class TrayMenuWindow : Window
                 _keepAwakeButton.Click += async (_, _) => await SetKeepAwakeAsync();
                 gpuItems.Add(_keepAwakeButton);
             }
-            _gpuDescription = Section("独显控制", gpuItems, 2, 62,
-                GpuDescription(), stretchLastRow: true);
+            _gpuDescription = Section("独显控制", gpuItems, gpuItems.Count, 62,
+                GpuDescription());
             ApplyKeepAwakeState(_keepAwake);
         }
 
