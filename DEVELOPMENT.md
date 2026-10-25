@@ -96,7 +96,9 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 `HardwareChoiceGroup` 将性能、充电、显卡偏好、色域、麦克风、睡眠速度和背光的实际选项 ID 绑定到 ChoiceBar/native cards。未知状态不伪选第一项，也不发送补偿 SET；pending 与 confirmed 分离，完成后只读服务 snapshot。选项改名/重排保留语义 ID；音频 endpoint、显示设备/backend 形成请求域，能力变化/关闭/过期异步完成不覆盖新 UI。复用未变化的控件以保留焦点。HDR/ACM、录音期间禁用和其他能力条件继续由真实 snapshot 决定。
 
-玻璃 UI 选项保存到现有配置的 `GlassNativeUI`、`GlassBackgroundSource`、`GlassImagePath`，不保存硬件逻辑状态。首次窗口 Loaded 后应用偏好；未就绪时保留原生表现。静态图像/壁纸不请求桌面捕获；透明桌面沿用参考实现的系统授权和边框规则。普通版完全不读取这些材质选项。
+玻璃 UI 选项保存到现有配置的 `GlassNativeUI`、`GlassBackgroundSource`、`GlassImagePath`，不保存硬件逻辑状态。无配置时默认 WinUI3；首次窗口 Loaded 后恢复保存的偏好，启动默认值和临时能力降级不覆盖用户配置。用户切换时先保存再发布状态，写入失败保留原选项。
+
+`BackgroundImageStore` 异步将静态图像完整复制到 `%LOCALAPPDATA%\YogaITS\Backgrounds\<GUID>\<原文件名>`，临时文件完成后才公布路径，不修改原图或覆盖正在读取的旧图。重启复用已托管文件，旧配置的外部图片路径在首次开窗时迁移；失败保留配置供重试。图片选择的版本号与材质/来源切换分开，较早的导入完成不能覆盖新图片，也不会撤销之后的样式选择。静态图像/壁纸不请求桌面捕获；透明桌面沿用参考实现的系统授权和边框规则。普通版完全不读取这些材质选项。无硬件检查覆盖复制后删除原图、同名图片、重复恢复、取消和失败清理，均使用独立临时目录。
 
 玻璃版 sparse identity 使用 `YogaITS` / `CN=YogaITS`，不复用 Probe 身份。启动前检查捕获身份与当前路径；需要修复时由独立 PowerShell 等当前进程退出后注册并重新打开，失败也会恢复启动且不循环重试。`Start-YogaITS.ps1 -RegisterOnly` 仅操作自身身份，不改变开发者模式；未启用 Windows Developer Mode 时注册可能失败，保留系统捕获提示或可用背景。不得通过注册表伪造授权，不生成 Logs，不覆盖系统 WinUI DLL。
 

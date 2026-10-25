@@ -5,8 +5,9 @@ namespace YogaITS.Tray.Services;
 internal static class UserSettingsStore
 {
     private static readonly object Gate = new();
-    private static readonly string FilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YogaITS", "settings.json");
+    internal static string DataDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YogaITS");
+    private static readonly string FilePath = Path.Combine(DataDirectory, "settings.json");
 
     private static Dictionary<string, JsonElement> Load()
     {

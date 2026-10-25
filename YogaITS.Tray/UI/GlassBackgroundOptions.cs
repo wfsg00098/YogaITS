@@ -4,7 +4,7 @@ internal enum GlassBackgroundSource { StaticImage, DesktopWallpaper, Transparent
 internal readonly record struct GlassBackgroundChoice(GlassBackgroundSource Source,string Label);
 internal readonly record struct GlassBackgroundRequest(GlassBackgroundSource Source,string? ImagePath,int Revision);
 
-// Shared by preview windows, without changing the user's desktop or saving files.
+// Shared window state; settings and image imports belong to the controller.
 internal static class GlassBackgroundOptions
 {
     public static GlassBackgroundSource Source { get; private set; } = GlassBackgroundSource.DesktopWallpaper;

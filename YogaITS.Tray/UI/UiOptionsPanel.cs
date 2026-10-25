@@ -114,7 +114,7 @@ internal sealed class UiOptionsPanel : IDisposable
             foreach(string extension in new[]{".jpg",".jpeg",".png",".bmp",".tif",".tiff",".webp"}) picker.FileTypeFilter.Add(extension);
             var file=await picker.PickSingleFileAsync();
             if(file is not null && !_disposed && GlassBackgroundOptions.Source==GlassBackgroundSource.StaticImage)
-                GlassSettingsController.SelectImage(file.Path);
+                await GlassSettingsController.SelectImageAsync(file.Path);
         }
         catch(Exception ex) { if(!_disposed) _error="无法选择图像："+ex.Message; }
         finally { _picking=false; if(!_disposed) { _imageButton.IsEnabled=true; Refresh(); } }

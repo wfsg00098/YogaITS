@@ -631,6 +631,7 @@ if (args.Contains("--gpu-process-tree"))
 int updaterIndex = Array.IndexOf(args, "--updater-executable");
 checks += await UpdateChecks.RunAsync(updaterIndex >= 0 ? args[updaterIndex + 1] : null);
 checks += await BuildFlavorChecks.RunAsync();
+checks += await BackgroundImageChecks.RunAsync();
 checks += await OptimizationChecks.RunAsync();
 checks += await KeyboardBacklightChecks.RunAsync();
 checks += await GpuModeChecks.RunAsync();

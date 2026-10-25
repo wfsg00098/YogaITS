@@ -1,53 +1,85 @@
+using YogaITS.Tray.Services;
+
 namespace YogaITS.Tray.UI;
 
 // Latest user intent wins across the full and mini windows, including consent.
 internal static class GlassSettingsController
 {
     private static int _revision;
+    private static int _imageRevision;
     private static Task? _initialStyle;
-    private static bool _savedNative;
+    private static bool _savedNative = true;
+    private static string _savedImagePath = "";
+    private static readonly BackgroundImageStore Images = new(Path.Combine(UserSettingsStore.DataDirectory, "Backgrounds"));
+
     public static void LoadSavedOptions()
     {
-        _savedNative = Services.UserSettingsStore.Get("GlassNativeUI", false);
-        var source = Services.UserSettingsStore.Get("GlassBackgroundSource", GlassBackgroundSource.DesktopWallpaper);
+        _savedNative = UserSettingsStore.Get("GlassNativeUI", true);
+        var source = UserSettingsStore.Get("GlassBackgroundSource", GlassBackgroundSource.DesktopWallpaper);
         if (Enum.IsDefined(source)) GlassBackgroundOptions.SetSource(source);
-        string image = Services.UserSettingsStore.Get("GlassImagePath", "");
-        if (!string.IsNullOrWhiteSpace(image))
+        _savedImagePath = UserSettingsStore.Get("GlassImagePath", "");
+    }
+
+    public static Task EnsureInitialStyleAsync() => _initialStyle ??= RestoreInitialOptionsAsync();
+
+    private static async Task RestoreInitialOptionsAsync()
+    {
+        int revision = ++_revision;
+        int imageRevision = _imageRevision;
+        if (!string.IsNullOrWhiteSpace(_savedImagePath))
         {
-            try { GlassBackgroundOptions.SetImage(image); }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            try
+            {
+                // Migrate older settings that still point outside our data folder.
+                string image = await Images.ImportAsync(_savedImagePath);
+                if (imageRevision == _imageRevision)
+                {
+                    if (!image.Equals(_savedImagePath, StringComparison.OrdinalIgnoreCase))
+                        UserSettingsStore.Set("GlassImagePath", image);
+                    GlassBackgroundOptions.SetImage(image);
+                    LiquidGlassWindow.RefreshBackground();
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
             { CaptureDiagnostics.Write("Saved image path: " + ex.Message); }
         }
+        if (revision == _revision) await ApplyStyleAsync(_savedNative, revision, persist: false);
     }
-    public static Task EnsureInitialStyleAsync() => _initialStyle ??= SelectStyleAsync(_savedNative);
-    public static async Task SelectStyleAsync(bool native)
+
+    public static Task SelectStyleAsync(bool native) => ApplyStyleAsync(native, ++_revision, persist: true);
+
+    private static async Task ApplyStyleAsync(bool native, int revision, bool persist)
     {
-        int revision=++_revision;
-        if(!native && !GlassCapability.Supported) return;
-        if(GlassBackgroundOptions.NeedsCaptureConsent(native,GlassBackgroundOptions.Source))
+        if (!native && !GlassCapability.Supported) return;
+        if (GlassBackgroundOptions.NeedsCaptureConsent(native, GlassBackgroundOptions.Source))
             await CaptureBorderConsent.RequestOnceAsync();
-        if(revision==_revision)
-        {
-            LiquidGlassWindow.SetNativeRequested(native);
-            Services.UserSettingsStore.Set("GlassNativeUI", native);
-        }
+        if (revision != _revision) return;
+        // Initial defaults are not a user selection. Preserve saved choices if
+        // the renderer is temporarily unavailable, and do not rewrite on startup.
+        if (persist) UserSettingsStore.Set("GlassNativeUI", native);
+        LiquidGlassWindow.SetNativeRequested(native);
     }
+
     public static async Task SelectSourceAsync(GlassBackgroundSource source)
     {
-        if(source==GlassBackgroundSource.TransparentDesktop && !GlassCapability.CaptureSupported) return;
-        int revision=++_revision;
-        if(GlassBackgroundOptions.NeedsCaptureConsent(LiquidGlassWindow.NativeRequested,source))
+        if (!Enum.IsDefined(source)) throw new ArgumentOutOfRangeException(nameof(source));
+        if (source == GlassBackgroundSource.TransparentDesktop && !GlassCapability.CaptureSupported) return;
+        int revision = ++_revision;
+        if (GlassBackgroundOptions.NeedsCaptureConsent(LiquidGlassWindow.NativeRequested, source))
             await CaptureBorderConsent.RequestOnceAsync();
-        if(revision!=_revision) return;
+        if (revision != _revision) return;
+        UserSettingsStore.Set("GlassBackgroundSource", source);
         GlassBackgroundOptions.SetSource(source);
-        Services.UserSettingsStore.Set("GlassBackgroundSource", source);
         LiquidGlassWindow.RefreshBackground();
     }
-    public static void SelectImage(string path)
+
+    public static async Task SelectImageAsync(string path)
     {
-        ++_revision;
-        GlassBackgroundOptions.SetImage(path);
-        Services.UserSettingsStore.Set("GlassImagePath", GlassBackgroundOptions.ImagePath);
+        int revision = ++_imageRevision;
+        string image = await Images.ImportAsync(path);
+        if (revision != _imageRevision) return;
+        UserSettingsStore.Set("GlassImagePath", image);
+        GlassBackgroundOptions.SetImage(image);
         LiquidGlassWindow.RefreshBackground();
     }
 }

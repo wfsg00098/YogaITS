@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../YogaITS.Tray/Services/AppBuild.cs" Link="AppBuild.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/BackgroundImageStore.cs" Link="BackgroundImageStore.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SnapshotRevisions.cs" Link="SnapshotRevisions.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SerializedActionService.cs" Link="SerializedActionService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AsyncOperationQueue.cs" Link="AsyncOperationQueue.cs" />
