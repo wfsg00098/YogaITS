@@ -11,6 +11,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../YogaITS.Tray/Services/AppBuild.cs" Link="AppBuild.cs" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <Compile Include="../YogaITS.Tray/Services/AppLaunchPolicy.cs" Link="AppLaunchPolicy.cs" />
     <Compile Include="../YogaITS.Tray/Services/GpuActionResult.cs" Link="GpuActionResult.cs" />

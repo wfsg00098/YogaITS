@@ -11,7 +11,7 @@ internal static class Program
     {
         var request = GpuDeviceRestartProtocol.Parse(args);
         if (request is null) return 2;
-        string executable = Path.Combine(AppContext.BaseDirectory, "YogaITS.Tray.exe");
+        string executable = Path.Combine(AppContext.BaseDirectory, AppBuild.ExecutableName);
         using var parent = GpuDeviceRestartProtocol.OpenParent(request, executable);
         if (parent is null) return 2;
         using var identity = WindowsIdentity.GetCurrent();

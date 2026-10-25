@@ -5,7 +5,8 @@ using System.Text.RegularExpressions;
 
 namespace YogaITS.Tray.Services.Updates;
 
-internal sealed record UpdateRelease(string Version, string Commit, Uri DownloadUrl, long Size, string Sha256);
+internal sealed record UpdateRelease(string Version, string Commit, Uri DownloadUrl, long Size, string Sha256,
+    UiBuildFlavor Flavor = UiBuildFlavor.Native);
 
 internal static class UpdatePolicy
 {
@@ -18,7 +19,7 @@ internal static class UpdatePolicy
 
     public static Uri ViaProxy(Uri original) => new("https://gh-proxy.org/" + original.AbsoluteUri);
 
-    public static UpdateRelease ParseRelease(string json)
+    public static UpdateRelease ParseRelease(string json, UiBuildFlavor flavor = AppBuild.Flavor)
     {
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
@@ -30,7 +31,7 @@ internal static class UpdatePolicy
             !DateTime.TryParseExact(match.Groups["time"].Value, "yyyyMMddHHmmss", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out _)))
             throw new InvalidDataException("无法识别发布版本号。");
-        string name = $"YogaITS-{version}-win-x64.zip";
+        string name = AppBuild.ArchiveName(version, flavor);
         var assets = root.GetProperty("assets").EnumerateArray()
             .Where(asset => asset.GetProperty("name").GetString() == name).ToArray();
         if (assets.Length != 1) throw new InvalidDataException("发布中没有唯一的 Windows x64 更新包。");
@@ -46,7 +47,7 @@ internal static class UpdatePolicy
         string commit = Regex.IsMatch(target, @"^[0-9a-fA-F]{40}$") ? target : match.Groups["hash"].Value;
         if (!commit.StartsWith(match.Groups["hash"].Value, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("发布版本与提交标识不一致。");
-        return new(version, commit, new(expectedUrl), size, digest[7..]);
+        return new(version, commit, new(expectedUrl), size, digest[7..], flavor);
     }
 
     public static bool IsNewer(UpdateRelease release, string currentIdentity)

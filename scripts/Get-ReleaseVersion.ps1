@@ -2,7 +2,8 @@
 param(
     [string] $VersionFile = (Join-Path $PSScriptRoot '..\VERSION'),
     [string] $CommitSha = $env:GITHUB_SHA,
-    [Nullable[DateTimeOffset]] $CommitTime
+    [Nullable[DateTimeOffset]] $CommitTime,
+    [ValidateSet('native', 'liquid-glass')][string] $Flavor = 'native'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,9 +22,11 @@ if ($null -eq $CommitTime) {
 $time = $CommitTime.UtcDateTime.ToString('yyyyMMddHHmmss', [Globalization.CultureInfo]::InvariantCulture)
 $shortSha = $CommitSha.Substring(0, 8).ToLowerInvariant()
 $version = "$series-$time-$shortSha"
+$flavorSuffix = if ($Flavor -eq 'liquid-glass') { '-lg' } else { '' }
 [pscustomobject]@{
     Version = $version
     CommitSha = $CommitSha.ToLowerInvariant()
-    ArtifactName = "YogaITS-$version-win-x64"
-    ArchiveName = "YogaITS-$version-win-x64.zip"
+    Flavor = $Flavor
+    ArtifactName = "YogaITS-$version$flavorSuffix-win-x64"
+    ArchiveName = "YogaITS-$version$flavorSuffix-win-x64.zip"
 }

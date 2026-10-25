@@ -11,7 +11,6 @@ public sealed class InfoWindow : Window
     public InfoWindow(string title, string message)
     {
         Title = title;
-        SystemBackdrop = new MicaBackdrop();
 
         var root = new Grid { Padding = new Thickness(24) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -55,6 +54,7 @@ public sealed class InfoWindow : Window
         root.Children.Add(ok);
 
         Content = root;
+        WindowMaterial.Attach(this, root);
         Activated += (_, _) => ConfigureOnce(500, 280);
         root.KeyDown += (_, args) =>
         {

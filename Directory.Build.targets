@@ -1,0 +1,17 @@
+<Project>
+  <!-- Exclude optional SDK workloads, rather than deleting random runtime DLLs. -->
+  <ItemGroup Condition="'$(UseWinUI)' == 'true' And '$(EnableLiquidGlass)' == 'true'">
+    <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="[2.2.3]" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.ML" Version="[2.1.70]" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Widgets" Version="[2.0.5]" ExcludeAssets="all" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Windows.AI.MachineLearning" Version="[2.1.70]" ExcludeAssets="all" PrivateAssets="all" />
+  </ItemGroup>
+  <Target Name="LimitPublishedLanguages" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="'$(MSBuildProjectName)' == 'YogaITS.Tray'">
+    <ItemGroup>
+      <!-- Keep Chinese plus the English fallback. No executable DLL is removed. -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+          Condition="'%(ResolvedFileToPublish.Extension)' == '.mui' And !$([System.Text.RegularExpressions.Regex]::IsMatch('%(ResolvedFileToPublish.Identity)', '(?i)[\\/](en-us|zh-cn)[\\/]'))" />
+    </ItemGroup>
+  </Target>
+</Project>

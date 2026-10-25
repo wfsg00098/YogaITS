@@ -29,7 +29,7 @@ internal static class GpuDeviceRestartProtocol
 
     public static bool ParentMatches(GpuDeviceRestartRequest request, int pid, long ticks, string name,
         string? executable, string expectedExecutable, bool exited) => !exited && pid == request.ParentId &&
-        ticks == request.ParentStartedUtcTicks && name.Equals("YogaITS.Tray", StringComparison.OrdinalIgnoreCase) &&
+        ticks == request.ParentStartedUtcTicks && name.Equals(AppBuild.ProcessName, StringComparison.OrdinalIgnoreCase) &&
         string.Equals(executable, expectedExecutable, StringComparison.OrdinalIgnoreCase);
 
     public static Process? OpenParent(GpuDeviceRestartRequest request, string executable)

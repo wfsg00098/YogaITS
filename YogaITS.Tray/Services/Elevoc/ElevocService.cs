@@ -53,7 +53,8 @@ internal sealed class ElevocService : SerializedFeatureService
                 Ok(voice) && ElevocJson.Bool(voice, "is_voiceid_setted") == true,
                 Ok(headset) ? ElevocJson.Bool(headset, "is_voiceid_enabled_in_headset") : null,
                 Ok(mic) ? ElevocJson.Mode(mic) : null, Ok(speaker) ? ElevocJson.Mode(speaker) : null,
-                _capture?.FriendlyName ?? "", render?.FriendlyName ?? "", _capture?.IsInternalMicrophone == true);
+                _capture?.FriendlyName ?? "", render?.FriendlyName ?? "", _capture?.IsInternalMicrophone == true,
+                CaptureIdentity: _capture?.Id ?? "");
         }
         catch (Exception ex)
         {

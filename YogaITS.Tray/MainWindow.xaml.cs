@@ -225,7 +225,7 @@ public sealed partial class MainWindow : Window
             {
                 _controlCenterWindow = menu;
                 RefreshUpdateCard();
-                _featurePanels = new FeaturePanels(menu.AdditionalSections, _gpu, _hpd, _color, _audio, _keyboardBacklight);
+                _featurePanels = new FeaturePanels(menu, _gpu, _hpd, _color, _audio, _keyboardBacklight);
                 bool active = false;
                 menu.Activated += (_, args) =>
                 {

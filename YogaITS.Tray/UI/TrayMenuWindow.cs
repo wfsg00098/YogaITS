@@ -1,4 +1,4 @@
-﻿using Microsoft.UI.Windowing;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -16,9 +16,16 @@ public sealed class TrayMenuWindow : Window
     private const int BaseWidthDip = 244;
     internal const double OptionTileHeightDip = 48;
     internal const double ControlCenterButtonFontSize = 12.5;
+    internal const double MiniButtonFontSize = 10.5;
+    internal const double OptionGridHorizontalMarginDip = 5;
+    internal const double OptionTileMarginDip = 3;
+    internal const double OptionTrackHorizontalMarginDip = OptionGridHorizontalMarginDip + OptionTileMarginDip;
     private readonly bool _fullWindow;
     private readonly Windows.UI.ViewManagement.UISettings _appearanceSettings = new();
     internal StackPanel AdditionalSections { get; } = new() { Spacing = 8 };
+#if LIQUID_GLASS
+    internal UiOptionsPanel? UiOptions { get; private set; }
+#endif
 
     private readonly nint _ownerHwnd;
     private readonly Func<ItsMode, Task<ItsSetResult>> _setMode;
@@ -39,12 +46,15 @@ public sealed class TrayMenuWindow : Window
     private bool _nightChargeSupported;
     private bool _flipToStartSupported;
 
-    private TileVisual? _nightChargeVisual;
     private TileVisual? _flipToStartVisual;
     private TileVisual? _startupVisual;
 
-    private readonly Dictionary<ItsMode, Button> _modeTiles = [];
-    private readonly Dictionary<BatteryChargeMode, Button> _chargeModeTiles = [];
+    private HardwareChoiceGroup? _performanceChoices, _chargeChoicesUi;
+    private bool _optionResizeQueued;
+    private ItsMode[] _performanceModes = [];
+    private string[] _performanceLabels = [];
+    private (BatteryChargeMode Mode, bool Night)[] _chargeChoices = [];
+    private bool _batteryAvailable = true, _nightAvailable = true;
 
     private FrameworkElement? _contentRoot;
     private Grid? _windowHeader;
@@ -77,6 +87,7 @@ public sealed class TrayMenuWindow : Window
     private Button? _updateButton;
     private Grid? _updateFollowingTiles;
     private Func<Task>? _installUpdate;
+
 
     private sealed class TileVisual
     {
@@ -134,7 +145,7 @@ public sealed class TrayMenuWindow : Window
         _flipToStartEnabled = flipToStartSnapshot.Enabled;
         _startupEnabled = startupEnabled;
 
-        Title = "Yoga控制中心";
+        Title = AppIdentity.DisplayName;
 
         ExtendsContentIntoTitleBar = true;
 
@@ -147,9 +158,18 @@ public sealed class TrayMenuWindow : Window
             flipToStartSnapshot,
             nvidiaGpuSupported);
         ConfigureWindow();
+#if LIQUID_GLASS
+        if (Content is FrameworkElement materialRoot)
+            materialRoot.Loaded += async (_, _) =>
+            {
+                if (_closed) return;
+                try { await GlassSettingsController.EnsureInitialStyleAsync(); }
+                catch (Exception ex) { CaptureDiagnostics.Write("Initial UI style: " + ex.Message); }
+            };
+#endif
         if (_fullWindow && _contentRoot is not null)
             _contentRoot.ActualThemeChanged += ContentRoot_ActualThemeChanged;
-        SystemBackdrop = new MicaBackdrop();
+        WindowMaterial.Attach(this, (Grid)_contentRoot!);
         Activated += TrayMenuWindow_Activated;
         _appearanceSettings.ColorValuesChanged += AppearanceSettings_ColorValuesChanged;
         Closed += TrayMenuWindow_Closed;
@@ -234,6 +254,8 @@ public sealed class TrayMenuWindow : Window
     {
         // Measure the complete visual tree at its natural height. There is no
         // scrolling container: the AppWindow is resized to the content itself.
+        _performanceChoices?.RefreshPresentation();
+        _chargeChoicesUi?.RefreshPresentation();
         _contentRoot?.Measure(new Windows.Foundation.Size(BaseWidthDip, 4096));
 
         double desired = (_contentRoot?.DesiredSize.Height ?? 548) + 12;
@@ -261,7 +283,7 @@ public sealed class TrayMenuWindow : Window
         _isActive = args.WindowActivationState != WindowActivationState.Deactivated;
         if (_fullWindow)
             ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
-        // MicaBackdrop owns the native active/fallback crossfade. An opaque
+        // WindowMaterial owns the active/fallback transition. An opaque
         // root on deactivation would cover that transition with an instant fill.
     }
 
@@ -283,7 +305,13 @@ public sealed class TrayMenuWindow : Window
             Style = GetSettingsStyle("SettingsWindowRootStyle"),
             Padding = _fullWindow ? new Thickness(8) : new Thickness(9, 8, 9, 8)
         };
-        _coreStack = new StackPanel { Spacing = 8 };
+        _coreStack = new StackPanel
+        {
+            Spacing = 8,
+            // Keep the bottom layout inset inside the scrollable content, so
+            // shadows may paint through it without hitting the viewport edge.
+            Margin = new Thickness(0, 0, 0, _fullWindow ? 8 : 0)
+        };
         SettingsMotion.Reposition(_coreStack);
         SettingsMotion.Reposition(AdditionalSections);
         PopulateCoreSections(_coreStack, modelName, itsCapabilities, snapshot,
@@ -303,9 +331,10 @@ public sealed class TrayMenuWindow : Window
             var scroll = new ScrollViewer
             {
                 Content = _coreStack,
-                // Extend only the viewport into the existing right page padding.
-                // Content still ends 8 DIP from the window edge.
-                Margin = new Thickness(0, 0, -8, 0),
+                // Extend the viewport into the right and bottom page padding.
+                // The stack's bottom margin preserves the original 8-DIP inset;
+                // only the clipping boundary moves to the window bottom.
+                Margin = new Thickness(0, 0, -8, -8),
                 Padding = new Thickness(0, 0, 8, 0),
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -375,11 +404,16 @@ public sealed class TrayMenuWindow : Window
         ItsModeSnapshot mode, BatteryChargeSnapshot battery,
         BatteryToggleSnapshot night, FlipToStartSnapshot flip, bool nvidia)
     {
+#if LIQUID_GLASS
+        UiOptions?.Dispose();
+        UiOptions=null;
+#endif
         stack.Children.Clear();
-        _modeTiles.Clear();
-        _chargeModeTiles.Clear();
+        _performanceChoices?.Dispose();
+        _chargeChoicesUi?.Dispose();
+        _performanceChoices = _chargeChoicesUi = null;
         _performanceDescription = _chargeDescription = null;
-        _nightChargeVisual = _flipToStartVisual = _startupVisual = null;
+        _flipToStartVisual = _startupVisual = null;
         _nightChargeSupported = night.Supported;
         _flipToStartSupported = flip.Supported;
         _capabilities = (its.Supported, its.GeekModeSupported, battery.Supported, night.Supported, flip.Supported, nvidia);
@@ -391,8 +425,8 @@ public sealed class TrayMenuWindow : Window
         else stack.Children.Add(CreateWindowHeader(modelName));
 
         TextBlock? Section(string title, IReadOnlyList<UIElement> items, int columns, double height,
-            string? description = null, bool divider = true, StackPanel? host = null, UIElement? leadingContent = null,
-            bool stretchLastRow = false)
+            string? description = null, bool divider = true, StackPanel? host = null,
+            bool stretchLastRow = false, UIElement? leadingContent = null)
         {
             foreach (var button in items.OfType<Button>())
                 if (button.Tag is OptionTileState option)
@@ -410,19 +444,18 @@ public sealed class TrayMenuWindow : Window
             var section = new StackPanel { Spacing = _fullWindow ? 8 : 2 };
             SettingsMotion.Reposition(section);
             section.Children.Add(_fullWindow ? CreateGroupTitle(title) : CreateSectionHeader(title));
-            var tiles = CreateTileGrid(items, columns, height);
-            if (stretchLastRow && items.Count % columns == 1 && tiles.Children.Count > 0)
-                Grid.SetColumnSpan((FrameworkElement)tiles.Children[tiles.Children.Count - 1], columns);
+            UIElement tiles = items.Count == 1 && items[0] is OptionGroupPresentation or AnimatedOptionHost
+                ? items[0] : CreateTileGrid(items, columns, height);
+            if (stretchLastRow && items.Count % columns == 1 && tiles is Grid grid && grid.Children.Count > 0)
+                Grid.SetColumnSpan((FrameworkElement)grid.Children[grid.Children.Count - 1], columns);
             if (leadingContent is null) section.Children.Add(tiles);
             else
             {
-                // Separate entrance from repositioning: only the existing tiles
-                // move, while the new card fades in at its arranged position.
                 var body = new StackPanel();
                 body.Children.Add(leadingContent);
                 body.Children.Add(tiles);
-                _updateFollowingTiles = tiles;
-                SettingsMotion.RevealBefore(leadingContent, tiles);
+                _updateFollowingTiles = (Grid)tiles;
+                SettingsMotion.RevealBefore(leadingContent, (FrameworkElement)tiles);
                 section.Children.Add(body);
             }
             TextBlock? note = null;
@@ -450,33 +483,33 @@ public sealed class TrayMenuWindow : Window
 
         if (its.Supported)
         {
-            var items = new List<UIElement>
-            {
-                CreateModeTile("智能模式", mode.Mode == ItsMode.Intelligent, ItsMode.Intelligent),
-                CreateModeTile("安静模式", mode.Mode == ItsMode.Cool, ItsMode.Cool),
-                CreateModeTile("性能模式", mode.Mode == ItsMode.Performance, ItsMode.Performance)
-            };
-            if (its.GeekModeSupported)
-                items.Add(CreateModeTile(its.FourthModeDisplayName, mode.Mode == ItsMode.Creator, ItsMode.Creator));
-            _performanceDescription = Section("性能选项", items, items.Count, 54, "");
-            RefreshPerformanceDescription(mode.Mode);
+            _performanceModes = its.GeekModeSupported
+                ? [ItsMode.Intelligent, ItsMode.Cool, ItsMode.Performance, ItsMode.Creator]
+                : [ItsMode.Intelligent, ItsMode.Cool, ItsMode.Performance];
+            string[] names = its.GeekModeSupported
+                ? ["智能模式", "安静模式", "性能模式", its.FourthModeDisplayName]
+                : ["智能模式", "安静模式", "性能模式"];
+            _performanceLabels = names;
+            _performanceChoices = CreateHardwareChoices("性能选项", 54);
+            _performanceDescription = Section("性能选项", [_performanceChoices.View], 1, 80, "");
+            RefreshPerformanceTabs();
         }
 
         if (battery.Supported)
         {
-            var items = new List<UIElement>
-            {
-                CreateBatteryModeTile("养护模式", !night.Enabled && battery.Mode == BatteryChargeMode.Conservation, BatteryChargeMode.Conservation),
-                CreateBatteryModeTile("常规模式", !night.Enabled && battery.Mode == BatteryChargeMode.Normal, BatteryChargeMode.Normal),
-                CreateBatteryModeTile("智能快充", !night.Enabled && battery.Mode == BatteryChargeMode.RapidCharge, BatteryChargeMode.RapidCharge)
-            };
-            if (night.Supported)
-            {
-                _nightChargeVisual = CreateToggleTile("夜间优化", night.Enabled, NightChargeButton_Click, "夜间充电优化");
-                items.Add(_nightChargeVisual.Button);
-            }
-            _chargeDescription = Section(_fullWindow ? "充电设置" : "充电选项", items, items.Count, 56,
+            _chargeChoices = night.Supported
+                ? [(BatteryChargeMode.Conservation,false), (BatteryChargeMode.Normal,false),
+                   (BatteryChargeMode.RapidCharge,false), (BatteryChargeMode.Normal,true)]
+                : [(BatteryChargeMode.Conservation,false), (BatteryChargeMode.Normal,false),
+                   (BatteryChargeMode.RapidCharge,false)];
+            string[] names = night.Supported
+                ? ["养护模式", "常规模式", "智能快充", "夜间优化"]
+                : ["养护模式", "常规模式", "智能快充"];
+            string title = _fullWindow ? "充电设置" : "充电选项";
+            _chargeChoicesUi = CreateHardwareChoices(title, 56);
+            _chargeDescription = Section(title, [_chargeChoicesUi.View], 1, 80,
                 SettingsOptionText.ChargeDescription(battery.Mode.ToString(), night.Supported && night.Enabled));
+            RefreshChargeTabs();
         }
 
         _keepAwakeButton = _restartGpuButton = null;
@@ -497,8 +530,8 @@ public sealed class TrayMenuWindow : Window
                 _keepAwakeButton.Click += async (_, _) => await SetKeepAwakeAsync();
                 gpuItems.Add(_keepAwakeButton);
             }
-            _gpuDescription = Section("独显控制", gpuItems, gpuItems.Count, 62,
-                GpuDescription());
+            _gpuDescription = Section("独显控制", gpuItems, _fullWindow ? 3 : 2, 62,
+                GpuDescription(), stretchLastRow: !_fullWindow);
             ApplyKeepAwakeState(_keepAwake);
         }
 
@@ -511,6 +544,10 @@ public sealed class TrayMenuWindow : Window
                 _flipToStartDescription = Section("开盖开机", new UIElement[] { _flipToStartVisual.Button }, 1, OptionTileHeightDip,
                     SettingsOptionText.FlipToStartDescription(_flipToStartOperated));
             }
+#if LIQUID_GLASS
+            UiOptions=new UiOptionsPanel(this);
+            stack.Children.Add(UiOptions.View);
+#endif
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
             _updateButton = CreateOptionTile("", false, true, OptionTileHeightDip, ControlCenterButtonFontSize);
             _updateButton.Click += async (_, _) =>
@@ -533,6 +570,10 @@ public sealed class TrayMenuWindow : Window
             Child = CreateTileGrid(new UIElement[] { CreateExitButton() }, 1, 28)
         });
     }
+
+#if LIQUID_GLASS
+    internal void RefreshUiOptions()=>UiOptions?.Refresh();
+#endif
 
     public void ApplyKeepAwakeState(GpuKeepAwakeSnapshot state)
     {
@@ -617,6 +658,8 @@ public sealed class TrayMenuWindow : Window
         if (_modelLabel is not null) _modelLabel.Text = state.MachineInfo.DisplayModel;
         _powerSource = SystemEventMonitor.ReadPowerSource();
         _itsAvailable = state.ItsAvailable;
+        _batteryAvailable = state.BatteryAvailable;
+        _nightAvailable = state.NightAvailable;
         if (_coreStack is not null) SettingsMotion.Reposition(_coreStack);
         if (_coreStack is not null)
             foreach (var group in _coreStack.Children.OfType<Border>())
@@ -636,7 +679,7 @@ public sealed class TrayMenuWindow : Window
         if (!_updatingItsMode && state.ItsMode.Mode is ItsMode currentMode)
         {
             _currentItsMode = currentMode;
-            RefreshModeTiles();
+            RefreshPerformanceTabs();
         }
 
         bool chargeChanged = false;
@@ -647,13 +690,12 @@ public sealed class TrayMenuWindow : Window
         }
 
         if (!_updatingNightCharge &&
-            _nightChargeVisual is not null &&
             state.NightCharge.Supported)
         {
             _nightChargeEnabled = state.NightCharge.Enabled;
             chargeChanged = true;
         }
-        if (chargeChanged) RefreshChargeModeTiles();
+        if (chargeChanged) RefreshChargeTabs();
 
         if (!_updatingFlipToStart &&
             _flipToStartVisual is not null &&
@@ -670,12 +712,8 @@ public sealed class TrayMenuWindow : Window
         }
         // Retain last confirmed selections on transient read failures, but never
         // let keyboard or pointer input operate using a stale hardware snapshot.
-        foreach (var (mode, button) in _modeTiles)
-            button.IsEnabled = state.ItsAvailable &&
-                (mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource));
-        foreach (var button in _chargeModeTiles.Values)
-            button.IsEnabled = state.BatteryAvailable && (!state.NightCharge.Supported || state.NightAvailable);
-        if (_nightChargeVisual is { } night) night.Button.IsEnabled = state.BatteryAvailable && state.NightAvailable;
+        if (!_updatingItsMode) RefreshPerformanceTabs();
+        if (!_updatingChargeMode && !_updatingNightCharge) RefreshChargeTabs();
         if (_flipToStartVisual is { } flip) flip.Button.IsEnabled = state.FlipAvailable;
         if (_startupVisual is { } startup) startup.Button.IsEnabled = state.StartupAvailable;
     }
@@ -692,7 +730,7 @@ public sealed class TrayMenuWindow : Window
         var text = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Left };
         text.Children.Add(new TextBlock
         {
-            Text = "Yoga控制中心", FontSize = _fullWindow ? 20 : 14,
+            Text = AppIdentity.DisplayName, FontSize = _fullWindow ? 20 : 14,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         });
         if (_fullWindow)
@@ -792,37 +830,34 @@ public sealed class TrayMenuWindow : Window
         Text = text, TextWrapping = TextWrapping.Wrap, Style = GetSettingsStyle("SettingsSecondaryTextStyle")
     };
 
-    private Button CreateModeTile(
-        string text,
-        bool selected,
-        ItsMode mode)
+    private HardwareChoiceGroup CreateHardwareChoices(string title, double miniHeight)
     {
-        Button button = CreateOptionTile(text, selected, isAction: false, minHeight: 54);
-        _modeTiles[mode] = button;
-        button.Click += async (_, _) => await SetItsModeFromTileAsync(mode);
-        button.IsEnabled = mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource);
-        if (!button.IsEnabled) RefreshOptionTile(button, false);
-        return button;
+        var choices = new HardwareChoiceGroup(this, title,
+            () => { RefreshPerformanceTabs(); RefreshChargeTabs(); },
+            error => _showInfo(title + "设置失败", error.Message),
+            _fullWindow ? OptionTileHeightDip : miniHeight,
+            _fullWindow ? ControlCenterButtonFontSize : MiniButtonFontSize, compact: !_fullWindow);
+        choices.PresentationChanged += () =>
+        {
+            if (_fullWindow || !_shown || _optionResizeQueued) return;
+            _optionResizeQueued = true;
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                _optionResizeQueued = false;
+                if (!_closed) ShowAtCursor();
+            });
+        };
+        return choices;
     }
 
-    private Button CreateBatteryModeTile(
-        string text,
-        bool selected,
-        BatteryChargeMode mode)
+    private async Task SetItsModeAsync(ItsMode requested)
     {
-        Button button = CreateOptionTile(text, selected, isAction: false, minHeight: 54);
-        _chargeModeTiles[mode] = button;
-        button.Click += async (_, _) => await SetChargeModeFromTileAsync(mode);
-        return button;
-    }
-
-    private async Task SetItsModeFromTileAsync(ItsMode requested)
-    {
+        if (!_itsAvailable || requested == ItsMode.Creator && !ItsCapabilityPolicy.CanSelectFourthMode(SystemEventMonitor.ReadPowerSource())) return;
         if (_updatingItsMode || _currentItsMode == requested)
             return;
 
         _updatingItsMode = true;
-        RefreshModeTiles(requested);
+        RefreshPerformanceTabs();
 
         try
         {
@@ -830,21 +865,22 @@ public sealed class TrayMenuWindow : Window
             if (result.Snapshot.Mode is ItsMode actual)
                 _currentItsMode = actual;
         }
+        catch (Exception ex) { if (!_closed) _showInfo("性能设置失败", ex.Message); }
         finally
         {
             _updatingItsMode = false;
             if (!_closed)
-                RefreshModeTiles();
+                RefreshPerformanceTabs();
         }
     }
 
-    private async Task SetChargeModeFromTileAsync(BatteryChargeMode requested, bool night = false)
+    private async Task SetChargeOptionAsync(BatteryChargeMode requested, bool night = false)
     {
         if (_updatingChargeMode || (_currentChargeMode == requested && _nightChargeEnabled == night))
             return;
 
         _updatingChargeMode = _updatingNightCharge = true;
-        RefreshChargeModeTiles(requested, night);
+        RefreshChargeTabs();
 
         try
         {
@@ -859,44 +895,38 @@ public sealed class TrayMenuWindow : Window
             _updatingChargeMode = _updatingNightCharge = false;
             if (!_closed)
             {
-                RefreshChargeModeTiles();
+                RefreshChargeTabs();
             }
         }
     }
 
-    private void RefreshModeTiles(ItsMode? pending = null)
+    private void RefreshPerformanceTabs()
     {
         RefreshPerformanceDescription(_currentItsMode);
-        foreach ((ItsMode mode, Button button) in _modeTiles)
-        {
-            bool available = _itsAvailable && (mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource));
-            button.IsEnabled = available;
-            RefreshOptionTile(
-                button,
-                selected: available && _currentItsMode == mode,
-                pending: available && pending == mode);
-        }
+        _performanceChoices?.Update(_performanceModes.Select((mode, index) => new HardwareChoice(
+            mode.ToString(), _performanceLabels[index], () => SetItsModeAsync(mode),
+            mode != ItsMode.Creator || ItsCapabilityPolicy.CanSelectFourthMode(_powerSource))),
+            _currentItsMode?.ToString(), _itsAvailable, _performanceModes.Length);
     }
 
     public void RefreshPowerSource()
     {
         if (_closed) return;
         _powerSource = SystemEventMonitor.ReadPowerSource();
-        if (!_updatingItsMode) RefreshModeTiles();
+        if (!_updatingItsMode) RefreshPerformanceTabs();
     }
 
-    private void RefreshChargeModeTiles(BatteryChargeMode? pending = null, bool pendingNight = false)
+    private void RefreshChargeTabs()
     {
         RefreshChargeDescription();
-        foreach ((BatteryChargeMode mode, Button button) in _chargeModeTiles)
-        {
-            RefreshOptionTile(
-                button,
-                selected: !_nightChargeEnabled && _currentChargeMode == mode,
-                pending: !pendingNight && pending == mode);
-        }
-        if (_nightChargeVisual is not null)
-            RefreshOptionTile(_nightChargeVisual.Button, _nightChargeEnabled, pending is not null && pendingNight);
+        string? confirmed = _currentChargeMode is { } mode
+            ? $"{(_nightChargeSupported && _nightChargeEnabled ? BatteryChargeMode.Normal : mode)}:{(_nightChargeSupported && _nightChargeEnabled)}" : null;
+        _chargeChoicesUi?.Update(_chargeChoices.Select(choice => new HardwareChoice(
+            $"{choice.Mode}:{choice.Night}", choice.Night ? "夜间优化" : choice.Mode switch
+            {
+                BatteryChargeMode.Conservation => "养护模式", BatteryChargeMode.Normal => "常规模式", _ => "智能快充"
+            }, () => SetChargeOptionAsync(choice.Mode, choice.Night))), confirmed,
+            _batteryAvailable && (!_nightChargeSupported || _nightAvailable), _chargeChoices.Length);
     }
 
     private void RefreshPerformanceDescription(ItsMode? mode)
@@ -978,10 +1008,8 @@ public sealed class TrayMenuWindow : Window
         var label = new TextBlock
         {
             Text = text,
-            FontSize = fontSize ?? (isAction ? 11 : 10.5),
-            FontWeight = selected
-                ? Microsoft.UI.Text.FontWeights.SemiBold
-                : Microsoft.UI.Text.FontWeights.Normal,
+            FontSize = fontSize ?? (isAction ? 11 : MiniButtonFontSize),
+            FontWeight = Microsoft.UI.Text.FontWeights.Normal,
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -1014,6 +1042,7 @@ public sealed class TrayMenuWindow : Window
 
         SetTileStateResources(button, outline);
         SettingsMotion.AttachHover(button);
+        WindowMaterial.AttachTile(button, content, selected);
         AutomationProperties.SetName(button, text.Replace("\n", ""));
         if (!isAction) UiAccessibility.SetState(button, selected ? "已选中" : "未选中");
         return button;
@@ -1029,7 +1058,7 @@ public sealed class TrayMenuWindow : Window
 
         var grid = new Grid
         {
-            Margin = new Thickness(5, 0, 5, 0)
+            Margin = new Thickness(OptionGridHorizontalMarginDip, 0, OptionGridHorizontalMarginDip, 0)
         };
 
         for (int c = 0; c < actualColumns; c++)
@@ -1056,7 +1085,7 @@ public sealed class TrayMenuWindow : Window
 
             var host = new Border
             {
-                Margin = new Thickness(3),
+                Margin = new Thickness(OptionTileMarginDip),
                 MinHeight = minHeight,
                 Child = item as FrameworkElement
             };
@@ -1065,7 +1094,7 @@ public sealed class TrayMenuWindow : Window
             Grid.SetColumn(host, col);
             grid.Children.Add(host);
         }
-
+        SettingsMotion.Reposition(grid);
         return grid;
     }
 
@@ -1084,12 +1113,6 @@ public sealed class TrayMenuWindow : Window
         };
 
         return button;
-    }
-
-    private async void NightChargeButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_nightChargeSupported)
-            await SetChargeModeFromTileAsync(BatteryChargeMode.Normal, night: true);
     }
 
     private async void FlipToStartButton_Click(object sender, RoutedEventArgs e)
@@ -1184,11 +1207,15 @@ public sealed class TrayMenuWindow : Window
         Color outlineColor = GetTileOutlineColor(selected || pending);
         state.Accent = selected || pending;
         if (state.Outline.Color != outlineColor) state.Outline.Color = outlineColor;
+        WindowMaterial.SetTileState(button, state.Accent);
         UiAccessibility.SetState(button, pending ? "正在设置" : state.IsAction ? "" : selected ? "已选中" : "未选中");
 
-        state.Label.FontWeight = selected
-            ? Microsoft.UI.Text.FontWeights.SemiBold
-            : Microsoft.UI.Text.FontWeights.Normal;
+        state.Label.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
+    }
+
+    internal static void SetOptionText(Button button, string text)
+    {
+        if (button.Tag is OptionTileState state) state.Label.Text = text;
     }
 
     internal static void UpdateOptionLabel(Button target, Button source)
@@ -1247,7 +1274,7 @@ public sealed class TrayMenuWindow : Window
         // Owned + TOOLWINDOW means:
         // - no taskbar button
         // - no Alt+Tab entry
-        // The menu now accepts focus so native Mica follows its real activation.
+        // The menu accepts focus so its material follows real activation.
         if (_ownerHwnd != 0)
             _ = SetWindowLongPtr(hwnd, GWLP_HWNDPARENT, _ownerHwnd);
 
@@ -1286,6 +1313,10 @@ public sealed class TrayMenuWindow : Window
             RefreshContrastOutlines(_contentRoot);
         });
     }
+
+#if LIQUID_GLASS
+    internal void RefreshMaterialAppearance() => ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
+#endif
 
     public void RefreshAppearance()
     {
@@ -1407,6 +1438,11 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+#if LIQUID_GLASS
+        UiOptions?.Dispose();
+#endif
+        _performanceChoices?.Dispose();
+        _chargeChoicesUi?.Dispose();
         _transientScrollBar?.Dispose();
         if (_fullWindow && _contentRoot is not null)
             _contentRoot.ActualThemeChanged -= ContentRoot_ActualThemeChanged;
@@ -1446,7 +1482,7 @@ public sealed class TrayMenuWindow : Window
 
     private void ApplyDwmAppearance(nint hwnd)
     {
-        // Mica is owned by Window.SystemBackdrop, not a competing DWM recipe.
+        // The material adapter owns the backdrop, not a competing DWM recipe.
         int preference = 2; // DWMWCP_ROUND
         _ = DwmSetWindowAttribute(
             hwnd,
@@ -1454,10 +1490,15 @@ public sealed class TrayMenuWindow : Window
             ref preference,
             sizeof(int));
 
+#if LIQUID_GLASS
+        uint borderColor = LiquidGlassWindow.EffectsEnabled(this) ? DWMWA_COLOR_NONE :
+            _fullWindow && !_isActive ? DWMWA_COLOR_DEFAULT : GetAccentColorRef();
+#else
         // Force accent on the full window only while active, independently of
         // global accent settings. On deactivation restore DWM's default border.
         // Keep the compact tool window's existing accent behavior unchanged.
         uint borderColor = _fullWindow && !_isActive ? DWMWA_COLOR_DEFAULT : GetAccentColorRef();
+#endif
 
         _ = DwmSetWindowAttributeUInt(
             hwnd,

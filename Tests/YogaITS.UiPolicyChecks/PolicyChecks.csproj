@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0-windows</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../YogaITS.Tray/Demos/Acceleration/FourEdgePhysics.cs" Link="FourEdgePhysics.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/SwiftTabs/SwiftTabLayout.cs" Link="SwiftTabLayout.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/SwiftTabs/FloatingTabGesture.cs" Link="FloatingTabGesture.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/SwiftTabs/FloatingTabSpring.cs" Link="FloatingTabSpring.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/SwiftTabs/FloatingTabPressure.cs" Link="FloatingTabPressure.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/SwiftTabs/FloatingTabKinetics.cs" Link="FloatingTabKinetics.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/FluidTabs/FluidTabGeometry.cs" Link="FluidTabGeometry.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/FluidTabs/FluidTabGesture.cs" Link="FluidTabGesture.cs" />
+    <Compile Include="../../YogaITS.Tray/Demos/FluidTabs/FluidTabMotionState.cs" Link="FluidTabMotionState.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/OptionSelectionState.cs" Link="OptionSelectionState.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/OptionSetPolicy.cs" Link="OptionSetPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/GlassPresentationPreference.cs" Link="GlassPresentationPreference.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/GlassScalePolicy.cs" Link="GlassScalePolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/GlassMaterialPolicy.cs" Link="GlassMaterialPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/GlassBackgroundOptions.cs" Link="GlassBackgroundOptions.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/ImageBackgroundLayout.cs" Link="ImageBackgroundLayout.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/BackgroundTuning.cs" Link="BackgroundTuning.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/GlassEdgePolicy.cs" Link="GlassEdgePolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/GlassWindowFrame.cs" Link="GlassWindowFrame.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/CaptureExclusionCache.cs" Link="CaptureExclusionCache.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/CaptureFrameRateMeter.cs" Link="CaptureFrameRateMeter.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/CaptureExclusionPolicy.cs" Link="CaptureExclusionPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/OwnerThreadRelease.cs" Link="OwnerThreadRelease.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/CaptureOperationState.cs" Link="CaptureOperationState.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/LatestWorkLoop.cs" Link="LatestWorkLoop.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/LatestFrameSlot.cs" Link="LatestFrameSlot.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/HdrToneMappingPolicy.cs" Link="HdrToneMappingPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/CaptureCopyRegion.cs" Link="CaptureCopyRegion.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/DesktopCaptureViewport.cs" Link="DesktopCaptureViewport.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/CaptureIdentityFlow.cs" Link="CaptureIdentityFlow.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/AppBuild.cs" Link="AppIdentity.cs" />
+  </ItemGroup>
+</Project>

@@ -2,13 +2,14 @@ namespace YogaITS.Tray.Services.Updates;
 
 internal static class UpdateInstallation
 {
-    public static void Apply(string sourceDirectory, string targetDirectory, Action restart)
+    public static void Apply(string sourceDirectory, string targetDirectory, Action restart,
+        UiBuildFlavor flavor = AppBuild.Flavor)
     {
         string source = Path.GetFullPath(sourceDirectory).TrimEnd(Path.DirectorySeparatorChar);
         string target = Path.GetFullPath(targetDirectory).TrimEnd(Path.DirectorySeparatorChar);
         if (source.Equals(target, StringComparison.OrdinalIgnoreCase) ||
             target.Length <= (Path.GetPathRoot(target)?.Length ?? 0) ||
-            !File.Exists(Path.Combine(target, "YogaITS.Tray.exe")))
+            !File.Exists(Path.Combine(target, AppBuild.ExecutableFor(flavor))))
             throw new InvalidDataException("更新目标不是现有的 YogaITS 程序目录。");
         string backup = Path.Combine(Path.GetDirectoryName(source)!, "backup");
         Directory.CreateDirectory(backup);

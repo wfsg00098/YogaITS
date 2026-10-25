@@ -7,7 +7,7 @@ internal sealed record ColorGamutSnapshot(
     bool Supported, bool Blocked, bool FactoryValid, bool ApplyBrightness,
     string CurrentMode, IReadOnlyList<ColorMode> Modes, string Message,
     NativeMethods.DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2? AdvancedColor = null,
-    ColorGamutBackend Backend = ColorGamutBackend.Icc, bool Available = true)
+    ColorGamutBackend Backend = ColorGamutBackend.Icc, bool Available = true, string DisplayIdentity = "")
 {
     public static ColorGamutSnapshot Unavailable { get; } = new(false, true, false, true, "", [], "", Backend: ColorGamutBackend.None);
 }
@@ -44,7 +44,8 @@ internal sealed class ColorGamutService : SerializedFeatureService
             if (tcon.Supported)
             {
                 Snapshot = new(true, _display.IsBlocked, false, false, tcon.CurrentMode, tcon.Modes,
-                    _display.IsBlocked ? _display.ColorBlockReason : "", _display.AdvancedColor, ColorGamutBackend.Tcon);
+                    _display.IsBlocked ? _display.ColorBlockReason : "", _display.AdvancedColor, ColorGamutBackend.Tcon,
+                    DisplayIdentity: _display.DevicePath);
                 _lastPanel = _display.HardwareId;
                 return;
             }
@@ -83,7 +84,7 @@ internal sealed class ColorGamutService : SerializedFeatureService
                 bool supported = advanced is { } state && (state.HighDynamicRangeSupported ||
                     state.WideColorSupported || state.WideColorUserEnabled);
                 Snapshot = new(supported, true, false, false, "未知", [], "当前没有可用的色域控制能力。",
-                    advanced, ColorGamutBackend.None);
+                    advanced, ColorGamutBackend.None, DisplayIdentity: _display.DevicePath);
                 return;
             }
             var modes = _factory!.Ok ? _cachedModes : [];
@@ -91,7 +92,8 @@ internal sealed class ColorGamutService : SerializedFeatureService
                 ? _display.ColorBlockReason
                 : !_factory.Ok ? "本机校色文件缺失或未通过验证，请在线恢复校色文件。" : "";
             Snapshot = new(true, _display.IsBlocked, _factory.Ok, _applyBrightness,
-                ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display)), modes, message, _display.AdvancedColor);
+                ProfileService.ModeFromCurrent(ProfileService.GetStandardDefault(_display)), modes, message, _display.AdvancedColor,
+                DisplayIdentity: _display.DevicePath);
             _lastPanel = _display.HardwareId;
         }
         catch (Exception ex)

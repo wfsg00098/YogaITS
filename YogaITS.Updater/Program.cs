@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using YogaITS.Tray.Services.Updates;
+using YogaITS.Tray.Services;
 
 internal static class Program
 {
@@ -15,6 +16,7 @@ internal static class Program
             if (args.Length != 1) throw new InvalidOperationException("请从 YogaITS 的更新卡片启动更新。");
             plan = JsonSerializer.Deserialize<UpdatePlan>(await File.ReadAllTextAsync(args[0]))
                 ?? throw new InvalidDataException("更新计划无效。");
+            if (plan.Flavor != AppBuild.Flavor) throw new InvalidDataException("更新助手与计划中的构建类型不一致。");
             UpdatePackage.VerifyArchive(plan.Archive, plan.Sha256);
             await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(args[0])!, "ready"), "ready");
             try
@@ -27,8 +29,8 @@ internal static class Program
             parentExited = true;
             string verified = Path.Combine(Path.GetDirectoryName(plan.Archive)!, "verified");
             // Re-extract the authenticated archive instead of trusting the earlier staging copy.
-            UpdatePackage.ExtractAndVerify(plan.Archive, verified, plan.Sha256);
-            UpdateInstallation.Apply(verified, plan.TargetDirectory, () => Restart(plan.TargetDirectory));
+            UpdatePackage.ExtractAndVerify(plan.Archive, verified, plan.Sha256, plan.Flavor);
+            UpdateInstallation.Apply(verified, plan.TargetDirectory, () => Restart(plan.TargetDirectory), plan.Flavor);
             // Failed/partial rollback directories never receive this marker.
             try { await File.WriteAllTextAsync(Path.Combine(Path.GetDirectoryName(plan.Archive)!, "completed"), "YogaITS.Update.Completed.v1"); }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
@@ -45,7 +47,7 @@ internal static class Program
 
     private static void Restart(string directory)
     {
-        using var process = Process.Start(new ProcessStartInfo(Path.Combine(directory, "YogaITS.Tray.exe"))
+        using var process = Process.Start(new ProcessStartInfo(Path.Combine(directory, AppBuild.ExecutableName))
         {
             UseShellExecute = false,
             WorkingDirectory = directory

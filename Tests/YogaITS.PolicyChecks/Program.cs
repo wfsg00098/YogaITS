@@ -11,6 +11,32 @@ using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.UI;
 using YogaITS.Tray.Services.Updates;
 
+int packageIndex = Array.IndexOf(args, "--check-package");
+if (packageIndex >= 0)
+{
+    string source = Path.GetFullPath(args[packageIndex + 1]);
+    using var marker = JsonDocument.Parse(File.ReadAllText(Path.Combine(source, "build-flavor.json")));
+    UiBuildFlavor flavor = marker.RootElement.GetProperty("flavor").GetString() switch
+    {
+        "native" => UiBuildFlavor.Native,
+        "liquid-glass" => UiBuildFlavor.LiquidGlass,
+        _ => throw new InvalidDataException("Unknown build flavor.")
+    };
+    string stage = Path.Combine(Path.GetTempPath(), "YogaITS-Package-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(stage);
+    try
+    {
+        string archive = Path.Combine(stage, "release.zip");
+        ZipFile.CreateFromDirectory(source, archive);
+        CheckArchiveSize(new FileInfo(archive).Length);
+        UpdatePackage.ExtractAndVerify(archive, Path.Combine(stage, "verified"),
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(archive))), flavor);
+        Console.WriteLine($"PASS: complete {flavor} publish directory survives ZIP extraction and updater verification.");
+    }
+    finally { Directory.Delete(stage, recursive: true); }
+    return;
+}
+
 if (args.Contains("--check-updates-http"))
 {
     using var client = new GitHubUpdateClient();
@@ -604,6 +630,7 @@ if (args.Contains("--gpu-process-tree"))
 }
 int updaterIndex = Array.IndexOf(args, "--updater-executable");
 checks += await UpdateChecks.RunAsync(updaterIndex >= 0 ? args[updaterIndex + 1] : null);
+checks += await BuildFlavorChecks.RunAsync();
 checks += await OptimizationChecks.RunAsync();
 checks += await KeyboardBacklightChecks.RunAsync();
 checks += await GpuModeChecks.RunAsync();
@@ -647,6 +674,11 @@ static byte[] Icc(string serial, string panel, int brightness, string machineTyp
 }
 
 static void U32(byte[] bytes, int offset, int value) => BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(offset, 4), (uint)value);
+
+static void CheckArchiveSize(long bytes)
+{
+    if (bytes <= 0 || bytes > UpdatePolicy.MaximumArchiveBytes) throw new InvalidDataException("Published archive exceeds updater limit.");
+}
 
 sealed class FakeService : SerializedFeatureService
 {

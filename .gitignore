@@ -1,5 +1,6 @@
 **/bin/
 **/obj/
+**/Output/
 dist/
 publish/
 .vs/

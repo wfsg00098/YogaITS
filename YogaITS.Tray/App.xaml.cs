@@ -14,11 +14,24 @@ public partial class App : Application
 
     public App()
     {
-        InitializeComponent();
+        UnhandledException += (_, args) => System.Diagnostics.Trace.WriteLine(args.Exception);
+        if (Environment.GetCommandLineArgs().Contains("--check-ui-contract"))
+            UnhandledException += (_, args) => Console.Error.WriteLine(args.Exception);
+        try { InitializeComponent(); }
+        catch (Exception ex) { Console.Error.WriteLine(ex); throw; }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        if (Environment.GetCommandLineArgs().Contains("--check-ui-contract"))
+        {
+            CheckUiContract();
+            return;
+        }
+#if LIQUID_GLASS
+        BundledRuntime.CheckLoadedModules();
+        UI.GlassSettingsController.LoadSavedOptions();
+#endif
         string[] arguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
         bool openControlCenter = AppLaunchPolicy.ShouldOpenControlCenter(arguments);
         bool openMiniWindow = AppLaunchPolicy.ShouldOpenMiniWindow(arguments);
@@ -48,5 +61,12 @@ public partial class App : Application
             (_, _) => _window.RequestOpenMiniWindow(), null, Timeout.Infinite, executeOnlyOnce: false);
         if (openControlCenter) _window.RequestOpenControlCenter();
         if (openMiniWindow) _window.RequestOpenMiniWindow();
+    }
+
+    private async void CheckUiContract()
+    {
+        try { await Tests.UiContractChecks.RunAsync(); }
+        catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 9; }
+        finally { Exit(); }
     }
 }

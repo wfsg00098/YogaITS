@@ -1,13 +1,28 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace YogaITS.Tray.Services.Updates;
 
 internal static class UpdatePackage
 {
-    internal static readonly string[] RequiredFiles =
+    internal static string[] RequiredFiles => RequiredFilesFor(AppBuild.Flavor);
+    internal static string[] RequiredFilesFor(UiBuildFlavor flavor) =>
+        MainFiles(flavor).Concat(HelperFiles).Concat(flavor == UiBuildFlavor.LiquidGlass ? GlassFiles : []).ToArray();
+    private static string[] MainFiles(UiBuildFlavor flavor)
+    {
+        string name = Path.GetFileNameWithoutExtension(AppBuild.ExecutableFor(flavor));
+        return [name + ".exe", name + ".dll", name + ".pri", name + ".runtimeconfig.json", name + ".deps.json"];
+    }
+    private static readonly string[] GlassFiles =
     [
-        "YogaITS.Tray.exe", "YogaITS.Tray.dll", "YogaITS.Tray.pri", "YogaITS.Tray.runtimeconfig.json", "YogaITS.Tray.deps.json",
+        "build-flavor.json", "runtime.lock.json", "Start-YogaITS.ps1", "CaptureIdentity/AppxManifest.xml",
+        "CaptureIdentity/StoreLogo.png", "CaptureIdentity/Square150x150Logo.png", "CaptureIdentity/Square44x44Logo.png",
+        "LiquidGlassWinUI.dll", "CustomEffectRuntimeNative.dll", "Microsoft.UI.Xaml.dll", "Microsoft.WindowsAppRuntime.dll",
+        "Microsoft.Graphics.Canvas.dll", "YogaITS.DesktopCapture_lg.dll"
+    ];
+    private static readonly string[] HelperFiles =
+    [
         "YogaITS.Updater.exe", "YogaITS.Updater.dll", "YogaITS.Updater.runtimeconfig.json", "YogaITS.Updater.deps.json",
         "YogaITS.dGPUKeepAwake.exe", "YogaITS.dGPUKeepAwake.dll", "YogaITS.dGPUKeepAwake.runtimeconfig.json", "YogaITS.dGPUKeepAwake.deps.json",
         "YogaITS.dGPURestart.exe", "YogaITS.dGPURestart.dll", "YogaITS.dGPURestart.runtimeconfig.json", "YogaITS.dGPURestart.deps.json"
@@ -39,7 +54,8 @@ internal static class UpdatePackage
         return path;
     }
 
-    public static void ExtractAndVerify(string archive, string directory, string expectedHash)
+    public static void ExtractAndVerify(string archive, string directory, string expectedHash,
+        UiBuildFlavor flavor = AppBuild.Flavor)
     {
         VerifyArchive(archive, expectedHash);
         using var zip = ZipFile.OpenRead(archive);
@@ -54,10 +70,48 @@ internal static class UpdatePackage
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             entry.ExtractToFile(path, overwrite: false);
         }
-        foreach (string name in RequiredFiles)
+        foreach (string name in RequiredFilesFor(flavor))
             if (!File.Exists(Path.Combine(directory, name))) throw new InvalidDataException("更新包缺少文件：" + name);
+        string marker = Path.Combine(directory, "build-flavor.json");
+        if (File.Exists(marker))
+        {
+            using var metadata = ReadManifest(marker);
+            string expected = flavor == UiBuildFlavor.LiquidGlass ? "liquid-glass" : "native";
+            if (metadata.RootElement.GetProperty("flavor").GetString() != expected ||
+                metadata.RootElement.GetProperty("executable").GetString() != AppBuild.ExecutableFor(flavor))
+                throw new InvalidDataException("更新包构建类型不匹配。");
+        }
+        if (flavor == UiBuildFlavor.LiquidGlass) VerifyBundledRuntime(directory);
+    }
+
+    private static JsonDocument ReadManifest(string path)
+    {
+        if (new FileInfo(path).Length > 2 * 1024 * 1024) throw new InvalidDataException("更新清单过大。");
+        return JsonDocument.Parse(File.ReadAllText(path));
+    }
+
+    private static void VerifyBundledRuntime(string directory)
+    {
+        using var manifest = ReadManifest(Path.Combine(directory, "runtime.lock.json"));
+        if (manifest.RootElement.GetProperty("windowsAppSdk").GetString() != "2.2.0")
+            throw new InvalidDataException("玻璃构建运行时版本不匹配。");
+        var files = manifest.RootElement.GetProperty("files");
+        if (files.ValueKind != JsonValueKind.Object || files.EnumerateObject().Count() is 0 or > 500)
+            throw new InvalidDataException("玻璃构建运行时清单无效。");
+        // SDK packs use mixed filename casing; Windows file lookup is insensitive.
+        // Reject aliases while matching required DLL names with the same semantics.
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in files.EnumerateObject())
+        {
+            if (Path.GetFileName(file.Name) != file.Name || !file.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+                !names.Add(file.Name))
+                throw new InvalidDataException("运行时清单包含异常路径。");
+            VerifyArchive(SafeEntryPath(directory, file.Name), file.Value.GetString() ?? "");
+        }
+        foreach (string required in GlassFiles.Where(file => file.EndsWith(".dll", StringComparison.Ordinal)))
+            if (!names.Contains(required)) throw new InvalidDataException("运行时清单缺少：" + required);
     }
 }
 
 internal sealed record UpdatePlan(string Archive, string Sha256, string TargetDirectory,
-    int ParentId, long ParentStartedUtcTicks);
+    int ParentId, long ParentStartedUtcTicks, UiBuildFlavor Flavor = UiBuildFlavor.Native);

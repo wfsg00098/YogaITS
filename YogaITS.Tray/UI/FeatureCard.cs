@@ -158,7 +158,14 @@ internal sealed class FeatureCard : IDisposable
             stretch && grid.Children.Count % columns == 1 ? columns : 1);
     }
 
-    public void Note(StackPanel body, string text)
+    public void Content(StackPanel body, UIElement child)
+    {
+        if (_nextChild < body.Children.Count && ReferenceEquals(body.Children[_nextChild], child)) _nextChild++;
+        else PutChild(body, child);
+        if(child is AnimatedOptionHost host) host.Attach(body);
+    }
+
+    public void Note(StackPanel body, string text, bool visible = true)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
         var note = _nextChild < body.Children.Count && body.Children[_nextChild] is ContentControl existing
@@ -167,6 +174,7 @@ internal sealed class FeatureCard : IDisposable
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 IsTabStop = false
             };
+        note.Visibility = visible && !string.IsNullOrWhiteSpace(text) ? Visibility.Visible : Visibility.Collapsed;
         SettingsMotion.SetDescription(note, text);
         if (_nextChild < body.Children.Count && ReferenceEquals(body.Children[_nextChild], note))
             _nextChild++;
@@ -175,6 +183,12 @@ internal sealed class FeatureCard : IDisposable
 
     private void PutChild(StackPanel body, UIElement child)
     {
+        int previous = body.Children.IndexOf(child);
+        if (previous >= 0)
+        {
+            body.Children.RemoveAt(previous);
+            if (previous < _nextChild) _nextChild--;
+        }
         if (_nextChild < body.Children.Count)
             body.Children.RemoveAt(_nextChild);
         body.Children.Insert(_nextChild++, child);

@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <EnableLiquidGlass Condition="'$(EnableLiquidGlass)' == ''">false</EnableLiquidGlass>
+    <BuildFlavor Condition="'$(EnableLiquidGlass)' == 'true'">liquid-glass</BuildFlavor>
+    <BuildFlavor Condition="'$(EnableLiquidGlass)' != 'true'">native</BuildFlavor>
+    <!-- Must be established before SDK imports / restore, including ProjectReferences. -->
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/$(BuildFlavor)/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)bin/$(BuildFlavor)/$(MSBuildProjectName)/</BaseOutputPath>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/obj/**;**/bin/**;**/Output/**;$(MSBuildThisFileDirectory)obj/**;$(MSBuildThisFileDirectory)bin/**</DefaultItemExcludes>
+    <SelfContained>false</SelfContained>
+    <DebugType>none</DebugType><DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableLiquidGlass)' == 'true'">
+    <DefineConstants>$(DefineConstants);LIQUID_GLASS</DefineConstants>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <WindowsAppSdkUndockedRegFreeWinRTInitialize>false</WindowsAppSdkUndockedRegFreeWinRTInitialize>
+    <WindowsAppSdkCompatibilityInitialize>false</WindowsAppSdkCompatibilityInitialize>
+    <WindowsAppSdkAutoInitialize>false</WindowsAppSdkAutoInitialize>
+  </PropertyGroup>
+</Project>

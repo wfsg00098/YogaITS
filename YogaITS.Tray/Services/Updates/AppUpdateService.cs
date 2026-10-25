@@ -45,6 +45,7 @@ internal sealed class AppUpdateService : IDisposable
 
     public async Task StartInstallerAsync(UpdateRelease release)
     {
+        if (release.Flavor != AppBuild.Flavor) throw new InvalidDataException("更新包与当前构建类型不一致。");
         await _gate.WaitAsync(_lifetime.Token);
         try
         {
@@ -64,7 +65,7 @@ internal sealed class AppUpdateService : IDisposable
             await Task.Run(() => UpdatePackage.ExtractAndVerify(archive, extracted, release.Sha256), _lifetime.Token);
             using var parent = Process.GetCurrentProcess();
             var plan = new UpdatePlan(archive, release.Sha256, AppContext.BaseDirectory,
-                parent.Id, parent.StartTime.ToUniversalTime().Ticks);
+                parent.Id, parent.StartTime.ToUniversalTime().Ticks, AppBuild.Flavor);
             string planPath = Path.Combine(root, "plan.json");
             await File.WriteAllTextAsync(planPath, JsonSerializer.Serialize(plan), _lifetime.Token);
             var start = new ProcessStartInfo(Path.Combine(runner, "YogaITS.Updater.exe")) { UseShellExecute = false, WorkingDirectory = runner };

@@ -22,39 +22,31 @@
 
 ## 构建与发布
 
-在 Windows x64 上安装 .NET 10 SDK，并准备可还原 NuGet 的网络。运行程序还需要兼容的 .NET Desktop Runtime、Windows App Runtime、联想驱动/服务及管理员权限。依赖版本以 `YogaITS.Tray.csproj` 为准。
+Windows x64、PowerShell 7 与 .NET 10 SDK。普通版使用系统 Windows App Runtime；玻璃版沿用 UI Probe 的固定组合：应用本地 Windows App SDK **2.2.0**、Win2D **1.3.2**、LiquidGlassWinUI **1.0.3** 的 native effect 和本地 Material 源码。只私有部署 Windows App SDK，.NET 10 仍为 framework-dependent。玻璃版构建额外需要 VS 2026 C++ v145 工具链和 Windows SDK 10.0.26100.0（MSBuild、fxc、makeappx）；不升级全局 SDK、不修改系统开发者模式。
 
-以下 PowerShell 命令从仓库根目录执行：
-
-```powershell
-dotnet restore .\YogaITS.Tray\YogaITS.Tray.csproj
-dotnet build .\YogaITS.Tray\YogaITS.Tray.csproj -c Debug
-.\build-clean.ps1
-.\dist\YogaITS.Tray.exe
-```
-
-`build-clean.ps1` 删除主项目的 `bin/`、`obj/`、`dist/`，还原并发布主程序及更新、保活、独显重启三个助手的 Release，统一提交版本信息，验证 `YogaITS.Tray.pri` 和独显助手文件，移除 PDB/XML 和主项目中间产物。执行前退出程序，避免发布文件被占用；不要在 `dist/` 内存放需要保留的个人文件。
-
-已有测试版正在运行时，可发布到独立目录，避免清理或覆盖其文件。以下命令同时发布四个项目，并统一内嵌版本与提交：
+从仓库根目录运行：
 
 ```powershell
-$sha = (git rev-parse HEAD).Trim()
-$release = .\scripts\Get-ReleaseVersion.ps1 -CommitSha $sha
-$output = Join-Path $PWD "publish\$($release.Version)"
-foreach ($name in 'YogaITS.Tray', 'YogaITS.Updater', 'YogaITS.dGPUKeepAwake', 'YogaITS.dGPURestart') {
-    dotnet publish ".\$name\$name.csproj" -c Release -r win-x64 --self-contained false -o $output `
-        "-p:InformationalVersion=$($release.Version)+$sha" -p:IncludeSourceRevisionInInformationalVersion=false
-    if ($LASTEXITCODE -ne 0) { throw "Publish failed: $name" }
-}
-dotnet run --project .\Tests\YogaITS.PolicyChecks -c Release -- --icon-executable "$output\YogaITS.Tray.exe" --updater-executable "$output\YogaITS.Updater.exe" --gpu-restart-executable "$output\YogaITS.dGPURestart.exe"
-if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed.' }
+.\build-clean.ps1 -Checks -BuildOnly
+.\build-clean.ps1 -LiquidGlass -Checks -BuildOnly
+# 可替代 -LiquidGlass：--liquid-glass
+.\dist\native\YogaITS.Tray.exe
+.\dist\liquid-glass\YogaITS.Tray.exe
 ```
 
-非打包 WinUI 需要应用 PRI。项目中的 `AddProjectPriToResolvedFileToPublish` 处理发布资源遗漏；交付必须保留整个发布目录。图标通过 `ApplicationIcon` 内置，窗口和托盘从 EXE 提取，句柄按生命周期释放，不生成临时 ICO 或额外 Assets 目录。
+两版名称均为 Yoga控制中心，应用标识 YogaITS，EXE 均为 `YogaITS.Tray.exe`；仅包名以 `-lg` 区分材质构建。所有 helper 使用相同构建标志。`Directory.Build.props/targets` 将 restore/build 中间产物隔离至根目录 `obj/<flavor>/<project>/`、`bin/<flavor>/<project>/`，不能跨 flavor 复用 assets。普通版不编译玻璃/Win2D/捕获/物理引擎，也不携带捕获身份或本地 SDK。
+
+脚本仅清理选定输出目录；默认分别是 `dist/native` 和 `dist/liquid-glass`，不会删除另一版。使用 `-OutputDirectory ./publish/<独立目录>` 可保留正在运行的构建；只允许仓库 `dist/`、`publish/` 下的专用目录，不覆盖当前运行的程序。不要直接对四个项目逐一裸 publish 作为玻璃版交付，否则会漏掉 C++ bridge、HDR shader、runtime lock 或 sparse identity。
+
+完整构建发布主程序及更新、独显保活、独显重启三个助手，统一内嵌版本/完整 SHA，验证 PRI、依赖隔离和 .NET 运行模式。玻璃版先构建捕获桥接、HDR shader 与原生 DWM shader 检查，再生成全部 DLL 的 `runtime.lock.json`，准备 `CaptureIdentity` 清单/徽标和第三方许可。构建不注册身份、不启动硬件控制器、不捕获桌面；`-BuildOnly` 保留参考项目的命令形式。图标继续使用 YogaITS 原图并内置于 EXE；身份所需的 PNG 是系统包徽标。
+
+`-Checks` 执行版本命名检查、400713 项 UI/捕获/HDR/物理策略检查及应用策略检查；玻璃版还执行 WARP 合成像素检查和真实 WinUI dispatcher 下的无可见窗口控件契约检查。后者仅在临时副本改为 asInvoker，执行 `--check-ui-contract` 后退出，不实例化 `MainWindow` 或真实服务，不影响交付文件的管理员清单。普通版可在装有兼容系统运行时的本机手工运行 `./Tests/UiContractChecks.ps1 -PublishedDirectory ./dist/native`。
+
+非打包 WinUI 必须保留 PRI，`AddProjectPriToResolvedFileToPublish` 补充 SDK 的发布遗漏。交付需完整解压选中 ZIP，禁止混合两个构建的运行文件。
 
 ## GitHub Actions 自动构建与 Release
 
-`.github/workflows/build-release.yml` 在推送 `main` 时运行。Windows 2025 runner 使用 .NET 10，复用 `build-clean.ps1`，验证 PRI 与内置图标并运行无硬件逻辑检查，再将完整发布目录压缩上传为 artifact（保留 30 天）。构建或检查失败不会发布 Release；CI 不启动程序，不运行硬件探针、不录音或改硬件设置。
+`.github/workflows/build-release.yml` 仅由推送 `main` 触发。共用提交版本，matrix 分别构建 `native` 和 `liquid-glass`；使用 [windows-2025-vs2026 runner](https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-VS2026-Readme.md) 提供玻璃版所需 v145。每版独立执行 `build-clean.ps1 -Checks -BuildOnly` 并上传完整 ZIP artifact（保留 30 天）；普通版名沿用历史约定 `YogaITS-<version>-win-x64.zip`，玻璃版为 `YogaITS-<version>-lg-win-x64.zip`，artifact 名去掉 `.zip`。仅两版均成功后，一个 release job 校验并上传两个附件；任一失败不发布新 Release。CI 不初始化真实硬件服务，不注册捕获身份、不录音或修改硬件设置。
 
 根目录 `VERSION` 保存人工维护的 `x.y`（当前 `6.0`），不再从数字分支推算。发布名、tag、ZIP 统一为 `x.y-yyyyMMddHHmmss-hash`，时间取提交的 committer 时间并转为 UTC，hash 为 SHA 前 8 位；同一提交重跑名称不变。程序内嵌完整 SHA，相同源提交不提示更新。远端 x.y 按数字比较须不低于本地，且日期号须严格更新；不按 hash 排序，较旧或同日期的发布不提示。旧 tag 仍可解析；无日期的远端版本不提示，无日期的本地版本仅允许升级至更高 x.y 的带日期版本。`scripts/Get-ReleaseVersion.ps1` 及 `Tests/ReleaseVersionChecks.ps1` 验证命名规则。
 
@@ -96,7 +88,23 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 更新暂存与旧文件备份位于 `%LOCALAPPDATA%\YogaITS\Updates\<GUID>\`，不写 Logs。拒绝 ZIP 路径穿越、重复路径、缺少必需文件及过大展开内容；必需清单包括主程序、PRI 和三个助手的 exe/dll/deps/runtimeconfig。更新助手从暂存目录运行，按 PID 和启动时间等待原进程退出，再从原 ZIP 重新验 hash/解压、备份被覆盖文件、复制及逐文件验 hash，最后重新启动原路径。复制、校验或启动失败回滚；回滚不完整时保留备份并明确提示。成功重启才写入 `completed` 标记，后续仅清理超过 7 天、标记内容正确且不含链接的 GUID 暂存。失败或未知目录保留。未运行常驻更新服务，不修改计划任务或硬件设置。
 
-自动检查覆盖模拟 HTTP 双路竞速/取消/坏包、版本身份、ZIP 路径安全、临时目录安装/配置保留及回滚。完整 UI 更新和真实程序重启仍需实机验收。
+自动检查覆盖模拟 HTTP 双路竞速/取消/坏包、版本身份、双附件 flavor 选择、跨构建拒绝、玻璃 SDK 版本/哈希/必需文件、ZIP 路径安全及两版临时目录安装/配置保留/回滚。`--check-package <发布目录>` 还将真实产物打包后经 updater 的解压/校验入口检查，覆盖 SDK 文件名大小写差异。完整 UI 更新和真实程序重启仍需实机验收。
+
+## 6.0 材质接入与边界
+
+参考 `YogaITS.UIProbe-source.zip`，原样复用其玻璃材质、shader、背景采样、DPI/裁剪、物理动效及捕获生命周期；生产命名空间改为 `YogaITS.Tray`，未引入 ProbePreview、模拟状态、演示窗口或假延时。`Demos/` 仅保留实际使用的 renderer/physics 基础类及许可。两版共用窗口和硬件服务，不复制业务后端。
+
+`HardwareChoiceGroup` 将性能、充电、显卡偏好、色域、麦克风、睡眠速度和背光的实际选项 ID 绑定到 ChoiceBar/native cards。未知状态不伪选第一项，也不发送补偿 SET；pending 与 confirmed 分离，完成后只读服务 snapshot。选项改名/重排保留语义 ID；音频 endpoint、显示设备/backend 形成请求域，能力变化/关闭/过期异步完成不覆盖新 UI。复用未变化的控件以保留焦点。HDR/ACM、录音期间禁用和其他能力条件继续由真实 snapshot 决定。
+
+玻璃 UI 选项保存到现有配置的 `GlassNativeUI`、`GlassBackgroundSource`、`GlassImagePath`，不保存硬件逻辑状态。首次窗口 Loaded 后应用偏好；未就绪时保留原生表现。静态图像/壁纸不请求桌面捕获；透明桌面沿用参考实现的系统授权和边框规则。普通版完全不读取这些材质选项。
+
+玻璃版 sparse identity 使用 `YogaITS` / `CN=YogaITS`，不复用 Probe 身份。启动前检查捕获身份与当前路径；需要修复时由独立 PowerShell 等当前进程退出后注册并重新打开，失败也会恢复启动且不循环重试。`Start-YogaITS.ps1 -RegisterOnly` 仅操作自身身份，不改变开发者模式；未启用 Windows Developer Mode 时注册可能失败，保留系统捕获提示或可用背景。不得通过注册表伪造授权，不生成 Logs，不覆盖系统 WinUI DLL。
+
+两版共享旧版单实例与任务名称，入口在身份注册前优先转发开窗请求；启动 GPU 偏好仍只针对自身和专用保活助手。TCON 的进程级 COM 安全初始化仍先于 WinUI/本地 SDK 的 COM 使用。三个助手和更新 plan 同步 flavor；旧版普通 ZIP 名称不变，保留 5.x 到 6.0 的更新兼容性。
+
+自动更新只选择运行构建对应的附件；同一 tag 缺失对应附件时静默检查失败，不自动换版。安装前及 updater 内验证 flavor marker；玻璃版还要求身份文件、本地运行时、SDK 2.2.0 清单与 DLL 哈希。原有直连/gh-proxy 竞速、系统代理默认行为、日期比较、暂存、回滚和计划任务路径规则不变。
+
+既有 5.x 实机结论继续保留。用户确认 Probe 玻璃材质已完成测试；6.0 新 UI 与真实服务的组合尚待实机回归，构建、策略、WinUI 契约与 shader 检查不能写作整机验收。
 
 ## 架构与刷新
 

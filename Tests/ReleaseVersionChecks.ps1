@@ -11,6 +11,9 @@ try {
         $result = & $script -VersionFile $file -CommitSha $sha -CommitTime ([DateTimeOffset]'2026-10-18T13:31:20+08:00')
         if ($result.Version -ne "$series-20261018053120-abcdef12") { throw 'Version or UTC conversion mismatch.' }
         if ($result.ArchiveName -ne "YogaITS-$($result.Version)-win-x64.zip") { throw 'Archive name mismatch.' }
+        $glass = & $script -VersionFile $file -CommitSha $sha -CommitTime ([DateTimeOffset]'2026-10-18T13:31:20+08:00') -Flavor liquid-glass
+        if ($glass.Version -ne $result.Version -or $glass.ArchiveName -ne "YogaITS-$($result.Version)-lg-win-x64.zip") { throw 'Glass version or archive name mismatch.' }
+        if ($glass.ArtifactName -eq $result.ArtifactName) { throw 'Flavor artifacts must not collide.' }
         if ($result.CommitSha -ne $sha.ToLowerInvariant()) { throw 'Commit identity mismatch.' }
     }
     foreach ($series in @('', '5', '5.0.1', '05.0', '5.01', '-1.0', '5.0-extra')) {

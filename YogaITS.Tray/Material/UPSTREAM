@@ -1,0 +1,54 @@
+LiquidGlassWinUI 1.0.3
+Upstream: https://github.com/luckyelysia/LiquidGlassWinUI
+License: MIT (see LICENSE). CustomEffectRuntimeNative.dll is the unmodified x64
+binary from the pinned LiquidGlassWinUI 1.0.3 package.
+
+Local adaptations retained from the supplied UI reference:
+- BindScalarExpression/StopScalarExpression let the host couple RefThickness
+  to compositor-owned capsule geometry and inflation without UI timers.
+- ConnectToVisual/DisconnectFromVisual leases reuse the same pooled glass
+  pipeline for a dynamically sized Composition sprite in the fluid-tab demo.
+- Unused upstream DebugEffect stub removed; its Debug.hlsl is not shipped or used.
+- .NET 10 only, Windows App SDK 2.2.0, Win2D 1.3.2; optional AI/ML/widgets excluded.
+- Current XamlRoot rasterization scale reaches the shader Dpr slot (124).
+- ShapeInset uses the existing ShadowFactor slot (76); host sets zero so tint
+  and highlights cover the entire shape without an untinted outer gutter.
+- HLSL edge antialiasing spans one output pixel instead of a broad exterior blur.
+- FillWindowBackground uses the unused slot 80, keeping the 128-byte native ABI.
+  Optional opaque tint backing covers the optical shape's AA/exterior. The host
+  now disables it to cut tint outside the highlight. A full-window glass client
+  shares coordinates with the HWND and leaves final rounding to DWM, without a
+  GDI window region. Control/capsule transparency is unchanged.
+- Tint concentrations directly color transmission, Fresnel and highlights.
+- Magnification remains 1.0 on every glass surface, including enlarged tabs.
+- Optical displacement/dispersion are normalized in control coordinates then
+  scaled by contentUvSize before atlas sampling, preventing frame-to-frame jitter.
+- Host supplies a visible local captured layer under the original backdrop brush;
+  Gaussian runs on the full monitor before cropping. Cards apply no extra blur.
+- HLSL regression tests render synthetic atlases through WARP, without capture.
+
+- All surfaces use analytic curved normals and outward inverse UV lookup,
+  moving the underlying image toward the glass center. This contracts and bends
+  track edges without whole-image scaling. Ray travel is smoothly bounded by
+  optical depth: reach(d)=0.75*d*d/(d+0.20*RefThickness*Dpr). Its onset has zero
+  slope and its growth stays below 0.75; a harmonic Snell bound avoids local
+  inverse-map folds and the resulting sharp notches at track/glass junctions.
+  The footprint follows the same ray mapping. There is no inflation-only optical
+  mode or separate capsule pipeline; slot 84 is unused again. WARP checks inward
+  image flow at identity zoom, curved ends, DPI and atlas invariance. Ray travel
+  scales once through Dpr, preserving logical refraction strength across monitors.
+- Rays and their sampling footprint smoothly return to identity at the optical
+  contour. Interior curved refraction remains; exterior track pixels join the
+  interior without a positional jump. WARP follows connected RGB strokes across
+  both rounded edges, including one-physical-pixel lines at 100-300% DPI.
+  Rendered coordinate fields also check positive Jacobians at rest and enlarged
+  sizes; connected strokes alone cannot detect folded/sharply notched sampling.
+
+The native material ABI remains unchanged. Test source:
+../../Tests/YogaITS.ShaderChecks; no obsolete wallpaper or WinUI 2 probe is required.
+
+- Snell displacement uses the algebraically equivalent tangent-difference form
+  with sin/cos components, avoiding expensive asin/sin/tan expansions. This keeps
+  the contour-continuity fix within the native compositor library's instruction
+  limit. Every glass-enabled build compiles lib_4_0_level_9_3_ps_only with flags 0x8800 before
+  replacing output; standalone pixel-shader tests are additional validation.

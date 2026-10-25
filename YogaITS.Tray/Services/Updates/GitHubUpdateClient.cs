@@ -5,9 +5,11 @@ namespace YogaITS.Tray.Services.Updates;
 internal sealed class GitHubUpdateClient : IDisposable
 {
     private readonly HttpClient _http;
+    private readonly UiBuildFlavor _flavor;
 
-    public GitHubUpdateClient(HttpMessageHandler? handler = null)
+    public GitHubUpdateClient(HttpMessageHandler? handler = null, UiBuildFlavor flavor = AppBuild.Flavor)
     {
+        _flavor = flavor;
         _http = handler is null ? new HttpClient() : new HttpClient(handler);
         _http.Timeout = Timeout.InfiniteTimeSpan;
         var version = typeof(GitHubUpdateClient).Assembly.GetName().Version ?? new Version(1, 0);
@@ -24,7 +26,7 @@ internal sealed class GitHubUpdateClient : IDisposable
             using var response = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             await response.Content.LoadIntoBufferAsync(2 * 1024 * 1024, timeout.Token);
-            return UpdatePolicy.ParseRelease(await response.Content.ReadAsStringAsync(timeout.Token));
+            return UpdatePolicy.ParseRelease(await response.Content.ReadAsStringAsync(timeout.Token), _flavor);
         }, cancellationToken);
     }
 

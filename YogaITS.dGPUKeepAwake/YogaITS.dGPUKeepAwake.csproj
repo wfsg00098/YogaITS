@@ -11,6 +11,7 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../YogaITS.Tray/Services/AppBuild.cs" Link="AppBuild.cs" />
     <Compile Include="../YogaITS.Tray/Services/GpuKeepAwakePolicy.cs" Link="GpuKeepAwakePolicy.cs" />
   </ItemGroup>
 </Project>

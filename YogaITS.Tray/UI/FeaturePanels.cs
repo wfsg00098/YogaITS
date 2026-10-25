@@ -19,6 +19,8 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _colorCard = new("色彩管理");
     private readonly ElevocService _audio;
     private readonly StackPanel _host;
+    private readonly TrayMenuWindow _window;
+    private readonly Dictionary<string, HardwareChoiceGroup> _choices = new(StringComparer.Ordinal);
     private readonly FeatureCard _micCard = new("麦克风降噪");
     private readonly FeatureCard _speakerCard = new("扬声器降噪");
     private readonly FeatureCard _voiceCard = new("声纹管理");
@@ -30,7 +32,7 @@ internal sealed class FeaturePanels : IDisposable
     private const string VoiceReadingExample = "朗读示例：小明经常在不同环境下参加在线会议，他发现使用麦克风降噪功能可以显著减少环境噪音的干扰，从而使他的语音更加清晰。与他一同参会的人都对小明的语音质量印象深刻，这不仅提高了会议的质量，还保护了小明的个人隐私。";
     private bool _closed;
 
-    public FeaturePanels(StackPanel host, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color,
+    public FeaturePanels(TrayMenuWindow window, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color,
         ElevocService audio, KeyboardBacklightService keyboardBacklight)
     {
         _gpu = gpu;
@@ -38,6 +40,8 @@ internal sealed class FeaturePanels : IDisposable
         _color = color;
         _audio = audio;
         _keyboardBacklight = keyboardBacklight;
+        _window = window;
+        var host = window.AdditionalSections;
         _host = host;
         host.Children.Add(_gpuCard.View);
         host.Children.Add(_wakeCard.View);
@@ -59,13 +63,12 @@ internal sealed class FeaturePanels : IDisposable
         {
             var current = _gpu.Snapshot;
             var selected = current.PreferredMode;
-            _gpuCard.Options(body,
-                _gpuCard.Option("集显模式", selected == GpuWorkingMode.IGPUOnly,
-                    () => SelectGpuPreferenceAsync(GpuWorkingMode.IGPUOnly), current.CanSelectIGpu),
-                _gpuCard.Option("智能模式", selected == GpuWorkingMode.Auto,
-                    () => SelectGpuPreferenceAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
-                _gpuCard.Option("双显模式", selected == GpuWorkingMode.Default,
-                    () => SelectGpuPreferenceAsync(GpuWorkingMode.Default)));
+            Choices(_gpuCard, body, "gpu", "显卡工作模式",
+                [new("igpu", "集显模式", () => SelectGpuPreferenceAsync(GpuWorkingMode.IGPUOnly), current.CanSelectIGpu),
+                 new("auto", "智能模式", () => SelectGpuPreferenceAsync(GpuWorkingMode.Auto), _gpu.AutoEventsAvailable),
+                 new("dual", "双显模式", () => SelectGpuPreferenceAsync(GpuWorkingMode.Default))],
+                selected switch { GpuWorkingMode.IGPUOnly => "igpu", GpuWorkingMode.Auto => "auto", _ => "dual" },
+                gpu.Available && _gpu.IsResponsive, 3);
             _gpuCard.SetStatus(_gpu.StatusMessage);
         }, gpu.Available && _gpu.IsResponsive, unavailableMessage: _gpu.StatusMessage);
         RenderHpd();
@@ -86,8 +89,23 @@ internal sealed class FeaturePanels : IDisposable
     public void Dispose()
     {
         _closed = true;
+        foreach (var choices in _choices.Values) choices.Dispose();
+        _choices.Clear();
         foreach (var card in new[] { _gpuCard, _wakeCard, _videoCard, _colorCard, _micCard, _speakerCard, _voiceCard, _keyboardBacklightCard })
             card.Dispose();
+    }
+
+    private void Choices(FeatureCard card, StackPanel body, string id, string title,
+        IEnumerable<HardwareChoice> options, string? confirmed, bool available, int columns,
+        bool visible = true, string? domain = null)
+    {
+        if (!_choices.TryGetValue(id, out var choices))
+        {
+            choices = new(_window, title, Render, error => card.SetStatus(error.Message, announce: true));
+            _choices.Add(id, choices);
+        }
+        choices.Update(options, confirmed, available, columns, visible, domain);
+        card.Content(body, choices.View);
     }
 
     private void RenderKeyboardBacklight()
@@ -96,10 +114,11 @@ internal sealed class FeaturePanels : IDisposable
         _keyboardBacklightCard.Update(snapshot.Supported && _keyboardBacklight.IsResponsive, body =>
         {
             var current = _keyboardBacklight.Snapshot;
-            _keyboardBacklightCard.Options(body, Math.Max(1, current.Levels + 1), false,
+            Choices(_keyboardBacklightCard, body, "keyboard", "键盘背光",
                 SettingsOptionText.KeyboardBacklightStates(current.Levels).Select(state =>
-                    _keyboardBacklightCard.Option(SettingsOptionText.KeyboardBacklightLabel(current.Levels, state),
-                        current.State == state, () => _keyboardBacklight.SetAsync(state))).ToArray());
+                    new HardwareChoice(state.ToString(), SettingsOptionText.KeyboardBacklightLabel(current.Levels, state),
+                        () => _keyboardBacklight.SetAsync(state))), current.State.ToString(),
+                current.Supported && _keyboardBacklight.IsResponsive, Math.Max(1, current.Levels + 1));
             _keyboardBacklightCard.SetStatus("");
         });
     }
@@ -110,20 +129,19 @@ internal sealed class FeaturePanels : IDisposable
         _micCard.Update(audio.Uplink, body =>
         {
             var current = _audio.Snapshot;
-            var buttons = new List<Button>();
+            var options = new List<HardwareChoice>();
             foreach (var (label, mode) in new[] { ("关闭降噪", "environmental"), ("单人通话", "private"), ("多人通话", "shared") })
             {
                 if (mode == "shared" && !ElevocMicrophonePolicy.SupportsMultiplePeople(current.InternalMicrophone))
                     continue;
-                buttons.Add(_micCard.Option(label, mode switch
-                    {
-                        "private" => ElevocMicrophonePolicy.SinglePerson(current.MicrophoneMode),
-                        "shared" => ElevocMicrophonePolicy.MultiplePeople(current.MicrophoneMode),
-                        _ => current.MicrophoneMode == mode
-                    },
-                    () => _audio.SetMicrophoneAsync(mode), !_audio.IsRegistering));
+                options.Add(new(mode, label, () => _audio.SetMicrophoneAsync(mode)));
             }
-            _micCard.Options(body, buttons.ToArray());
+            string? selected = ElevocMicrophonePolicy.SinglePerson(current.MicrophoneMode) ? "private"
+                : ElevocMicrophonePolicy.MultiplePeople(current.MicrophoneMode) ? "shared"
+                : current.MicrophoneMode == "environmental" ? "environmental" : null;
+            Choices(_micCard, body, "microphone", "麦克风降噪", options, selected,
+                current.Available && _audio.IsResponsive && !_audio.IsRegistering, options.Count,
+                domain: current.CaptureIdentity);
             if (ElevocMicrophonePolicy.ShowVoice(current.InternalMicrophone, current.VoiceId, current.MicrophoneMode))
                 _micCard.Options(body, _micCard.Option("仅听机主", current.MicrophoneMode == "voiceid",
                     () => _audio.SetMicrophoneAsync(current.MicrophoneMode == "voiceid" ? "private" : "voiceid"),
@@ -228,14 +246,14 @@ internal sealed class FeaturePanels : IDisposable
             }
             bool advancedColorActive = current.AdvancedColor?.HdrActive == true ||
                 current.AdvancedColor?.AcmActive == true;
+            Choices(_colorCard, body, "gamut", "色彩管理",
+                current.Modes.Select(mode => new HardwareChoice(mode.Name,
+                    SettingsOptionText.ColorLabel(mode.Name, mode.Brightness), () => _color.ApplyAsync(mode.Name))),
+                current.CurrentMode, current.Available && _color.IsResponsive && !current.Blocked, 2,
+                visible: !advancedColorActive && current.Modes.Count > 0,
+                domain: current.DisplayIdentity + "|" + current.Backend);
             if (!advancedColorActive)
             {
-                if (current.Modes.Count > 0)
-                    _colorCard.Options(body, 2, true, current.Modes.Select(mode =>
-                        _colorCard.Option(SettingsOptionText.ColorLabel(mode.Name, mode.Brightness),
-                            current.CurrentMode == mode.Name,
-                            () => current.CurrentMode == mode.Name ? Task.CompletedTask : _color.ApplyAsync(mode.Name),
-                            !current.Blocked)).ToArray());
                 if (current.Backend == ColorGamutBackend.Icc)
                 {
                     _colorCard.Options(body,
@@ -267,12 +285,13 @@ internal sealed class FeaturePanels : IDisposable
                     () => _hpd.SetAsync(HpdSetting.AutoWake, state.ApproachEnabled ? 0 : 1)),
                 _wakeCard.Option("自动睡眠", state.LeaveEnabled,
                     () => _hpd.SetAsync(HpdSetting.AutoSleep, state.LeaveEnabled ? 0 : 1)));
+            _wakeCard.Note(body, "人离开后进入睡眠的速度", visible: state.LeaveEnabled);
+            Choices(_wakeCard, body, "sleep-speed", "人离开后进入睡眠的速度",
+                Enumerable.Range(0, 3).Select(value => new HardwareChoice(value.ToString(), new[] { "快", "中", "慢" }[value],
+                    () => _hpd.SetAsync(HpdSetting.LeaveWaitTime, value))), state.LeaveWaitTimeRaw.ToString(),
+                current.Available && _hpd.IsResponsive, 3, visible: state.LeaveEnabled);
             if (state.LeaveEnabled)
             {
-                _wakeCard.Note(body, "人离开后进入睡眠的速度");
-                _wakeCard.Options(body, Enumerable.Range(0, 3).Select(value =>
-                    _wakeCard.Option(new[] { "快", "中", "慢" }[value], state.LeaveWaitTimeRaw == value,
-                        () => _hpd.SetAsync(HpdSetting.LeaveWaitTime, value))).ToArray());
                 if (current.Features.CameraAssist)
                     _wakeCard.Options(body, _wakeCard.Option("人员辅助判定（面部识别数据）", state.CameraAssist,
                         () => _hpd.SetAsync(HpdSetting.CameraAssist, state.CameraAssist ? 0 : 1)));

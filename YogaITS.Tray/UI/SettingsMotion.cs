@@ -7,10 +7,11 @@ using Windows.UI.ViewManagement;
 
 namespace YogaITS.Tray.UI;
 
-// Use theme transitions, never animate layout dimensions or take over input.
+// Glass reflow shares the physical integrator; native UI keeps theme transitions.
 internal static class SettingsMotion
 {
     private static readonly UISettings Settings = new();
+    internal static bool AnimationsEnabled => Settings.AnimationsEnabled;
 
     public static void AttachHover(Button button)
     {
@@ -49,22 +50,31 @@ internal static class SettingsMotion
     public static void RefreshHoverColors(Button button)
     {
         byte channel = button.ActualTheme == ElementTheme.Dark ? (byte)255 : (byte)0;
+#if LIQUID_GLASS
+        // Glass cards render input feedback above their material, not behind it.
+        ((SolidColorBrush)button.Resources["ButtonBackgroundPointerOver"]).Color = Microsoft.UI.Colors.Transparent;
+        ((SolidColorBrush)button.Resources["ButtonBackgroundPressed"]).Color = Microsoft.UI.Colors.Transparent;
+        WindowMaterial.RefreshTileAppearance(button);
+#else
         ((SolidColorBrush)button.Resources["ButtonBackgroundPointerOver"]).Color =
             UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(10, channel, channel, channel);
         ((SolidColorBrush)button.Resources["ButtonBackgroundPressed"]).Color =
             UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(16, channel, channel, channel);
+#endif
         ((SolidColorBrush)button.Resources["ButtonForegroundPointerOver"]).Color =
             UiAccessibility.HighContrast ? UiAccessibility.SystemColor(14) : Color.FromArgb(255, channel, channel, channel);
     }
 
     public static void Reposition(Panel panel)
     {
-        bool enabled = Settings.AnimationsEnabled;
+#if LIQUID_GLASS
+        AccelerationLayoutMotion.Attach(panel, nativeTransitions: true);
+#else
         panel.ChildrenTransitions ??= new TransitionCollection();
-        if (enabled && panel.ChildrenTransitions.Count == 0)
+        if (Settings.AnimationsEnabled && !panel.ChildrenTransitions.OfType<RepositionThemeTransition>().Any())
             panel.ChildrenTransitions.Add(new RepositionThemeTransition { IsStaggeringEnabled = false });
-        else if (!enabled)
-            panel.ChildrenTransitions.Clear();
+        if (!Settings.AnimationsEnabled) panel.ChildrenTransitions.Clear();
+#endif
     }
 
     public static void RevealBefore(UIElement appearing, UIElement following)
@@ -91,7 +101,7 @@ internal static class SettingsMotion
     public static void SeparateDivider(Border group)
     {
         // A bottom border follows resized bounds immediately; a distinct child
-        // has a changing layout position that RepositionThemeTransition animates.
+        // has a changing layout position that the active motion model animates.
         var content = group.Child;
         var padding = group.Padding;
         group.Child = null;
