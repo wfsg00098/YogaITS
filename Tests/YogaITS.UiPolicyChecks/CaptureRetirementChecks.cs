@@ -1,5 +1,5 @@
+using YogaITS.Tray.UI.Glass.Capture;
 using System.Collections.Concurrent;
-using YogaITS.Tray.UI;
 
 internal static class CaptureRetirementChecks
 {

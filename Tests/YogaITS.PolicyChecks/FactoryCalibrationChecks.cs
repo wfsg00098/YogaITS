@@ -1,7 +1,7 @@
+using YogaITS.Tray.UI.Features;
 using System.Buffers.Binary;
 using System.Text;
 using YogaITS.Tray.Services.Color;
-using YogaITS.Tray.UI;
 
 internal static class FactoryCalibrationChecks
 {

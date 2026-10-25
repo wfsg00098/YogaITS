@@ -1,6 +1,7 @@
-﻿using Microsoft.UI.Xaml;
+using YogaITS.Tray.UI.Features;
+using YogaITS.Tray.UI.Shell;
+using Microsoft.UI.Xaml;
 using YogaITS.Tray.Services;
-using YogaITS.Tray.UI;
 using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;

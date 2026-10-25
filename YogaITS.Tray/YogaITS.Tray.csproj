@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <AssemblyName>YogaITS.Tray</AssemblyName>
@@ -37,15 +37,13 @@
     <PackageReference Include="System.Management" Version="10.0.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="Material/**;Tests/**;Demos/**/*Check.cs;Demos/**/*DemoWindow.cs" />
-    <Compile Include="Tests/UiContractChecks.cs" />
-    <Page Remove="Material/**;Tests/**;Demos/**" />
-    <Content Remove="Material/**;Tests/**;Demos/**;Shaders/**" />
+  <!-- Only the glass subtree is optional; shared controls and hardware services
+       compile identically for both distributions. Test code is opt-in. -->
+  <ItemGroup Condition="'$(EnableUiChecks)' == 'true'">
+    <Compile Include="../Tests/YogaITS.UiChecks/UiContractChecks.cs" Link="Checks/UiContractChecks.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(EnableLiquidGlass)' != 'true'">
-    <Compile Remove="Demos/**;BundledRuntime.cs;Services/CaptureIdentity*.cs;UI/Glass*.cs;UI/LiquidGlassWindow.cs;UI/Desktop*.cs;UI/ImageBackground*.cs;UI/CaptureBorderConsent.cs;UI/CaptureCopyRegion.cs;UI/CaptureExclusion*.cs;UI/CaptureFrameRateMeter.cs;UI/CaptureOperationState.cs;UI/CaptureSnapshot.cs;UI/CaptureWindowExclusion.cs;UI/Hdr*.cs;UI/Background*.cs;UI/Latest*.cs;UI/OwnerThreadRelease.cs;UI/AccelerationLayoutMotion.cs;UI/RenderOffset.cs;UI/TabLabelFade.cs;UI/UiOptionsPanel.cs" />
-    <EmbeddedResource Remove="Shaders/**;Material/**" />
+    <Compile Remove="UI/Glass/**" />
     <Content Remove="CaptureIdentity/**" />
   </ItemGroup>
 

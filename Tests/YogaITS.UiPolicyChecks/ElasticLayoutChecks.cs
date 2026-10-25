@@ -1,6 +1,6 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 using System.Numerics;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
 
 internal static class ElasticLayoutChecks
 {
@@ -60,7 +60,7 @@ internal static class ElasticLayoutChecks
         }
         {
             var model=new FourEdgePhysics(elasticLayout:true);
-            var three=SwiftTabLayout.Create(600,80,3); var two=SwiftTabLayout.Create(600,80,2);
+            var three=ChoiceTrackLayout.Create(600,80,3); var two=ChoiceTrackLayout.Create(600,80,2);
             model.Reset(three.Capsule(1));
             model.ConfigureTrack(three.Track,three.Capsule(0),three.Capsule(2));
             foreach(var layout in new[]{two,three,two,three,two})

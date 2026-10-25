@@ -3,6 +3,9 @@
     <EnableLiquidGlass Condition="'$(EnableLiquidGlass)' == ''">false</EnableLiquidGlass>
     <BuildFlavor Condition="'$(EnableLiquidGlass)' == 'true'">liquid-glass</BuildFlavor>
     <BuildFlavor Condition="'$(EnableLiquidGlass)' != 'true'">native</BuildFlavor>
+    <EnableUiChecks Condition="'$(EnableUiChecks)' == ''">false</EnableUiChecks>
+    <BuildFlavor Condition="'$(EnableUiChecks)' == 'true'">$(BuildFlavor)-ui-checks</BuildFlavor>
+    <DefineConstants Condition="'$(EnableUiChecks)' == 'true'">$(DefineConstants);UI_CHECKS</DefineConstants>
     <!-- Must be established before SDK imports / restore, including ProjectReferences. -->
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj/$(BuildFlavor)/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>

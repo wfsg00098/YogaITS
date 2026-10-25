@@ -1,6 +1,6 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 using System.Numerics;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
 
 internal static class TrackEndpointChecks
 {
@@ -54,7 +54,7 @@ internal static class TrackEndpointChecks
         foreach (int width in new[] { 352, 680, 960 })
         foreach (int sign in new[] { -1, 1 })
         {
-            var layout = SwiftTabLayout.Create(width, 80);
+            var layout = ChoiceTrackLayout.Create(width, 80);
             var first = layout.Capsule(0); var last = layout.Capsule(3);
             float leftLimit = layout.Track.X - (first.X - layout.Track.X);
             float rightLimit = layout.Track.X + layout.Track.Width + (layout.Track.X + layout.Track.Width - last.X - last.Width);
@@ -96,7 +96,7 @@ internal static class TrackEndpointChecks
                 "release at an endpoint preserves integrated momentum");
             for (int i = 0; i < 1400; i++) { model.Advance(FourEdgePhysics.FixedStep); Inside(model, leftLimit, rightLimit); }
             Check(model.IsSettled, "endpoint release settles on its normal option");
-            var smaller = SwiftTabLayout.Create(240, 80);
+            var smaller = ChoiceTrackLayout.Create(240, 80);
             model.ConfigureTrack(smaller.Track, smaller.Capsule(0), smaller.Capsule(3));
             model.SetTarget(smaller.Capsule(3));
             for (int i = 0; i < 1400; i++)
@@ -110,7 +110,7 @@ internal static class TrackEndpointChecks
         // inward acceleration and the perpendicular component remain available.
         foreach (int sign in new[] { -1, 1 })
         {
-            var layout = SwiftTabLayout.Create(680, 80);
+            var layout = ChoiceTrackLayout.Create(680, 80);
             var model = new FourEdgePhysics(); model.Reset(layout.Capsule(1));
             model.ConfigureTrack(layout.Track, layout.Capsule(0), layout.Capsule(3)); model.SetPressed(true);
             for (int i = 0; i < 1200; i++) model.Advance(FourEdgePhysics.FixedStep);
@@ -150,7 +150,7 @@ internal static class TrackEndpointChecks
         }
         // Endpoint walls have no effect on the already-approved interior feel.
         {
-            var layout = SwiftTabLayout.Create(680, 80);
+            var layout = ChoiceTrackLayout.Create(680, 80);
             var free = new FourEdgePhysics(); var bounded = new FourEdgePhysics();
             foreach (var model in new[] { free, bounded }) model.Reset(layout.Capsule(1));
             bounded.ConfigureTrack(layout.Track, layout.Capsule(0), layout.Capsule(3));

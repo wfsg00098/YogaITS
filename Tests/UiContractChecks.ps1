@@ -4,9 +4,28 @@ $published = [IO.Path]::GetFullPath($PublishedDirectory)
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('YogaITS-UiChecks-' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($temporary) | Out-Null
 try {
-    # Change elevation ONLY on a disposable copy. Never run the controller or
-    # change the manifest, permissions, identity or hashes of the delivered app.
-    Copy-Item -Path (Join-Path $published '*') -Destination $temporary -Recurse
+    # Compile the same UI into an opt-in check host. Shipping assemblies contain
+    # no test implementation or test dispatch entry point. All outputs are isolated.
+    $root = Split-Path $PSScriptRoot
+    $flavor = (Get-Content (Join-Path $published 'build-flavor.json') -Raw | ConvertFrom-Json).flavor
+    $enabled = if ($flavor -eq 'liquid-glass') { 'true' } else { 'false' }
+    if ($enabled -eq 'true') {
+        $intermediate = Join-Path $root 'obj/liquid-glass-ui-checks/YogaITS.Tray'
+        [IO.Directory]::CreateDirectory($intermediate) | Out-Null
+        Copy-Item (Join-Path $root 'obj/liquid-glass/YogaITS.Tray/HdrToSdr.cso') $intermediate
+    }
+    dotnet publish (Join-Path $root 'YogaITS.Tray/YogaITS.Tray.csproj') -c Release -r win-x64 --self-contained false `
+        "-p:EnableLiquidGlass=$enabled" -p:EnableUiChecks=true -o $temporary
+    if ($LASTEXITCODE -ne 0) { throw 'UI check host build failed.' }
+    if ($enabled -eq 'true') {
+        $hashes = [ordered]@{}
+        foreach ($file in Get-ChildItem $temporary -File -Filter '*.dll' | Sort-Object Name) {
+            $hashes[$file.Name] = (Get-FileHash $file.FullName -Algorithm SHA256).Hash
+        }
+        @{ windowsAppSdk='2.2.0'; files=$hashes } | ConvertTo-Json -Depth 4 |
+            Set-Content (Join-Path $temporary 'runtime.lock.json') -Encoding utf8NoBOM
+    }
+    # Elevation changes apply exclusively to this disposable test host.
     $mt = "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.26100.0\x64\mt.exe"
     $exe = Join-Path $temporary 'YogaITS.Tray.exe'
     $manifestPath = Join-Path $temporary 'checks.manifest'

@@ -1,3 +1,5 @@
+using YogaITS.Tray.UI.Features;
+using YogaITS.Tray.UI.Layout;
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.IO.Compression;
@@ -8,7 +10,6 @@ using YogaITS.Tray.Services;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Hpd;
-using YogaITS.Tray.UI;
 using YogaITS.Tray.Services.Updates;
 
 int packageIndex = Array.IndexOf(args, "--check-package");
@@ -323,6 +324,7 @@ Check(AppLaunchPolicy.ShouldOpenControlCenter([]), "Argument-free launch opens t
 int iconIndex = Array.IndexOf(args, "--icon-executable");
 if (iconIndex >= 0)
 {
+    checks += PublishedAssemblyChecks.Run(args[iconIndex + 1]);
     foreach (bool small in new[] { false, true })
     {
         using var icon = ApplicationIcon.Load(small, args[iconIndex + 1]);

@@ -1,3 +1,6 @@
+#if LIQUID_GLASS
+using YogaITS.Tray.UI.Glass.Runtime;
+#endif
 using YogaITS.Tray.Services;
 using YogaITS.Tray.Services.Color.LenovoTcon;
 using System.Runtime.CompilerServices;
@@ -10,7 +13,17 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+#if UI_CHECKS
         bool check = args.Contains("--check-runtime") || args.Contains("--check-ui-contract");
+#else
+        if (args.Contains("--check-ui-contract"))
+        {
+            Console.Error.WriteLine("Use Tests/UiContractChecks.ps1 to build and run the isolated UI check host.");
+            Environment.ExitCode = 2;
+            return;
+        }
+        bool check = args.Contains("--check-runtime");
+#endif
         if (!check && AppSession.TryForwardExistingInstance(args)) return;
         // A reset helper may still own the display stack; do not create WinUI resources yet.
         try { if (!check) GpuDeviceRestartProtocol.WaitForIdle(TimeSpan.FromSeconds(45)); }
@@ -18,7 +31,7 @@ internal static class Program
 #if LIQUID_GLASS
         if (!check && !CaptureIdentityBootstrap.ContinueStartup(args)) return;
 #endif
-        // Match the final probe: process security precedes UI/OLE/COM proxies.
+        // Process security must precede UI/OLE/COM proxies.
         ProcessComSecurity.InitializeEarly();
         try
         {

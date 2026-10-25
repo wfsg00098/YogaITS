@@ -1,6 +1,6 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 using System.Numerics;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
 
 internal static class ReflowChecks
 {
@@ -20,8 +20,8 @@ internal static class ReflowChecks
         }
         foreach (double width in new[] { 202.0, 352, 600, 960 })
         {
-            var three = SwiftTabLayout.Create(width, 80, 3);
-            var two = SwiftTabLayout.Create(width, 80, 2);
+            var three = ChoiceTrackLayout.Create(width, 80, 3);
+            var two = ChoiceTrackLayout.Create(width, 80, 2);
             var model = new FourEdgePhysics();
             model.Reset(three.Capsule(1));
             model.ConfigureTrack(three.Track, three.Capsule(0), three.Capsule(2));
@@ -59,8 +59,8 @@ internal static class ReflowChecks
                 "Both two-dimensional movement and shape changes settle completely");
         }
         {
-            var wide = SwiftTabLayout.Create(960,80);
-            var narrow = SwiftTabLayout.Create(202,80);
+            var wide = ChoiceTrackLayout.Create(960,80);
+            var narrow = ChoiceTrackLayout.Create(202,80);
             var model = new FourEdgePhysics(); model.Reset(wide.Capsule(3));
             model.ConfigureTrack(wide.Track,wide.Capsule(0),wide.Capsule(3));
             var before = model.Position;

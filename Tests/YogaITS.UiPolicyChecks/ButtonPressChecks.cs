@@ -1,6 +1,6 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 using System.Numerics;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
 
 internal static class ButtonPressChecks
 {

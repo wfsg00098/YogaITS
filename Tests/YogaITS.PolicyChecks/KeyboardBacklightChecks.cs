@@ -1,5 +1,5 @@
+using YogaITS.Tray.UI.Features;
 using YogaITS.Tray.Services.KeyboardBacklight;
-using YogaITS.Tray.UI;
 
 internal static class KeyboardBacklightChecks
 {

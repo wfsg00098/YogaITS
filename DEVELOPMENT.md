@@ -8,13 +8,18 @@
 - `YogaITS.Tray/Services/`：ITS、充电、独显、状态缓存、启动任务、系统事件及串行操作基类。
 - `Services/Color/`、`Services/Elevoc/`、`Services/Hpd/`：色彩、音频、人员感知服务及协议实现。
 - `Services/Color/LenovoTcon/`：最终 TCON 探针的 native WMI、SPB session 和色域回读路径。
-- `YogaITS.Tray/UI/`：完整/迷你窗口、信息窗口、功能卡片、原生动画、滚动条和辅助功能。
+- `YogaITS.Tray/UI/Shell/`：完整/迷你窗口、信息窗口及 Win32 窗口辅助。
+- `YogaITS.Tray/UI/Controls/`、`Layout/`、`Animation/`、`Accessibility/`、`Features/`、`Presentation/`：两种构建共用的控件、排版、原生动效、无障碍、功能分组及材质适配入口。
+- `YogaITS.Tray/UI/Glass/`：可整体排除的玻璃实现，按 `Controls/Animation/Layout/Rendering/Backgrounds/Capture/Runtime/Settings/Windowing` 划分；捕获 native bridge 与 HDR shader 位于对应组件内。
+- `ThirdParty/LiquidGlassWinUI/`：固定版本的第三方材质项目、shader、LICENSE 和 UPSTREAM；`ThirdParty/LiquidGlassTabBars/` 保留参考动效的许可。
 - `YogaITS.Tray/Assets/YogaITS.ico`：编译进 EXE 的图标源，不单独复制到发布目录。
 - `YogaITS.dGPUKeepAwake/`：独立 NVIDIA 空闲 context 助手，不承载保活策略。
 - `YogaITS.dGPURestart/`：等待主程序退出、重启独显设备并恢复控制中心窗口的独立助手，不加载 WinUI。
 - `YogaITS.Tray/Services/KeyboardBacklight/`：键盘背光协议、EnergyDrv 设备访问、Probe/Get/Set 后端及串行服务，无状态持久化或自动场景。
 - `YogaITS.Updater/`：等待主程序退出、校验/安装及失败回滚的更新助手。
-- `Tests/YogaITS.PolicyChecks/`：不操作硬件的逻辑检查。
+- `Tests/YogaITS.PolicyChecks/`：业务策略、更新包和发布程序集边界检查，不操作硬件。
+- `Tests/YogaITS.UiPolicyChecks/`：直接链接生产 UI 策略、布局和物理状态的无硬件检查。
+- `Tests/YogaITS.UiChecks/`、`Tests/UiContractChecks.ps1`：真实 WinUI 控件契约，仅编入隔离的检查构建；不进入正式发布物。
 - `Tests/YogaITS.ReadOnlyProbe/`：能力与状态的只读诊断。
 - `main.png`、`mini.png`：README 使用的用户界面截图。
 
@@ -34,13 +39,13 @@ Windows x64、PowerShell 7 与 .NET 10 SDK。普通版使用系统 Windows App R
 .\dist\liquid-glass\YogaITS.Tray.exe
 ```
 
-两版名称均为 Yoga控制中心，应用标识 YogaITS，EXE 均为 `YogaITS.Tray.exe`；仅包名以 `-lg` 区分材质构建。所有 helper 使用相同构建标志。`Directory.Build.props/targets` 将 restore/build 中间产物隔离至根目录 `obj/<flavor>/<project>/`、`bin/<flavor>/<project>/`，不能跨 flavor 复用 assets。普通版不编译玻璃/Win2D/捕获/物理引擎，也不携带捕获身份或本地 SDK。
+两版名称均为 Yoga控制中心，应用标识 YogaITS，EXE 均为 `YogaITS.Tray.exe`；仅包名以 `-lg` 区分材质构建。所有 helper 使用相同构建标志。`Directory.Build.props/targets` 将 restore/build 中间产物隔离至根目录 `obj/<flavor>/<project>/`、`bin/<flavor>/<project>/`，检查构建另加 `-ui-checks` 后缀，不能跨 flavor 或生产/检查构建复用 assets。普通版不编译玻璃/Win2D/捕获/物理引擎，也不携带捕获身份或本地 SDK。
 
 脚本仅清理选定输出目录；默认分别是 `dist/native` 和 `dist/liquid-glass`，不会删除另一版。使用 `-OutputDirectory ./publish/<独立目录>` 可保留正在运行的构建；只允许仓库 `dist/`、`publish/` 下的专用目录，不覆盖当前运行的程序。不要直接对四个项目逐一裸 publish 作为玻璃版交付，否则会漏掉 C++ bridge、HDR shader、runtime lock 或 sparse identity。
 
 完整构建发布主程序及更新、独显保活、独显重启三个助手，统一内嵌版本/完整 SHA，验证 PRI、依赖隔离和 .NET 运行模式。玻璃版先构建捕获桥接、HDR shader 与原生 DWM shader 检查，再生成全部 DLL 的 `runtime.lock.json`，准备 `CaptureIdentity` 清单/徽标和第三方许可。构建不注册身份、不启动硬件控制器、不捕获桌面；`-BuildOnly` 保留参考项目的命令形式。图标继续使用 YogaITS 原图并内置于 EXE；身份所需的 PNG 是系统包徽标。
 
-`-Checks` 执行版本命名检查、UI/捕获/HDR/物理与自适应布局策略检查及应用策略检查；玻璃版还执行 WARP 合成像素检查和真实 WinUI dispatcher 下的无可见窗口控件契约检查。后者仅在临时副本改为 asInvoker，执行 `--check-ui-contract` 后退出，不实例化 `MainWindow` 或真实服务，不影响交付文件的管理员清单。普通版可在装有兼容系统运行时的本机手工运行 `./Tests/UiContractChecks.ps1 -PublishedDirectory ./dist/native`。
+`-Checks` 执行版本命名检查、UI/捕获/HDR/物理与自适应布局策略检查及应用策略检查；玻璃版还执行 WARP 合成像素检查和真实 WinUI dispatcher 下的无可见窗口控件契约检查。后者由 `Tests/UiContractChecks.ps1` 显式使用 `EnableUiChecks=true` 重编译同一套 UI 到临时检查宿主，独立还原、独立输出，只对该宿主改为 asInvoker 后执行 `--check-ui-contract`；不实例化 `MainWindow` 或真实服务，不影响交付文件。生产构建默认 `EnableUiChecks=false`，不包含测试实现；若误传检查参数则立即拒绝，不启动硬件控制器。普通版可在装有兼容系统运行时的本机手工运行 `./Tests/UiContractChecks.ps1 -PublishedDirectory ./dist/native`。
 
 非打包 WinUI 必须保留 PRI，`AddProjectPriToResolvedFileToPublish` 补充 SDK 的发布遗漏。交付需完整解压选中 ZIP，禁止混合两个构建的运行文件。
 
@@ -65,6 +70,14 @@ Windows x64、PowerShell 7 与 .NET 10 SDK。普通版使用系统 Windows App R
 发布 job 仅在构建成功后使用 `GITHUB_TOKEN` 的 `contents: write` 权限，以完整提交 SHA 为 tag 目标自动创建 Release 并附带 ZIP，不需要额外 secret 或 GPG 私钥。Actions 固定到官方提交 SHA。重复运行已有版本只更新附件，并验证标签目标相同；不重写提交或移动已有标签，不影响已签名提交的 Verified。
 
 发布前及上传后核对远端 main，只有仍对应 main 的发布才标记 latest，避免旧构建晚完成覆盖最新版。标准交付使用 `build-clean.ps1`；独立目录构建同样需要发布四个项目，保留主程序、PRI、三个助手及所有运行依赖。
+
+## 代码结构与发布边界
+
+正式 UI 不以演示项目作为依赖入口。两种构建共用 `UI/Controls` 与硬件服务；原生/玻璃差异集中在 `WindowMaterial`、`ChoiceBar` 的适配点。普通版通过一条 `Compile Remove="UI/Glass/**"` 排除整套可选实现，不再维护容易漏项的文件名通配符列表。第三方材质作为独立项目位于 `ThirdParty`，保留原始命名空间、许可和版本信息，不与应用业务代码混编。
+
+仅做职责归位、名称与构建引用整理；不调整已验证的物理参数、HLSL、材质数学或硬件协议。演示控件 `FluidTabBar`/`FluidTabIndicator` 及仅服务旧演示的几何/手势夹具已删除；相关自测同步移除，现有生产物理、手势、可变行布局和控件契约继续运行。`PreviewKeyDown`、指针 preview/pending 和硬件 Probe/Get 是真实产品/API 语义，不做关键词式删除。
+
+发布检查直接读取 PE 元数据，确认生产 DLL 不包含 `YogaITS.Tray.Tests`、`YogaITS.Tray.Demos` 或 UI 测试分发实现，普通版不含 `UI.Glass` 类型及 Win2D/材质引用。检查宿主的 `obj/bin` 与正式构建隔离，脚本不会修改正在交付或运行的程序，Actions 仍复用同一构建入口。
 
 ## 串行调度与稳定性
 
@@ -92,7 +105,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 ## 6.0 材质接入与边界
 
-参考 `YogaITS.UIProbe-source.zip`，原样复用其玻璃材质、shader、背景采样、DPI/裁剪、物理动效及捕获生命周期；生产命名空间改为 `YogaITS.Tray`，未引入 ProbePreview、模拟状态、演示窗口或假延时。`Demos/` 仅保留实际使用的 renderer/physics 基础类及许可。两版共用窗口和硬件服务，不复制业务后端。
+参考 `YogaITS.UIProbe-source.zip`，原样复用其玻璃材质、shader、背景采样、DPI/裁剪、物理动效及捕获生命周期；生产命名空间改为 `YogaITS.Tray`，未引入 ProbePreview、模拟状态、演示窗口或假延时。已移除 `Demos/` 与演示专用控件、夹具及未启用的预览校验分支；实际使用的 renderer/physics 已归入 `UI/Glass/Rendering`、`Animation`、`Layout`。公共控件样式从旧版演示控件拆出为 `GlassChoiceStyle`，布局和状态分别使用 `ChoiceTrackLayout`、`SelectionMotionState`。两版共用窗口和硬件服务，不复制业务后端。
 
 `HardwareChoiceGroup` 将性能、充电、显卡偏好、色域、麦克风、睡眠速度和背光的实际选项 ID 绑定到 ChoiceBar/native cards。未知状态不伪选第一项，也不发送补偿 SET；pending 与 confirmed 分离，完成后只读服务 snapshot。选项改名/重排保留语义 ID；音频 endpoint、显示设备/backend 形成请求域，能力变化/关闭/过期异步完成不覆盖新 UI。复用未变化的控件以保留焦点。HDR/ACM、录音期间禁用和其他能力条件继续由真实 snapshot 决定。
 
@@ -191,7 +204,7 @@ HPD 保留 ContextCreate/ContextClose 生命周期，检查设置返回码并回
 
 在线恢复取得用户确认后，在同一个三分钟总等待边界内执行初次下载及最多三次重新下载。只有四次候选文件指纹一致且仍含坏文件、同时至少有一个好模式时，才跳过坏文件；指纹变化、取消、超时或全部损坏都不接受部分包。下载和每次解压相互隔离，缓存复制时排除坏文件，再完整验证新副本后替换 Factory；最后 ZIP 保留下载原件。普通刷新不自行上传序列号或发起恢复。`CalibrationDownloadPolicy` 通过模拟下载验证次数、修复后提前结束、稳定部分包、变化结果和取消。
 
-色域专用的 `HardwareChoiceGroup` 测量当前字体下的完整标签，`ChoiceLayout` 贪心分行后分配剩余宽度；普通卡片与玻璃选择条共用行计划，最终行也铺满。`SwiftTabLayout` 支持可变行长，命中、上下键和胶囊目标均跟随实际行；不设置 16 项模式上限。单个名称长到必须多行，或不同原始模式具有相同显示名时，保留原生卡片呈现及完整文字，不通过省略或隐藏模式处理。玻璃材质和物理积分算法不变。
+色域专用的 `HardwareChoiceGroup` 测量当前字体下的完整标签，`ChoiceLayout` 贪心分行后分配剩余宽度；普通卡片与玻璃选择条共用行计划，最终行也铺满。`ChoiceTrackLayout` 支持可变行长，命中、上下键和胶囊目标均跟随实际行；不设置 16 项模式上限。单个名称长到必须多行，或不同原始模式具有相同显示名时，保留原生卡片呈现及完整文字，不通过省略或隐藏模式处理。玻璃材质和物理积分算法不变。
 
 ## TCON 与 ICC 自动选择
 

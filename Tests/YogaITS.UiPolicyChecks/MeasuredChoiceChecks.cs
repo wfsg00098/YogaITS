@@ -1,5 +1,6 @@
-using YogaITS.Tray.UI;
-using YogaITS.Tray.Demos.SwiftTabs;
+using YogaITS.Tray.UI.Controls;
+using YogaITS.Tray.UI.Layout;
+using YogaITS.Tray.UI.Glass.Layout;
 
 internal static class MeasuredChoiceChecks
 {
@@ -15,7 +16,7 @@ internal static class MeasuredChoiceChecks
         foreach (double width in new[] { 180.0, 320, 460, 800 })
         {
             double[] sizes = Enumerable.Range(0, count).Select(i => 60.0 + i % 5 * 31).ToArray();
-            var layout = SwiftTabLayout.CreateMeasured(width, sizes);
+            var layout = ChoiceTrackLayout.CreateMeasured(width, sizes);
             var rows = ChoiceLayout.Rows(width - 12, sizes);
             Check(layout.Items.Length == count && layout.Rows == rows.Length, "Every discovered mode has a layout slot without a fixed count limit.");
             for (int row = 0; row < rows.Length; row++)

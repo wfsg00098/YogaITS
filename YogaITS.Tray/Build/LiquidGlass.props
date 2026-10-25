@@ -8,12 +8,12 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="[2.2.0]" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="[1.3.2]" />
     <PackageReference Include="LiquidGlassWinUI" Version="[1.0.3]" ExcludeAssets="all" GeneratePathProperty="true" PrivateAssets="all" />
-    <ProjectReference Include="Material/LiquidGlassWinUI.csproj" />
+    <ProjectReference Include="../ThirdParty/LiquidGlassWinUI/LiquidGlassWinUI.csproj" />
     <EmbeddedResource Include="$(BaseIntermediateOutputPath)HdrToSdr.cso" LogicalName="YogaITS.Tray.HdrToSdr.cso" />
     <Content Include="$(PkgLiquidGlassWinUI)/runtimes/win-x64/native/CustomEffectRuntimeNative.dll" Link="CustomEffectRuntimeNative.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Native/Output/x64/Release/YogaITS.DesktopCapture_lg.dll" Link="YogaITS.DesktopCapture_lg.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Material/LICENSE" Link="ThirdPartyNotices/LiquidGlassWinUI-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Demos/SwiftTabs/LiquidGlassTabBars-LICENSE.txt" Link="ThirdPartyNotices/LiquidGlassTabBars-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="UI/Glass/Capture/Native/Output/x64/Release/YogaITS.DesktopCapture_lg.dll" Link="YogaITS.DesktopCapture_lg.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../ThirdParty/LiquidGlassWinUI/LICENSE" Link="ThirdPartyNotices/LiquidGlassWinUI-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../ThirdParty/LiquidGlassTabBars/LICENSE.txt" Link="ThirdPartyNotices/LiquidGlassTabBars-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="ThirdPartyNotices.txt" Link="ThirdPartyNotices/ThirdPartyNotices.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

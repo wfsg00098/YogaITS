@@ -1,5 +1,5 @@
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 
 internal static class LayoutTimingChecks
 {

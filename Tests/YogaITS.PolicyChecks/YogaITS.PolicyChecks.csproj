@@ -25,7 +25,7 @@
     <Compile Include="../../YogaITS.Tray/Services/NvidiaGpuHelper.cs" Link="NvidiaGpuHelper.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuActionResult.cs" Link="GpuActionResult.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuDeviceRestartProtocol.cs" Link="GpuDeviceRestartProtocol.cs" />
-    <Compile Include="../../YogaITS.Tray/UI/WindowSizing.cs" Link="WindowSizing.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/Layout/WindowSizing.cs" Link="WindowSizing.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ItsCapabilityPolicy.cs" Link="ItsCapabilityPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ItsModePolicy.cs" Link="ItsModePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuAutoPolicy.cs" Link="GpuAutoPolicy.cs" />
@@ -47,7 +47,7 @@
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/ElevocMicrophonePolicy.cs" Link="ElevocMicrophonePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/CoreAudioEndpointMonitor.cs" Link="CoreAudioEndpointMonitor.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Elevoc/VoiceRegistrationRecorder.cs" Link="VoiceRegistrationRecorder.cs" />
-    <Compile Include="../../YogaITS.Tray/UI/SettingsOptionText.cs" Link="SettingsOptionText.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/Features/SettingsOptionText.cs" Link="SettingsOptionText.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/NativeMethods.cs" Link="NativeMethods.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/DisplayService.cs" Link="DisplayService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Color/ColorBackendPolicy.cs" Link="ColorBackendPolicy.cs" />

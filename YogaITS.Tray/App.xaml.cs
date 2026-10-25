@@ -1,4 +1,8 @@
-﻿using Microsoft.UI.Xaml;
+#if LIQUID_GLASS
+using YogaITS.Tray.UI.Glass.Runtime;
+using YogaITS.Tray.UI.Glass.Settings;
+#endif
+using Microsoft.UI.Xaml;
 using YogaITS.Tray.Services;
 
 namespace YogaITS.Tray;
@@ -15,22 +19,26 @@ public partial class App : Application
     public App()
     {
         UnhandledException += (_, args) => System.Diagnostics.Trace.WriteLine(args.Exception);
+#if UI_CHECKS
         if (Environment.GetCommandLineArgs().Contains("--check-ui-contract"))
             UnhandledException += (_, args) => Console.Error.WriteLine(args.Exception);
+#endif
         try { InitializeComponent(); }
         catch (Exception ex) { Console.Error.WriteLine(ex); throw; }
     }
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+#if UI_CHECKS
         if (Environment.GetCommandLineArgs().Contains("--check-ui-contract"))
         {
             CheckUiContract();
             return;
         }
+#endif
 #if LIQUID_GLASS
         BundledRuntime.CheckLoadedModules();
-        UI.GlassSettingsController.LoadSavedOptions();
+        GlassSettingsController.LoadSavedOptions();
 #endif
         string[] arguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
         bool openControlCenter = AppLaunchPolicy.ShouldOpenControlCenter(arguments);
@@ -63,10 +71,12 @@ public partial class App : Application
         if (openMiniWindow) _window.RequestOpenMiniWindow();
     }
 
+#if UI_CHECKS
     private async void CheckUiContract()
     {
         try { await Tests.UiContractChecks.RunAsync(); }
         catch (Exception ex) { Console.Error.WriteLine(ex); Environment.ExitCode = 9; }
         finally { Exit(); }
     }
+#endif
 }

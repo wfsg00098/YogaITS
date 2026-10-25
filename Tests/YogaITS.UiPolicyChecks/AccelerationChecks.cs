@@ -1,6 +1,6 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 using System.Numerics;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
 
 internal static class AccelerationChecks
 {
@@ -16,7 +16,7 @@ internal static class AccelerationChecks
             Check(float.IsFinite(physics.Velocity.X + physics.Velocity.Y + physics.Velocity.Z + physics.Velocity.W),
                 "velocities remain finite");
         }
-        var layout = SwiftTabLayout.Create(680, 80);
+        var layout = ChoiceTrackLayout.Create(680, 80);
         foreach (int original in Enumerable.Range(0, 4))
         foreach (int next in Enumerable.Range(0, 4))
         {

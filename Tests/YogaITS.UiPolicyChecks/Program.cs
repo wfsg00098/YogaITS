@@ -1,6 +1,13 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Backgrounds;
+using YogaITS.Tray.UI.Glass.Capture;
+using YogaITS.Tray.UI.Glass.Layout;
+using YogaITS.Tray.UI.Glass.Rendering;
+using YogaITS.Tray.UI.Glass.Runtime;
+using YogaITS.Tray.UI.Glass.Settings;
+using YogaITS.Tray.UI.Glass.Windowing;
 using System.Numerics;
 using YogaITS.Tray.Services;
-using YogaITS.Tray.UI;
 
 int checks = AccelerationChecks.Run() + TrackEndpointChecks.Run() + OptionBarChecks.Run() + MultiRowOptionChecks.Run() + ButtonPressChecks.Run() + DynamicOptionChecks.Run() + ReflowChecks.Run() + LayoutTimingChecks.Run() + ImageBackgroundChecks.Run() + CaptureRetirementChecks.Run() + ElasticLayoutChecks.Run() + MeasuredChoiceChecks.Run();
 void Check(bool pass, string message)
@@ -8,51 +15,20 @@ void Check(bool pass, string message)
     checks++;
     if (!pass) throw new InvalidOperationException(message);
 }
-// Pointer/resize/rapid-reversal regression for the fluid performance selector.
-foreach (double width in new[] { 12.0, 352, 420, 600, 1440, double.NaN, double.PositiveInfinity })
-{
-    var layout = YogaITS.Tray.Demos.FluidTabs.FluidTabGeometry.Create(width, 64);
-    Check(float.IsFinite(layout.Cell) && layout.Cell > 0, "Fluid selector always has finite positive cell geometry");
-    for (int index = 0; index < 4; index++)
-    {
-        Check(layout.IndexAt(layout.Left(index) + layout.Cell / 2) == index, "Every tab center maps to its own exclusive option after resize");
-        Check(layout.Left(index) >= 4 && layout.Left(index) + layout.Cell <= 4 + layout.Available + 0.001f,
-            "Selected capsule fits inside the track at both endpoints");
-    }
-    Check(layout.IndexAt(-10000) == 0 && layout.IndexAt(1000000) == 3, "Captured drags outside the bar clamp to the first/last option");
-    Check(layout.DragLeft(-10000) == layout.Left(0) && Math.Abs(layout.DragLeft(1000000) - layout.Left(3)) < 0.001f,
-        "Drag targets cannot move the capsule outside the track");
-}
-Check(YogaITS.Tray.Demos.FluidTabs.FluidTabGeometry.Next(0, -1) == 3 &&
-      YogaITS.Tray.Demos.FluidTabs.FluidTabGeometry.Next(3, 1) == 0, "Keyboard navigation wraps across the four exclusive modes");
-
-var fluidLayout = YogaITS.Tray.Demos.FluidTabs.FluidTabGeometry.Create(600, 64);
-var gesture = new YogaITS.Tray.Demos.FluidTabs.FluidTabGesture();
-double grabX = fluidLayout.Left(1) + 12;
-Check(gesture.Begin(7, grabX, 1, fluidLayout), "Selected capsule accepts a pointer grab away from its center");
-Check(!gesture.Begin(8, grabX, 1, fluidLayout), "A second pointer cannot steal an active drag");
-Check(!gesture.Move(8, grabX+80, fluidLayout, out _, out _), "Other pointer motion is ignored");
-Check(!gesture.Move(7, grabX+2, fluidLayout, out _, out _), "Minor click jitter does not become a drag");
-Check(gesture.Move(7, grabX+fluidLayout.Cell, fluidLayout, out float dragLeft, out int dragIndex) &&
-      Math.Abs(dragLeft-fluidLayout.Left(2)) < 0.001 && dragIndex == 2, "Dragging moves the grabbed block without recentering it under the pointer");
-Check(gesture.Move(7, -500, fluidLayout, out dragLeft, out dragIndex) && dragIndex == 0 && dragLeft == fluidLayout.Left(0), "Captured drags clamp at the left edge");
-Check(gesture.Move(7, 10000, fluidLayout, out dragLeft, out dragIndex) && dragIndex == 3, "Captured drags clamp at the right edge");
-gesture.End();
-Check(!gesture.Owns(7) && !gesture.IsDragging, "Releasing/canceling removes pointer ownership");
-var moving = new YogaITS.Tray.Demos.FluidTabs.FluidTabMotionState();
+var moving = new YogaITS.Tray.UI.Glass.Animation.SelectionMotionState();
 int oldMotion = moving.Begin(true), latestMotion = moving.Begin(true);
 Check(!moving.Complete(oldMotion) && moving.IsMoving, "Interrupted animation completion cannot end a newer optical stretch");
 Check(moving.IsMoving, "Inflation remains active throughout the current motion");
 Check(moving.Complete(latestMotion) && !moving.IsMoving, "Inflation releases only after the current animation completes");
 Check(!moving.Complete(latestMotion), "Repeated completion cannot release motion twice");
 foreach (var (leading, dragging, oldPeriod) in new[] { (true,false,265), (false,false,410), (true,true,105), (false,true,155) })
-    Check(Math.Abs(YogaITS.Tray.Demos.FluidTabs.FluidTabMotionState.Period(leading,dragging).TotalMilliseconds * 3 - oldPeriod) < 0.001,
+    Check(Math.Abs(YogaITS.Tray.UI.Glass.Animation.SelectionMotionState.Period(leading,dragging).TotalMilliseconds * 3 - oldPeriod) < 0.001,
         "Click and drag spring periods are exactly one third of the initial demo");
 
 foreach (double width in new[] { 240.0, 352, 600, 960 })
 for (int selected = 0; selected < 4; selected++)
 {
-    var reference = YogaITS.Tray.Demos.SwiftTabs.SwiftTabLayout.Create(width, 80);
+    var reference = YogaITS.Tray.UI.Glass.Layout.ChoiceTrackLayout.Create(width, 80);
     for (int i=0; i<4; i++)
     {
         var frame = reference.Items[i];
@@ -68,27 +44,27 @@ for (int selected = 0; selected < 4; selected++)
 }
 
 // A single excursion returns to rest without another inverted lobe or ringing.
-Check(YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Impulse(0) == 0 &&
-    YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Impulse(1) == 0 &&
-    YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Response(0) == 0 &&
-    YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Response(1) == 1,
+Check(YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Impulse(0) == 0 &&
+    YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Impulse(1) == 0 &&
+    YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Response(0) == 0 &&
+    YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Response(1) == 1,
     "Inertia has exact rest and target endpoints");
 bool hasPeak = false, descending = false, singleExcursion = true, monotone = true;
 float lastImpulse = 0, lastResponse = 0;
 for (int i = 0; i <= 100; i++)
 {
-    float impulse = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Impulse(i / 100.0);
+    float impulse = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Impulse(i / 100.0);
     Check(float.IsFinite(impulse) && impulse >= 0 && impulse < 1.05, "A single bounded impulse never reverses direction");
     hasPeak |= impulse > 0.5;
     if (impulse < lastImpulse) descending = true;
     if (descending && impulse > lastImpulse + 0.00001) singleExcursion = false;
-    float response = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Response(i / 100.0);
+    float response = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Response(i / 100.0);
     monotone &= float.IsFinite(response) && response >= lastResponse && response <= 1;
     lastImpulse = impulse;
     lastResponse = response;
 }
 Check(hasPeak && singleExcursion && monotone, "Duang once, return to rest, and stop without a second bounce");
-var kinetics = new YogaITS.Tray.Demos.SwiftTabs.FloatingTabKinetics();
+var kinetics = new YogaITS.Tray.UI.Glass.Animation.FloatingTabKinetics();
 kinetics.Reset(Vector2.Zero, 0);
 var acceleration = kinetics.MoveTo(new(10, 0), 0.01, false);
 Check(acceleration.Impulse(new(100, 100)).X > 0, "Starting motion triggers stretch");
@@ -108,7 +84,7 @@ Check(kinetics.Stop(1 + kinetics.Duration.TotalSeconds).Impulse(new(100, 100)).X
     "Animated arrival independently triggers a stopping impulse");
 
 // Releasing at an existing target keeps the current trajectory and end time.
-var uninterrupted = new YogaITS.Tray.Demos.SwiftTabs.FloatingTabKinetics();
+var uninterrupted = new YogaITS.Tray.UI.Glass.Animation.FloatingTabKinetics();
 uninterrupted.Reset(Vector2.Zero, 0);
 uninterrupted.MoveTo(new(224, 0), 0, true);
 Check(uninterrupted.TryContinue(new(224, 0), 0.05, out var remainingTravel) &&
@@ -122,8 +98,8 @@ Check(!uninterrupted.TryContinue(new(230, 0), 0.05, out _),
 Check(uninterrupted.TryContinue(new(224, 0), 0.25, out remainingTravel) && remainingTravel == TimeSpan.Zero,
     "A pending completion notification cannot create an extra movement after arrival");
 
-Check(Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.MinimumTravelSpeed - 1000 * 2.0 / 3) < 0.001 &&
-    Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.MovementDuration(new(20, 0)).TotalMilliseconds - 30) < 0.001,
+Check(Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.MinimumTravelSpeed - 1000 * 2.0 / 3) < 0.001 &&
+    Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.MovementDuration(new(20, 0)).TotalMilliseconds - 30) < 0.001,
     "Minimum speed is two thirds of its previous value and a 20 DIP short move takes 30 ms");
 
 // Short moves use a minimum speed rather than a fixed 224 ms wait. The
@@ -132,10 +108,10 @@ foreach (float distance in new[] { 0f, 0.25f, 0.99f, 1f, 2f, 8f, 20f, 90f, 224f,
 foreach (var direction in new[] { Vector2.UnitX, -Vector2.UnitX, Vector2.UnitY, new Vector2(0.6f, 0.8f) })
 {
     var destination = direction * distance;
-    var duration = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.MovementDuration(destination);
-    Check(duration >= TimeSpan.Zero && duration <= YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.TravelDuration,
+    var duration = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.MovementDuration(destination);
+    Check(duration >= TimeSpan.Zero && duration <= YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.TravelDuration,
         "Distance-aware travel never exceeds the existing maximum duration");
-    var shortMove = new YogaITS.Tray.Demos.SwiftTabs.FloatingTabKinetics();
+    var shortMove = new YogaITS.Tray.UI.Glass.Animation.FloatingTabKinetics();
     shortMove.Reset(Vector2.Zero, 0);
     var change = shortMove.MoveTo(destination, 0, true);
     Check(shortMove.Duration == duration, "The position model uses the actual planned travel duration");
@@ -146,7 +122,7 @@ foreach (var direction in new[] { Vector2.UnitX, -Vector2.UnitX, Vector2.UnitY, 
         Check(!shortMove.TryContinue(destination, 0, out _), "An immediate move has no delayed arrival to wait for");
         continue;
     }
-    Check(change.Current.Length() >= YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.MinimumTravelSpeed - 0.2,
+    Check(change.Current.Length() >= YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.MinimumTravelSpeed - 0.2,
         "Actual vector speed reaches the minimum at every direction and distance");
     Check(Vector2.Distance(shortMove.PositionAt(duration.TotalSeconds / 2), destination / 2) < 0.001,
         "Short-move position remains linear and agrees with native keyframe timing");
@@ -156,21 +132,21 @@ foreach (var direction in new[] { Vector2.UnitX, -Vector2.UnitX, Vector2.UnitY, 
     Check(Vector2.Distance(shortMove.PositionAt(duration.TotalSeconds), destination) < 0.001 &&
         shortMove.VelocityAt(duration.TotalSeconds) == Vector2.Zero,
         "Arrival and stopping velocity use the shortened deadline");
-    var growthDelay = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.GrowthDelay(duration);
-    var growth = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.GrowDuration;
+    var growthDelay = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.GrowthDelay(duration);
+    var growth = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.GrowDuration;
     Check(duration >= growth ? growthDelay + growth == duration : growthDelay == TimeSpan.Zero,
         "Growth end-aligns with longer travel and starts immediately with shorter travel without shortening");
 }
 
 // Equal speeds with different directions must still produce inertia.
-var turn = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(new(500, 0), new(0, 500));
+var turn = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(new(500, 0), new(0, 500));
 Check(turn.Delta == new Vector2(-500, 500) && turn.Significant(new(100, 100)) && !turn.Impulse(new(100, 100)).IsZero,
     "Velocity keeps two-dimensional direction, not just scalar speed");
 foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(0, 800), new Vector2(600, 800), new Vector2(-600, 800) })
 {
     var direction = Vector2.Normalize(velocity);
     var perpendicular = new Vector2(-direction.Y, direction.X);
-    var strain = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, velocity).Stretch(new(150, 48));
+    var strain = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, velocity).Stretch(new(150, 48));
     var along = strain.Apply(direction);
     var across = strain.Apply(perpendicular);
     Check(Vector2.Dot(along, direction) > 1 && Vector2.Dot(across, perpendicular) < 1,
@@ -183,7 +159,7 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
 {
     var size = new Vector2(150, 48);
     var direction = Vector2.Normalize(velocity);
-    var change = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, velocity);
+    var change = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, velocity);
     foreach (var strain in new[] { change.Stretch(size), change.Impulse(size) })
     {
         var offset = strain.ForwardOffset(size, velocity);
@@ -213,7 +189,7 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
 {
     var direction = Vector2.Normalize(velocity);
     var perpendicular = new Vector2(-direction.Y, direction.X);
-    var recoil = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(velocity, Vector2.Zero).Impulse(new(150, 48));
+    var recoil = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(velocity, Vector2.Zero).Impulse(new(150, 48));
     float along = Vector2.Dot(recoil.Apply(direction), direction);
     float across = Vector2.Dot(recoil.Apply(perpendicular), perpendicular);
     Check(along < 1 && across > 1,
@@ -229,10 +205,10 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
     var size = new Vector2(150, 48);
     var direction = Vector2.Normalize(velocity);
     var perpendicular = new Vector2(-direction.Y, direction.X);
-    var recoil = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(velocity, Vector2.Zero).Impulse(size);
+    var recoil = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(velocity, Vector2.Zero).Impulse(size);
     foreach (float weight in new[] { 0f, 0.25f, 0.5f, 1f, 0.5f, 0.25f, 0f })
     {
-        var strain = new YogaITS.Tray.Demos.SwiftTabs.GlassStrain(recoil.X * weight, recoil.Y * weight, recoil.XY * weight);
+        var strain = new YogaITS.Tray.UI.Glass.Animation.GlassStrain(recoil.X * weight, recoil.Y * weight, recoil.XY * weight);
         var offset = strain.ForwardOffset(size, velocity);
         float radius = Math.Min(size.X, size.Y) / 2;
         var core = size / 2 - new Vector2(radius);
@@ -271,10 +247,10 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
 {
     var direction = Vector2.Normalize(velocity);
     var size = new Vector2(150, 48);
-    var start = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, velocity);
-    var stop = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(velocity, Vector2.Zero);
+    var start = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, velocity);
+    var stop = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(velocity, Vector2.Zero);
     foreach (var pressure in new[] { Vector2.One, new Vector2(1.1f, 1.42f) })
-    foreach (var strain in new[] { start.Stretch(size), start.Impulse(size), stop.Impulse(size), default(YogaITS.Tray.Demos.SwiftTabs.GlassStrain) })
+    foreach (var strain in new[] { start.Stretch(size), start.Impulse(size), stop.Impulse(size), default(YogaITS.Tray.UI.Glass.Animation.GlassStrain) })
     {
         float lastFront = float.NegativeInfinity;
         for (int step = 0; step <= 100; step++)
@@ -313,8 +289,8 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
     var size = new Vector2(150, 48);
     var direction = Vector2.Normalize(velocity);
     var perpendicular = new Vector2(-direction.Y, direction.X);
-    var start = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, velocity).Stretch(size);
-    var stop = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(velocity, Vector2.Zero).Impulse(size);
+    var start = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, velocity).Stretch(size);
+    var stop = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(velocity, Vector2.Zero).Impulse(size);
     foreach (var pressure in new[] { Vector2.One, new Vector2(1.1f, 1.42f) })
     {
         bool frontAnchored = false;
@@ -322,9 +298,9 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
         foreach (var (remaining, strain) in new[]
         {
             (300f, start), (20f, start), (1f, start),
-            (0.8f, default(YogaITS.Tray.Demos.SwiftTabs.GlassStrain)),
+            (0.8f, default(YogaITS.Tray.UI.Glass.Animation.GlassStrain)),
             (0.6f, stop), (0f, stop),
-            (0f, default(YogaITS.Tray.Demos.SwiftTabs.GlassStrain))
+            (0f, default(YogaITS.Tray.UI.Glass.Animation.GlassStrain))
         })
         {
             bool wasAnchored = frontAnchored;
@@ -378,9 +354,9 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
 foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new Vector2(0, 800), new Vector2(0, -800), new Vector2(600, 800), new Vector2(-600, 800) })
 {
     var size = new Vector2(150, 48);
-    var start = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, velocity);
-    var stop = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(velocity, Vector2.Zero);
-    var reverse = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(velocity, -velocity);
+    var start = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, velocity);
+    var stop = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(velocity, Vector2.Zero);
+    var reverse = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(velocity, -velocity);
     foreach (var strain in new[] { start.Stretch(size), start.Impulse(size), stop.Impulse(size), reverse.Impulse(size) })
     foreach (var pressure in new[] { Vector2.One, new Vector2(1.1f, 1.42f) })
     {
@@ -402,25 +378,25 @@ foreach (var velocity in new[] { new Vector2(800, 0), new Vector2(-800, 0), new 
     }
 }
 
-var slowShape = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, new(100, 0)).Stretch(new(150, 48));
-var fastShape = new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(Vector2.Zero, new(700, 0)).Stretch(new(150, 48));
+var slowShape = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, new(100, 0)).Stretch(new(150, 48));
+var fastShape = new YogaITS.Tray.UI.Glass.Animation.VelocityChange(Vector2.Zero, new(700, 0)).Stretch(new(150, 48));
 Check(fastShape.X > slowShape.X && fastShape.Y < slowShape.Y,
     "Greater speed increases directional length and orthogonal compression");
 
-Check(YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.GrowthDelay(
-    YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.TravelDuration) +
-    YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.GrowDuration == YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.TravelDuration,
+Check(YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.GrowthDelay(
+    YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.TravelDuration) +
+    YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.GrowDuration == YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.TravelDuration,
     "Independent growth duration aligns only its endpoint to movement arrival");
-Check(YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.GrowthDelay(TimeSpan.Zero) == TimeSpan.Zero,
+Check(YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.GrowthDelay(TimeSpan.Zero) == TimeSpan.Zero,
     "A capsule already under the pointer grows without a synthetic movement wait");
 
-Check(new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(new(1, 0), Vector2.Zero).Significant(new(150, 48)) &&
-    new YogaITS.Tray.Demos.SwiftTabs.VelocityChange(new(1, 0), Vector2.Zero).Stretch(new(150, 48)).IsZero,
+Check(new YogaITS.Tray.UI.Glass.Animation.VelocityChange(new(1, 0), Vector2.Zero).Significant(new(150, 48)) &&
+    new YogaITS.Tray.UI.Glass.Animation.VelocityChange(new(1, 0), Vector2.Zero).Stretch(new(150, 48)).IsZero,
     "Stopping at very low speed still restores the undeformed shape");
 
 foreach (var (movement, effect) in new[] { (224, 90), (90, 90), (40, 90), (0, 90), (224, 500) })
 {
-    var delay = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.EndAlignedDelay(
+    var delay = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.EndAlignedDelay(
         TimeSpan.FromMilliseconds(movement), TimeSpan.FromMilliseconds(effect));
     Check(effect <= movement ? delay.TotalMilliseconds + effect == movement : delay == TimeSpan.Zero,
         "Shrink aligns its end when it fits, otherwise starts with movement without shortening");
@@ -432,7 +408,7 @@ float priorLimit = float.NegativeInfinity;
 for (int i = -1000; i <= 1000; i++)
 {
     float value = i / 1000f;
-    float bounded = YogaITS.Tray.Demos.SwiftTabs.GlassStrain.Limit(value);
+    float bounded = YogaITS.Tray.UI.Glass.Animation.GlassStrain.Limit(value);
     Check(bounded > -0.24 && bounded < 0.36 && bounded > priorLimit,
         "Soft strain saturation remains strictly increasing within the original safety bounds");
     if (value >= -0.20f && value <= 0.30f)
@@ -443,9 +419,9 @@ float highDuringHandoff = float.NegativeInfinity, lowDuringHandoff = float.Posit
 for (int milliseconds = 106; milliseconds <= 224; milliseconds++)
 {
     double t = milliseconds / 420.0;
-    float raw = 0.26f * YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Response(t) +
-        0.22f * YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.Impulse(t);
-    float rendered = YogaITS.Tray.Demos.SwiftTabs.GlassStrain.Limit(raw);
+    float raw = 0.26f * YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Response(t) +
+        0.22f * YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.Impulse(t);
+    float rendered = YogaITS.Tray.UI.Glass.Animation.GlassStrain.Limit(raw);
     highDuringHandoff = Math.Max(highDuringHandoff, rendered);
     lowDuringHandoff = Math.Min(lowDuringHandoff, rendered);
 }
@@ -457,38 +433,38 @@ Check(highDuringHandoff - lowDuringHandoff > 0.005,
 foreach (int milliseconds in new[] { 0, 8, 20, 90, 224 })
 {
     var movement = TimeSpan.FromMilliseconds(milliseconds);
-    var held = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Begin(
-        YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Rest, true, movement);
-    float growEnd = held.W + (float)YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.GrowDuration.TotalSeconds;
+    var held = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Begin(
+        YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Rest, true, movement);
+    float growEnd = held.W + (float)YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.GrowDuration.TotalSeconds;
     foreach (float at in new[] { 0f, 0.001f, growEnd / 2, growEnd - 0.001f, growEnd, growEnd + 0.5f })
     {
         var current = held; current.X = at;
-        float before = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(current);
+        float before = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(current);
         var remaining = TimeSpan.FromSeconds(Math.Max(0, movement.TotalSeconds - at));
-        var release = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Begin(current, false, remaining);
-        Check(Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(release) - before) < 0.00001,
+        var release = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Begin(current, false, remaining);
+        Check(Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(release) - before) < 0.00001,
             "Releasing keeps the pressure value and native growth clock continuous");
         Check(release.X == at && release.W == held.W && release.Y >= growEnd,
             "Recovery cannot begin before the full delayed 90 ms growth completes");
         var maximum = release; maximum.X = release.Y;
-        Check(Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(maximum) - 1) < 0.00001,
+        Check(Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(maximum) - 1) < 0.00001,
             "A scheduled recovery reaches full inflation with no callback gap");
         var halfway = release; halfway.X = release.Y + 0.045f;
         var completed = release; completed.X = release.Y + 0.09f;
-        Check(Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(halfway) - 0.5f) < 0.00001 &&
-            Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(completed)) < 0.00001,
+        Check(Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(halfway) - 0.5f) < 0.00001 &&
+            Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(completed)) < 0.00001,
             "Recovery keeps its full independent 90 ms span with balanced easing");
-        var repeated = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Begin(halfway, false, movement);
+        var repeated = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Begin(halfway, false, movement);
         Check(repeated.Y == halfway.Y && repeated.X == halfway.X &&
-            Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(repeated) - 0.5f) < 0.00001,
+            Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(repeated) - 0.5f) < 0.00001,
             "Repeated layout/selection updates do not restart a shrinking capsule");
-        var repress = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Begin(halfway, true, movement);
-        Check(Math.Abs(YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Pulse(repress) - 0.5f) < 0.00001,
+        var repress = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Begin(halfway, true, movement);
+        Check(Math.Abs(YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Pulse(repress) - 0.5f) < 0.00001,
             "Pressing during recovery captures actual pressure instead of jumping to full size");
     }
     var early = held; early.X = growEnd / 2;
-    var earlyRelease = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Begin(early, false, TimeSpan.Zero);
-    var earlyRepress = YogaITS.Tray.Demos.SwiftTabs.FloatingTabPressure.Begin(earlyRelease, true, TimeSpan.Zero);
+    var earlyRelease = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Begin(early, false, TimeSpan.Zero);
+    var earlyRepress = YogaITS.Tray.UI.Glass.Animation.FloatingTabPressure.Begin(earlyRelease, true, TimeSpan.Zero);
     Check(earlyRepress.X == early.X && earlyRepress.W == early.W && earlyRepress.Z == early.Z && earlyRepress.Y < 0,
         "An early release/repress preserves the existing complete growth segment");
 }
@@ -496,20 +472,20 @@ foreach (int milliseconds in new[] { 1, 8, 20, 90, 224 })
 {
     var stop = TimeSpan.FromMilliseconds(milliseconds);
     var epsilon = TimeSpan.FromSeconds(0.0001);
-    var left = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaWeights(stop - epsilon, stop);
-    var center = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaWeights(stop, stop);
-    var right = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaWeights(stop + epsilon, stop);
+    var left = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaWeights(stop - epsilon, stop);
+    var center = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaWeights(stop, stop);
+    var right = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaWeights(stop + epsilon, stop);
     var leftVelocity = (center - left) / (float)epsilon.TotalSeconds;
     var rightVelocity = (right - center) / (float)epsilon.TotalSeconds;
     Check(Vector4.Distance(leftVelocity, rightVelocity) < 0.3,
         "Planned stopping preserves strain velocity instead of pausing at a new zero-velocity spring");
-    var settled = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaWeights(
-        stop + YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaDuration, stop);
+    var settled = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaWeights(
+        stop + YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaDuration, stop);
     Check(settled == Vector4.Zero, "The planned stop has an exact finite unstrained endpoint");
     for (int sample = 0; sample <= 100; sample++)
     {
-        var elapsed = TimeSpan.FromTicks((stop + YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaDuration).Ticks * sample / 100);
-        var weights = YogaITS.Tray.Demos.SwiftTabs.FloatingTabSpring.InertiaWeights(elapsed, stop);
+        var elapsed = TimeSpan.FromTicks((stop + YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaDuration).Ticks * sample / 100);
+        var weights = YogaITS.Tray.UI.Glass.Animation.FloatingTabSpring.InertiaWeights(elapsed, stop);
         Check(float.IsFinite(weights.X + weights.Y + weights.Z + weights.W),
             "Short-move handoffs have finite inertia coefficients at every phase");
     }
@@ -519,14 +495,14 @@ foreach (int milliseconds in new[] { 1, 8, 20, 90, 224 })
 foreach (double width in new[] { 352.0, 600, 960 })
 for (int original = 0; original < 4; original++)
 {
-    var layout = YogaITS.Tray.Demos.SwiftTabs.SwiftTabLayout.Create(width, 80);
+    var layout = YogaITS.Tray.UI.Glass.Layout.ChoiceTrackLayout.Create(width, 80);
     var capsule = layout.Capsule(original);
     int target = (original + 2) % 4;
     var destination = layout.Capsule(target);
     Check(capsule == layout.Items[original] &&
         Math.Abs(capsule.Center - layout.Items[original].Center) < 0.001,
         "Restored full-width glass shares its text and hit-target frame");
-    var preview = new YogaITS.Tray.Demos.SwiftTabs.FloatingTabGesture();
+    var preview = new YogaITS.Tray.UI.Glass.Animation.FloatingTabGesture();
     double pressed = capsule.X + capsule.Width * 0.23;
     double released = destination.Center;
     Check(preview.Begin(10, pressed, original, layout), "A Floating session accepts the first pointer");
@@ -935,7 +911,7 @@ foreach(var point in new[]{(-200.0,-100.0),(0.0,0.0),(500.0,200.0),(3800.0,2100.
 Check(CaptureCopyRegion.Create(3840,2160,500,200,984,1640,2)==new CaptureCopyRegion(490,190,1024,1664),
     "Processing copy includes full four-sigma/interpolation neighbourhood without copying the rest of the monitor");
 
-Console.WriteLine($"PASS: {checks} probe DPI/capture/HDR/identity checks; no hardware, capture session or user settings accessed.");
+Console.WriteLine($"PASS: {checks} UI DPI/capture/HDR/identity checks; no hardware, capture session or user settings accessed.");
 
 sealed class TestFrame(int index) : IDisposable
 {

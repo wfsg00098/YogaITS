@@ -1,6 +1,6 @@
-using YogaITS.Tray.UI;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
+using YogaITS.Tray.UI.Controls;
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 
 internal static class OptionBarChecks
 {
@@ -15,7 +15,7 @@ internal static class OptionBarChecks
         foreach (int count in new[] { 2, 3, 4 })
         foreach (double width in new[] { 202.0, 208, 220, 244, 352, 600, 960 })
         {
-            var layout = SwiftTabLayout.Create(width, 80, count);
+            var layout = ChoiceTrackLayout.Create(width, 80, count);
             Check(layout.Items.Length == count && layout.Track.Width <= width,
                 "Capability-dependent bars fit their real compact/full viewport");
             for (int index = 0; index < count; index++)
@@ -63,7 +63,7 @@ internal static class OptionBarChecks
         foreach (int count in new[] { 3, 4, 7 })
         {
             int columns = count == 7 ? 2 : count;
-            var layout = SwiftTabLayout.Create(600, SwiftTabLayout.NaturalHeight(count, columns), count, columns);
+            var layout = ChoiceTrackLayout.Create(600, ChoiceTrackLayout.NaturalHeight(count, columns), count, columns);
             foreach (int disabled in Enumerable.Range(0, count))
             foreach (int current in Enumerable.Range(0, count).Where(index => index != disabled))
             {

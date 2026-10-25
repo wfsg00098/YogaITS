@@ -1,4 +1,4 @@
-using YogaITS.Tray.UI;
+using YogaITS.Tray.UI.Glass.Backgrounds;
 
 internal static class ImageBackgroundChecks
 {

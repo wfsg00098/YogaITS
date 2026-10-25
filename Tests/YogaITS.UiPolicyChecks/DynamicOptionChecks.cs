@@ -1,4 +1,4 @@
-using YogaITS.Tray.UI;
+using YogaITS.Tray.UI.Controls;
 
 internal static class DynamicOptionChecks
 {

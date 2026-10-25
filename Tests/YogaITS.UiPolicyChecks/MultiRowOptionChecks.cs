@@ -1,6 +1,6 @@
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
 using System.Numerics;
-using YogaITS.Tray.Demos.Acceleration;
-using YogaITS.Tray.Demos.SwiftTabs;
 
 internal static class MultiRowOptionChecks
 {
@@ -14,7 +14,7 @@ internal static class MultiRowOptionChecks
         }
         foreach (double width in new[] { 352.0, 420, 600, 960 })
         {
-            var layout = SwiftTabLayout.Create(width, SwiftTabLayout.NaturalHeight(7, 2), 7, 2);
+            var layout = ChoiceTrackLayout.Create(width, ChoiceTrackLayout.NaturalHeight(7, 2), 7, 2);
             var first = layout.Capsule(0);
             var last = layout.Capsule(6);
             Check(layout.Rows == 4 && layout.Columns == 2 && layout.Track.Height == 240,

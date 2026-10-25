@@ -36,19 +36,19 @@ if ($LiquidGlass) {
     $locator = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $msbuild = & $locator -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
     if (-not $msbuild) { throw 'Visual Studio 2026 C++ Build Tools (v145) are required.' }
-    & $msbuild (Join-Path $projectDir 'Native/DesktopCaptureInterop.vcxproj') /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
+    & $msbuild (Join-Path $projectDir 'UI/Glass/Capture/Native/DesktopCaptureInterop.vcxproj') /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
     if ($LASTEXITCODE -ne 0) { throw 'Capture bridge build failed; previous output retained.' }
     $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
     $fxc = Join-Path $kits 'bin/10.0.26100.0/x64/fxc.exe'
     $includes = Join-Path $kits 'Include/10.0.26100.0/um'
-    $shader = Join-Path $projectDir 'Shaders/HdrToSdr.hlsl'
+    $shader = Join-Path $projectDir 'UI/Glass/Rendering/Shaders/HdrToSdr.hlsl'
     $library = Join-Path $intermediate 'HdrToSdr.fxlib'
     & $fxc /nologo /WX /O3 /T lib_4_0 /D D2D_FUNCTION /D D2D_ENTRY=main /Fl $library /I $includes $shader
     if ($LASTEXITCODE -ne 0) { throw 'HDR shader library build failed.' }
     & $fxc /nologo /WX /O3 /T ps_4_0 /D D2D_FULL_SHADER /D D2D_ENTRY=main /E main /setprivate $library /Fo (Join-Path $intermediate 'HdrToSdr.cso') /I $includes $shader
     if ($LASTEXITCODE -ne 0) { throw 'HDR shader build failed.' }
     $shaderChecker = Join-Path $root 'Tests/YogaITS.ShaderChecks/Output/x64/Release/YogaITS.LiquidGlassShaderChecks.exe'
-    $glassShader = Join-Path $projectDir 'Material/Effects/Shaders/LiquidGlass.hlsl'
+    $glassShader = Join-Path $root 'ThirdParty/LiquidGlassWinUI/Effects/Shaders/LiquidGlass.hlsl'
     & $msbuild (Join-Path $root 'Tests/YogaITS.ShaderChecks/LiquidGlassShaderChecks.vcxproj') /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
     if ($LASTEXITCODE -ne 0) { throw 'Shader checker build failed.' }
     & $shaderChecker $glassShader --library
@@ -59,7 +59,7 @@ if (Test-Path $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 # must recognize the correct parent executable and updater build flavor.
 foreach ($project in 'YogaITS.Tray','YogaITS.Updater','YogaITS.dGPUKeepAwake','YogaITS.dGPURestart') {
     dotnet publish (Join-Path $root "$project/$project.csproj") -c Release -r win-x64 --self-contained false `
-        "-p:EnableLiquidGlass=$enabled" "-p:InformationalVersion=$($release.Version)+$($release.CommitSha)" `
+        "-p:EnableLiquidGlass=$enabled" -p:EnableUiChecks=false "-p:InformationalVersion=$($release.Version)+$($release.CommitSha)" `
         -p:IncludeSourceRevisionInInformationalVersion=false -o $output
     if ($LASTEXITCODE -ne 0) { throw "Publish failed: $project ($flavor)." }
 }
@@ -89,8 +89,8 @@ if ($LiquidGlass) {
     & (Join-Path $projectDir 'Prepare-Identity.ps1') -OutputDirectory $output
     $notices = Join-Path $output 'ThirdPartyNotices'
     [IO.Directory]::CreateDirectory($notices) | Out-Null
-    Copy-Item (Join-Path $projectDir 'Material/LICENSE') (Join-Path $notices 'LiquidGlassWinUI-LICENSE.txt')
-    Copy-Item (Join-Path $projectDir 'Demos/SwiftTabs/LiquidGlassTabBars-LICENSE.txt') $notices
+    Copy-Item (Join-Path $root 'ThirdParty/LiquidGlassWinUI/LICENSE') (Join-Path $notices 'LiquidGlassWinUI-LICENSE.txt')
+    Copy-Item (Join-Path $root 'ThirdParty/LiquidGlassTabBars/LICENSE.txt') (Join-Path $notices 'LiquidGlassTabBars-LICENSE.txt')
     Copy-Item (Join-Path $projectDir 'ThirdPartyNotices.txt') $notices
 } else {
     $deps = [IO.File]::ReadAllText((Join-Path $output "$name.deps.json"))
