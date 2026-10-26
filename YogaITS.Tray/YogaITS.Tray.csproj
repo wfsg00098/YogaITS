@@ -4,7 +4,7 @@
     <AssemblyName>YogaITS.Tray</AssemblyName>
     <Product>YogaITS</Product>
     <Title>Yoga控制中心</Title>
-    <Description>Yoga控制中心</Description>
+    <Description>Yoga控制中心; original source: $(RepositoryUrl)</Description>
     <VersionPrefix>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)..\VERSION').Trim())</VersionPrefix>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>

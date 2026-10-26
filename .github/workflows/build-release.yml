@@ -93,6 +93,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out checksum tooling from the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Download both validated build artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -114,6 +118,28 @@ jobs:
             if (-not (Test-Path -LiteralPath $archive)) { throw "Release archive is missing: $archive" }
           }
           if (@(Get-ChildItem ./release-assets -File -Filter '*.zip').Count -ne 2) { throw 'Expected exactly two archives.' }
+          ./scripts/Write-Checksums.ps1 -Directory ./release-assets
+          $checksums = Join-Path ./release-assets 'SHA256SUMS.txt'
+          $assets = @($archives) + @($checksums)
+          $notes = Join-Path $env:RUNNER_TEMP 'YogaITS-release-notes.md'
+          @(
+            'Independent, unofficial Windows x64 control center. Original releases: https://github.com/wfsg00098/YogaITS/releases',
+            '',
+            'Native: YogaITS.Tray.exe; requires a compatible system Windows App Runtime. Glass (-lg): YogaITS.Tray.exe; includes app-local Windows App SDK 2.2.0. Both require .NET 10 Desktop Runtime. Extract the entire selected ZIP into its own directory. Version timestamps use UTC commit time.',
+            '',
+            "Source commit: $env:GITHUB_SHA",
+            "Build: https://github.com/$env:GH_REPO/actions/runs/$env:GITHUB_RUN_ID",
+            '',
+            'BSD-3-Clause; provided AS IS, without warranty or endorsement. Hardware/system operations carry risks. Third-party modifications and support promises are not certified or undertaken by the original authors. See LICENSE and NOTICE in the ZIP.',
+            '',
+            'Compare the downloaded ZIP with the matching SHA256SUMS.txt entry below or in the attached list. Each ZIP also contains a complete per-file list. Matching hashes establish byte consistency, not a safety guarantee or independent publisher signature.',
+            '',
+            '### SHA-256',
+            '',
+            '```text',
+            (Get-Content -LiteralPath $checksums -Raw).TrimEnd(),
+            '```'
+          ) | Set-Content -LiteralPath $notes -Encoding utf8NoBOM
           $mainSha = gh api "repos/$env:GH_REPO/git/ref/heads/main" --jq '.object.sha'
           if ($LASTEXITCODE -ne 0) { throw 'Unable to check current main.' }
           if ($mainSha -ne $env:GITHUB_SHA) {
@@ -124,9 +150,19 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             $tagSha = gh api "repos/$env:GH_REPO/git/ref/tags/$env:RELEASE_VERSION" --jq '.object.sha'
             if ($LASTEXITCODE -ne 0 -or $tagSha -ne $env:GITHUB_SHA) { throw 'Existing release tag points elsewhere.' }
-            gh release upload $env:RELEASE_VERSION @archives --clobber
+            gh release upload $env:RELEASE_VERSION @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed.' }
+            # Update provenance/checksums without deleting existing generated notes.
+            $existingNotes = gh release view $env:RELEASE_VERSION --json body --jq '.body'
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to read existing release notes.' }
+            $generated = [regex]::Replace(($existingNotes -join "`n"), '(?s)<!-- yogaits-provenance:start -->.*?<!-- yogaits-provenance:end -->\s*', '').Trim()
+            $provenance = "<!-- yogaits-provenance:start -->`n$([IO.File]::ReadAllText($notes))`n<!-- yogaits-provenance:end -->`n`n$generated"
+            [IO.File]::WriteAllText($notes, $provenance, [Text.UTF8Encoding]::new($false))
+            gh release edit $env:RELEASE_VERSION --notes-file $notes
           } else {
-            gh release create $env:RELEASE_VERSION @archives --latest=false --target $env:GITHUB_SHA --title $env:RELEASE_VERSION --generate-notes --notes 'Complete Windows x64 apps. Native: YogaITS.Tray.exe, requires a compatible system Windows App Runtime. Glass (-lg): YogaITS.Tray.exe, includes app-local Windows App SDK 2.2.0. Both require .NET 10 Desktop Runtime. Extract the entire selected ZIP into its own directory. Version timestamps use UTC commit time.'
+            $provenance = "<!-- yogaits-provenance:start -->`n$([IO.File]::ReadAllText($notes))`n<!-- yogaits-provenance:end -->"
+            [IO.File]::WriteAllText($notes, $provenance, [Text.UTF8Encoding]::new($false))
+            gh release create $env:RELEASE_VERSION @assets --latest=false --target $env:GITHUB_SHA --title $env:RELEASE_VERSION --generate-notes --notes-file $notes
           }
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
           $mainSha = gh api "repos/$env:GH_REPO/git/ref/heads/main" --jq '.object.sha'

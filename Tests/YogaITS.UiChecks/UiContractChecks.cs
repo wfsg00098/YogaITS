@@ -293,6 +293,19 @@ internal static class UiContractChecks
             Ensure(fullText.Contains("性能选项") && fullText.Contains("充电设置"), "Full window core sections missing.");
             Ensure(miniText.Contains("性能选项") && miniText.Contains("充电选项"), "Mini window core sections missing.");
             Ensure(!miniText.Any(text => text.Contains("保持独显唤醒")), "Mini window must omit keep-awake.");
+            Ensure(fullText.SkipWhile(text => text != "杂项").Where(text => !string.IsNullOrEmpty(text))
+                .Take(4).SequenceEqual(new[] { "杂项", "开机自启", "关于", "退出" }),
+                "Full-window About must sit between startup and exit in the existing miscellaneous section.");
+            Ensure(!miniText.Contains("关于"), "The mini window must keep its existing layout without About.");
+            var about = AboutDialog.Create();
+            Ensure(about.Title as string == "关于 Yoga控制中心" && about.CloseButtonText == "关闭",
+                "Both builds use the same native modal About dialog.");
+            var aboutText = TextIn(about).ToArray();
+            Ensure(aboutText.Any(text => text.Contains("BSD-3-Clause")) &&
+                aboutText.Any(text => text.Contains("硬件与系统风险")) &&
+                aboutText.Any(text => text.Contains("非官方声明")), "About must include license, risk, and affiliation notices.");
+            Ensure(Tree(about).OfType<HyperlinkButton>().Any(link =>
+                link.NavigateUri.AbsoluteUri == "https://github.com/wfsg00098/YogaITS"), "About identifies the original repository.");
 #if LIQUID_GLASS
             Ensure(fullText.Any(text => text.Contains("UI选项")), "Glass build must expose the provided material options.");
 #else

@@ -76,6 +76,7 @@ Start-Process (Join-Path $directory 'YogaITS.Tray.exe') -WorkingDirectory $direc
 | 检查 | 内容与边界 |
 | --- | --- |
 | [ReleaseVersionChecks.ps1](Tests/ReleaseVersionChecks.ps1) | 版本系列、UTC 时间、SHA 和包名。 |
+| [DistributionChecks.ps1](Tests/DistributionChecks.ps1) | SHA-256 已知向量、清单路径与编码、重复生成及源文件变化。 |
 | [YogaITS.PolicyChecks](Tests/YogaITS.PolicyChecks/) | 真实生产策略、ABI、并发/超时、更新竞速、ZIP 安全、安装回滚、助手身份和发布程序集。使用模拟后端、临时目录及测试自建进程。 |
 | [YogaITS.UiPolicyChecks](Tests/YogaITS.UiPolicyChecks/) | DPI、布局、选择/手势、玻璃物理、捕获生命周期、图标身份和窗口缩放状态。部分检查创建不显示的 HWND。 |
 | [UiContractChecks.ps1](Tests/UiContractChecks.ps1) | 重编译同一套 UI 为隔离检查宿主，在 WinUI dispatcher 下验证控件、真实布局及构建边界，不显示窗口或初始化硬件服务。 |
@@ -218,24 +219,31 @@ HDR 卡片和色域保护使用实际 `activeColorMode`；ACM 卡片使用独立
 
 ### 应用更新
 
-[Updates/](YogaITS.Tray/Services/Updates/) 在启动后延迟 3 秒、之后每 24 小时检查正式 Release。更新卡片仅在完整窗口“杂项”中，位于开机自启/退出上方；玻璃版的 UI选项分组在杂项之前。普通版选择普通附件，玻璃版选择 `-lg` 附件，不自动跨构建切换；不区分材质的旧版会选择普通附件。
+[Updates/](YogaITS.Tray/Services/Updates/) 在启动后延迟 3 秒、之后每 24 小时检查正式 Release。更新卡片仅在完整窗口“杂项”中，位于“开机自启、关于、退出”三列按钮上方；玻璃版的 UI选项分组在杂项之前。关于按钮复用共享卡片材质，使用绑定当前窗口的原生 `ContentDialog` 展示版本、原仓库与许可/免责说明，两种材质均适用，不在迷你窗口增加入口。普通版选择普通附件，玻璃版选择 `-lg` 附件，不自动跨构建切换；不区分材质的旧版会选择普通附件。
 
 版本格式为 `x.y-yyyyMMddHHmmss-hash`。仅当远端数字系列不低于本地、UTC 日期号严格更新且完整源提交不同，才提示更新。无日期的本地旧版只升级至更高系列的带日期版本；无日期的远端版本不提示更新。
 
-GitHub 与 `https://gh-proxy.org/` 同时请求元数据、同时下载，各自独立暂存，采用最先解析/校验成功的结果；一条失败不取消仍有效的另一条，胜出后取消并等待另一条释放资源。使用默认系统代理，不硬编码代理端口。元数据上限 20 秒，下载读取空闲 20 秒、总时限 8 分钟。SHA-256 对照 Release 元数据验证完整性，不等价于独立发行者签名。
+GitHub 与 `https://gh-proxy.org/` 同时请求元数据、同时下载，各自独立暂存，采用最先解析/校验成功的结果；一条失败不取消仍有效的另一条，胜出后取消并等待另一条释放资源。使用默认系统代理，不硬编码代理端口。元数据上限 20 秒，下载读取空闲 20 秒、总时限 8 分钟。每条下载在竞速胜出前必须对照 Release 资产的 `digest` 完成 ZIP SHA-256 校验；缺少有效摘要、大小不符或内容损坏均不能胜出。
 
-安装验证构建类型、ZIP 路径、重复项、大小和主程序/三个助手/PRI 的完整性；玻璃版还校验身份、本地 SDK 版本及 DLL 哈希。助手核对父进程 PID+启动时间后等待退出，从原包重新校验、解压、备份、替换并验证，失败尝试回滚，成功才标记完成并重启。设置和缓存位于独立数据目录，不改计划任务。只清理超过 7 天且完成标记有效的成功暂存，失败、未知目录及链接保留。
+安装验证构建类型、ZIP 路径、重复项、大小和主程序/三个助手/PRI 的完整性。新包的 `build-flavor.json` 声明 `checksumManifest: SHA256SUMS.txt`，解压后逐项验证全部文件 SHA-256：拒绝缺失、损坏、重复、越界、自身引用和未覆盖的文件；旧包没有此声明/清单时仍须通过 ZIP 摘要。玻璃版继续校验身份、本地 SDK 版本及 DLL 哈希。助手核对父进程 PID+启动时间后等待退出，从原包再次校验 ZIP 和逐文件清单，备份、替换并比较每个源/目标文件的 SHA-256，失败尝试回滚，成功才标记完成并重启。设置和缓存位于独立数据目录，不改计划任务。只清理超过 7 天且完成标记有效的成功暂存，失败、未知目录及链接保留。
+
+摘要的信任来源仍是所取得的 GitHub Release 元数据。包内清单增加文件完整性检查，不是另一个独立信任源；SHA-256、文件属性和版本文字均不能证明发行者身份，也不能防御同时替换包与元数据的攻击，不替代 Authenticode 或发行签名。
 
 ### GitHub Actions
 
-[build-release.yml](.github/workflows/build-release.yml) 仅在推送 `main` 时运行，无路径过滤，文档提交也会触发。使用 Windows VS 2026 runner，先计算共享版本，再分别构建 `native`、`liquid-glass` 并执行检查。每版上传完整 ZIP artifact，保留 30 天；只有两版均成功才发布一个带两个附件的 Release。
+[build-release.yml](.github/workflows/build-release.yml) 仅在推送 `main` 时运行，无路径过滤，文档提交也会触发。使用 Windows VS 2026 runner，先计算共享版本，再分别构建 `native`、`liquid-glass` 并执行检查。每版上传完整 ZIP artifact，保留 30 天；只有两版均成功才发布一个含两个 ZIP 及 `SHA256SUMS.txt` 的 Release。
 
 [Get-ReleaseVersion.ps1](scripts/Get-ReleaseVersion.ps1) 读取 `VERSION`、提交 committer 时间（UTC）和 SHA 前 8 位。相同提交重跑名称不变：
 
 ```text
 YogaITS-x.y-yyyyMMddHHmmss-hash-win-x64.zip
 YogaITS-x.y-yyyyMMddHHmmss-hash-lg-win-x64.zip
+SHA256SUMS.txt
 ```
+
+[Write-Checksums.ps1](scripts/Write-Checksums.ps1) 在发布目录准备完成后生成逐文件清单，覆盖所有文件但排除清单自身，使用相对路径、SHA-256、UTF-8 无 BOM 和 LF。Release job 对两个最终 ZIP 另生成同名清单，附到 Release 并在说明正文展示哈希、源码提交和 Actions 运行链接；重跑会更新该段而保留生成的变更说明。
+
+四个 YogaITS EXE 的 Windows 文件属性包含版权与原仓库地址，程序集保留 `OriginalRepositoryUrl`；`build-flavor.json` 保存来源、版本、提交、构建类型及清单声明。主程序的 `--version` 在转发单实例、身份注册和硬件初始化之前输出这些版本信息，不打开窗口。需要从非管理员终端只读查看时，可在解压目录执行 `dotnet .\YogaITS.Tray.dll --version`；直接启动 EXE 仍遵循其管理员清单。这些标识可被修改或复制，不能用来认定二次编译即为原始发布物。
 
 发布使用 `GITHUB_TOKEN` 的 `contents: write`，不需要私钥。验证标签目标，已有版本只更新附件，不移动标签或改写提交。发布前后核对远端 main，过期构建不覆盖 latest。自建 fork 发布时还需调整应用中固定的更新仓库，不能只改工作流。
 
@@ -283,6 +291,8 @@ Get-AppxPackage -Name YogaITS | Where-Object Publisher -eq 'CN=YogaITS' | Remove
 ## 第三方组件与许可
 
 原创部分采用根目录 [LICENSE](LICENSE) 的 **BSD-3-Clause**；[NOTICE](NOTICE) 说明独立项目、不背书及第三方范围，不另加许可条件。允许使用、修改、商用、闭源和再分发，但须保留版权、条件及免责条款。驱动、服务、固件和校色文件不包含在原创代码授权中。
+
+README 明示硬件/系统风险、非官方身份、衍生版本与第三方服务的边界。不得将非背书条款解释为禁止收费再分发，也不声称免责声明能排除依法不能排除的责任。修改者标注改动属于本项目的建议，不冒充 BSD 的额外条件；上游许可原文保持不变。
 
 | 组件/来源 | 许可与分发边界 |
 | --- | --- |

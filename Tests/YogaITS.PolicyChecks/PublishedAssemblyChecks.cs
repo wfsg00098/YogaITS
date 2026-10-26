@@ -36,9 +36,18 @@ internal static class PublishedAssemblyChecks
         Check(File.ReadAllText(Path.Combine(directory, "NOTICE")).Contains("wfsg00098", StringComparison.Ordinal),
             "The project attribution accompanies every distribution.");
         foreach (string name in new[] { "YogaITS.Tray", "YogaITS.Updater", "YogaITS.dGPUKeepAwake", "YogaITS.dGPURestart" })
-            Check(System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.Combine(directory, name + ".exe"))
-                    .LegalCopyright?.Contains("wfsg00098", StringComparison.Ordinal) == true,
+        {
+            var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(Path.Combine(directory, name + ".exe"));
+            Check(info.LegalCopyright?.Contains("wfsg00098", StringComparison.Ordinal) == true,
                 "Every YogaITS executable displays the project copyright in its version information.");
+            Check(info.Comments?.Contains("https://github.com/wfsg00098/YogaITS", StringComparison.Ordinal) == true,
+                "Every YogaITS executable identifies its original source in Windows file properties.");
+        }
+        Check(marker.RootElement.GetProperty("repository").GetString() == "https://github.com/wfsg00098/YogaITS" &&
+            marker.RootElement.GetProperty("checksumManifest").GetString() == "SHA256SUMS.txt",
+            "Published build metadata identifies the original repository and mandatory checksum list.");
+        YogaITS.Tray.Services.Updates.UpdatePackage.VerifyFileChecksums(directory, required: true);
+        Check(true, "Every published file matches the complete SHA-256 list.");
         string noticeDirectory = Path.Combine(directory, "ThirdPartyNotices");
         using var notices = JsonDocument.Parse(File.ReadAllText(Path.Combine(noticeDirectory, "components.json")));
         Check(notices.RootElement.GetProperty("flavor").GetString() == (glass ? "liquid-glass" : "native"),

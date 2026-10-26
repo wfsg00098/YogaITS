@@ -115,12 +115,13 @@ internal static class UpdateChecks
         try
         {
             string download = Path.Combine(temporary, "download.zip");
-            using (var handler = new FakeHttp((index, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                   { Content = new ByteArrayContent(index == 1 ? new byte[bytes.Length] : bytes) })))
-            using (var client = new GitHubUpdateClient(handler))
+            foreach (bool corruptDirect in new[] { true, false })
             {
+                using var handler = new FakeHttp((index, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                    { Content = new ByteArrayContent((index == 1) == corruptDirect ? new byte[bytes.Length] : bytes) }));
+                using var client = new GitHubUpdateClient(handler);
                 await client.DownloadAsync(release, download, default);
-                Check(File.ReadAllBytes(download).SequenceEqual(bytes), "corrupt direct data cannot defeat the valid proxy package");
+                Check(File.ReadAllBytes(download).SequenceEqual(bytes), "corrupt data from either route cannot defeat the valid package");
                 Check(handler.Requests.Count == 2 && handler.Requests[1].Host == "gh-proxy.org", "both download routes start");
             }
             foreach (bool proxyWins in new[] { false, true })

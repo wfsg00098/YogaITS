@@ -13,6 +13,15 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        // Report provenance before single-instance forwarding or hardware/UI startup.
+        if (args.Contains("--version"))
+        {
+            Console.WriteLine($"YogaITS {Services.Updates.UpdatePolicy.CurrentIdentity}");
+            Console.WriteLine($"Build: {AppBuild.Flavor}");
+            Console.WriteLine($"Original source: https://github.com/{Services.Updates.UpdatePolicy.Repository}");
+            Console.WriteLine("License: BSD-3-Clause; see LICENSE and NOTICE.");
+            return;
+        }
 #if UI_CHECKS
         bool check = args.Contains("--check-runtime") || args.Contains("--check-ui-contract");
 #else

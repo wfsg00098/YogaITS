@@ -15,6 +15,14 @@
     <Copyright Condition="'$(MSBuildProjectName)' == 'YogaITS.Tray' Or '$(MSBuildProjectName)' == 'YogaITS.Updater' Or '$(MSBuildProjectName)' == 'YogaITS.dGPUKeepAwake' Or '$(MSBuildProjectName)' == 'YogaITS.dGPURestart'">Copyright (c) 2026, wfsg00098 and YogaITS contributors</Copyright>
     <DebugType>none</DebugType><DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'YogaITS.Tray' Or '$(MSBuildProjectName)' == 'YogaITS.Updater' Or '$(MSBuildProjectName)' == 'YogaITS.dGPUKeepAwake' Or '$(MSBuildProjectName)' == 'YogaITS.dGPURestart'">
+    <RepositoryUrl>https://github.com/wfsg00098/YogaITS</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Description>YogaITS; original source: $(RepositoryUrl)</Description>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(RepositoryUrl)' == 'https://github.com/wfsg00098/YogaITS'">
+    <AssemblyMetadata Include="OriginalRepositoryUrl" Value="$(RepositoryUrl)" />
+  </ItemGroup>
   <PropertyGroup Condition="'$(EnableLiquidGlass)' == 'true'">
     <DefineConstants>$(DefineConstants);LIQUID_GLASS</DefineConstants>
     <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>

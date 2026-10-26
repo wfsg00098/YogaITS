@@ -76,6 +76,7 @@ internal static class UpdatePackage
         foreach (string name in RequiredFilesFor(flavor))
             if (!File.Exists(Path.Combine(directory, name))) throw new InvalidDataException("更新包缺少文件：" + name);
         string marker = Path.Combine(directory, "build-flavor.json");
+        bool requireChecksums = false;
         if (File.Exists(marker))
         {
             using var metadata = ReadManifest(marker);
@@ -83,8 +84,48 @@ internal static class UpdatePackage
             if (metadata.RootElement.GetProperty("flavor").GetString() != expected ||
                 metadata.RootElement.GetProperty("executable").GetString() != AppBuild.ExecutableFor(flavor))
                 throw new InvalidDataException("更新包构建类型不匹配。");
+            if (metadata.RootElement.TryGetProperty("checksumManifest", out var checksumManifest))
+            {
+                if (checksumManifest.GetString() != "SHA256SUMS.txt")
+                    throw new InvalidDataException("更新包文件校验清单无效。");
+                requireChecksums = true;
+            }
         }
+        VerifyFileChecksums(directory, requireChecksums);
         if (flavor == UiBuildFlavor.LiquidGlass) VerifyBundledRuntime(directory);
+    }
+
+    internal static void VerifyFileChecksums(string directory, bool required)
+    {
+        directory = Path.GetFullPath(directory);
+        string manifest = Path.Combine(directory, "SHA256SUMS.txt");
+        // Older releases still require the trusted Release ZIP digest. New
+        // build markers require complete per-file coverage as an extra check.
+        if (!File.Exists(manifest))
+        {
+            if (required) throw new InvalidDataException("更新包缺少 SHA256SUMS.txt。");
+            return;
+        }
+        if (new FileInfo(manifest).Length > 1024 * 1024)
+            throw new InvalidDataException("更新包文件校验清单过大。");
+        var listed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string line in File.ReadLines(manifest))
+        {
+            if (listed.Count >= 1000 || line.Length < 67 || line[64] != ' ' || line[65] != ' ' ||
+                !System.Text.RegularExpressions.Regex.IsMatch(line[..64], @"\A[0-9a-fA-F]{64}\z"))
+                throw new InvalidDataException("更新包文件校验清单格式错误。");
+            string path = SafeEntryPath(directory, line[66..]);
+            if (path.Equals(manifest, StringComparison.OrdinalIgnoreCase) || !listed.Add(path))
+                throw new InvalidDataException("更新包文件校验清单包含重复项或自身。");
+            if (!File.Exists(path)) throw new InvalidDataException("更新包缺少校验文件：" + line[66..]);
+            using var content = File.OpenRead(path);
+            if (!Convert.ToHexString(SHA256.HashData(content)).Equals(line[..64], StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("更新包文件 SHA-256 校验失败：" + line[66..]);
+        }
+        var files = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+            .Where(path => !path.Equals(manifest, StringComparison.OrdinalIgnoreCase));
+        if (listed.Count == 0 || !listed.SetEquals(files))
+            throw new InvalidDataException("更新包文件未被 SHA-256 清单完整覆盖。");
     }
 
     private static JsonDocument ReadManifest(string path)

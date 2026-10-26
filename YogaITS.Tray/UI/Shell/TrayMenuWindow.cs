@@ -46,6 +46,7 @@ public sealed class TrayMenuWindow : Window
     private readonly Func<Task> _killGpuApps;
     private readonly Func<Task> _restartGpu;
     private bool _updatingGpuAction;
+    private bool _showingAbout;
     private GpuKeepAwakeSnapshot _keepAwake = new(false, false, "");
     private readonly Func<bool, Task<GpuKeepAwakeSnapshot>>? _setKeepAwake;
     private Button? _keepAwakeButton, _restartGpuButton;
@@ -590,7 +591,9 @@ public sealed class TrayMenuWindow : Window
                 Visibility = Visibility.Collapsed,
                 Child = CreateTileGrid(new UIElement[] { _updateButton }, 1, OptionTileHeightDip)
             };
-            Section("杂项", new UIElement[] { _startupVisual.Button, CreateExitButton() }, 2,
+            var aboutButton = CreateOptionTile("关于", false, true, OptionTileHeightDip, ControlCenterButtonFontSize);
+            aboutButton.Click += async (_, _) => await ShowAboutAsync();
+            Section("杂项", new UIElement[] { _startupVisual.Button, aboutButton, CreateExitButton() }, 3,
                 OptionTileHeightDip, divider: false, leadingContent: _updateHost);
         }
         else stack.Children.Add(new Border
@@ -666,6 +669,20 @@ public sealed class TrayMenuWindow : Window
         };
         try { return await dialog.ShowAsync() == ContentDialogResult.Primary && !_closed; }
         catch (Exception) when (_closed) { return false; }
+    }
+
+    private async Task ShowAboutAsync()
+    {
+        if (_closed || _showingAbout || _contentRoot?.XamlRoot is null) return;
+        _showingAbout = true;
+        try
+        {
+            var dialog = AboutDialog.Create();
+            dialog.XamlRoot = _contentRoot.XamlRoot;
+            await dialog.ShowAsync();
+        }
+        catch (Exception) when (_closed) { }
+        finally { _showingAbout = false; }
     }
 
     internal async Task<bool> ConfirmUpdateAsync(string version)

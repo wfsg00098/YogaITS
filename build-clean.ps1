@@ -75,6 +75,7 @@ if ($config.runtimeOptions.tfm -ne 'net10.0') { throw 'Expected .NET 10.' }
 # Keep runtime manifests, especially CaptureIdentity/AppxManifest.xml.
 Get-ChildItem $output -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 @{ flavor=$flavor; executable="$name.exe"; version=$release.Version; commit=$release.CommitSha;
+    repository='https://github.com/wfsg00098/YogaITS'; checksumManifest='SHA256SUMS.txt';
     dotnet='10'; windowsAppSdk=if($LiquidGlass){'2.2.0-app-local'}else{'system-runtime'} } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'build-flavor.json') -Encoding utf8NoBOM
 if ($LiquidGlass) {
@@ -96,8 +97,10 @@ if ($LiquidGlass) {
     }
 }
 & (Join-Path $root 'scripts/Copy-DistributionNotices.ps1') -OutputDirectory $output -Flavor $flavor
+& (Join-Path $root 'scripts/Write-Checksums.ps1') -Directory $output
 if ($Checks) {
     & (Join-Path $root 'Tests/ReleaseVersionChecks.ps1')
+    & (Join-Path $root 'Tests/DistributionChecks.ps1')
     dotnet run --project (Join-Path $root 'Tests/YogaITS.UiPolicyChecks') -c Release "-p:EnableLiquidGlass=$enabled"
     if ($LASTEXITCODE -ne 0) { throw 'UI policy checks failed.' }
     $artifactArguments = @('--icon-executable', $executable)

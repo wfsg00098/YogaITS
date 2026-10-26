@@ -22,5 +22,19 @@ approved, or endorsed by those companies. Product and company names identify
 compatibility or acknowledge sources; their marks belong to their owners.
 No trademark rights or permission to imply endorsement are granted.
 
+Modified, rebuilt, or repackaged third-party distributions are not the original
+release assets from this repository. The original project's tests, support,
+and any statements about compatibility do not certify third-party changes.
+Any support or warranty offered by a distributor is that distributor's own
+offer, not an undertaking by the original authors or contributors.
+Distributors are encouraged to identify their changes and contact details;
+this recommendation adds no license condition or restriction on paid distribution.
+
+Hardware and system operations may interrupt applications or displays, cause
+system instability, or result in data loss or hardware problems. Validation
+and published hashes are not a guarantee of safety, fitness, or compatibility.
+Release checksums establish byte-for-byte consistency with the referenced
+assets; they are not an independent publisher signature or a warranty.
+
 For source references and the scope of the licensing review, see DEVELOPMENT.md.
 This NOTICE explains scope and attribution; it adds no conditions to LICENSE.
