@@ -971,8 +971,6 @@ internal static class NativeFrameChecks
         int x, int y, int width, int height, nint parent, nint menu, nint instance, nint param);
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool DestroyWindow(nint hwnd);
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
-    [System.Runtime.InteropServices.DllImport("user32.dll", ExactSpelling = true)] private static extern nint SendMessageW(nint hwnd, uint message, nuint wParam, nint lParam);
-    [System.Runtime.InteropServices.DllImport("comctl32.dll")] private static extern nint DefSubclassProc(nint hwnd, uint message, nuint wParam, nint lParam);
     internal static void CheckWindow(Action<bool, string> check)
     {
         nint hwnd = CreateWindowExW(0, "STATIC", "Hidden glass frame check", 0x00CF0000, 0, 0, 480, 600, 0, 0, 0, 0);
@@ -987,12 +985,6 @@ internal static class NativeFrameChecks
             return frame.DefWindowProc(window, message, wParam, lParam);
         };
         check(SetWindowSubclass(hwnd, callback, 1, 0), "Headless HWND uses the actual production frame handler");
-        nint child = CreateWindowExW(0, "STATIC", "Hidden full-client content site", 0x40000000, 0, 0, 480, 600, hwnd, 0, 0, 0);
-        check(child != 0, "Hidden child reproduces the full-client input route without displaying a window");
-        SubclassProc contentCallback = (window, message, wParam, lParam, id, data) =>
-            frame.TryHandleContentMessage(hwnd, message, wParam, lParam, out nint handled) ? handled :
-                DefSubclassProc(window, message, wParam, lParam);
-        check(SetWindowSubclass(child, contentCallback, 1, 0), "Content child uses the production non-client input handler");
         try
         {
             check(GetClientRect(hwnd, out var nativeClient), "Read original client size");
@@ -1009,24 +1001,15 @@ internal static class NativeFrameChecks
                 check(client.Right == width && client.Bottom == height, "Glass client spans the complete actual HWND");
                 check(origin.X == bounds.Left && origin.Y == bounds.Top, "Glass and HWND share the exact same top-left coordinate");
                 check(GetWindowRgn(hwnd, region) == 0, "Glass never installs a GDI region that changes DWM's frame treatment");
-                check(SetWindowPos(child, 0, 0, 0, width, height, 0x14), "Resize the full-client input child");
-                foreach (var (cx, cy, hit) in new[] { (0, height / 2, 10), (width - 1, height / 2, 11),
-                    (width / 2, 0, 12), (width / 2, height - 1, 15), (0, 0, 13), (width - 1, 0, 14),
-                    (0, height - 1, 16), (width - 1, height - 1, 17) })
+                foreach (int hit in new[] { 10, 11, 12, 13, 14, 15, 16, 17 })
                 {
-                    nint position = unchecked((int)((uint)(ushort)(origin.Y + cy) << 16 | (ushort)(origin.X + cx)));
-                    check(SendMessageW(child, 0x0084, 0, position) == hit,
-                        "The content child returns a resize hit instead of swallowing it as transparent");
                     int before = sizingRequests;
-                    SendMessageW(child, 0x00A1, (nuint)hit, position);
+                    check(GlassWindowFrame.BeginResize(hwnd, hit), "A valid WinUI grip can request native parent resizing");
                     check(sizingRequests == before + 1 && sizingHit == (nuint)hit,
-                        "A content-edge click reaches the parent sizing handler exactly once");
+                        "A grip starts the native parent sizing handler exactly once");
                 }
-                check(!frame.TryHandleContentMessage(hwnd, 0x0084, 0,
-                    unchecked((int)((uint)(ushort)(origin.Y + height / 2) << 16 | (ushort)(origin.X + width / 2))), out _),
-                    "Content input away from resize grips remains owned by WinUI");
+                check(!GlassWindowFrame.BeginResize(hwnd, 20), "Caption-button input cannot start a resize operation");
                 frame.SetEnabled(hwnd, false);
-                check(!frame.TryHandleContentMessage(hwnd, 0x0084, 0, 0, out _), "Native mode releases the child resize handler");
                 check(GetClientRect(hwnd, out var restored) && restored.Right < width && restored.Bottom < height,
                     "Native mode restores the conventional non-client frame");
             }
@@ -1039,9 +1022,8 @@ internal static class NativeFrameChecks
         }
         finally
         {
-            RemoveWindowSubclass(child, contentCallback, 1); DestroyWindow(child);
             RemoveWindowSubclass(hwnd, callback, 1); DeleteObject(region); DestroyWindow(hwnd);
-            GC.KeepAlive(callback); GC.KeepAlive(contentCallback);
+            GC.KeepAlive(callback);
         }
     }
 }

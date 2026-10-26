@@ -50,35 +50,12 @@ internal sealed class GlassWindowFrame
         return GlassEdgePolicy.ResizeHitTest(x, y, client.Right, client.Bottom, grip, nativeResult);
     }
 
-    public bool TryHandleContentMessage(nint parent, uint message, nuint wParam, nint lParam, out nint result)
+    internal static bool BeginResize(nint hwnd, int hit)
     {
-        result = 0;
-        if (message is not (0x0084 or 0x0020 or 0x00A1 or 0x00A3) || !_enabled || ResizeGrip(parent) == 0)
-            return false;
-        nint hit = message == 0x0020 ? (short)((long)lParam & 0xFFFF) : HitTest(parent, lParam, 1);
-        int cursor = GlassEdgePolicy.ResizeCursor(hit);
-        if (cursor == 0) return false;
-        if (message == 0x0084) // WM_NCHITTEST
-        {
-            // A full-client XAML site must own this non-client hit. Returning
-            // HTTRANSPARENT does not forward its mouse input to the parent.
-            result = hit;
-        }
-        else if (message == 0x0020) // WM_SETCURSOR
-        {
-            nint handle = LoadCursorW(0, cursor);
-            if (handle == 0) return false;
-            _ = SetCursor(handle);
-            result = 1;
-        }
-        else // WM_NCLBUTTONDOWN / WM_NCLBUTTONDBLCLK
-        {
-            if (GlassEdgePolicy.ResizeCursor((nint)wParam) == 0) return false;
-            // The HWND owning the full-client site is a child. Explicitly start
-            // sizing its parent instead of letting WinUI consume the operation.
-            _ = ReleaseCapture();
-            result = SendMessageW(parent, message, (nuint)hit, lParam);
-        }
+        if (ResizeGrip(hwnd) == 0 || GlassEdgePolicy.ResizeCursor(hit) == 0 || !GetCursorPos(out var point)) return false;
+        nint position = unchecked((int)((uint)(ushort)point.Y << 16 | (ushort)point.X));
+        _ = ReleaseCapture();
+        _ = SendMessageW(hwnd, 0x00A1, (nuint)hit, position); // WM_NCLBUTTONDOWN: native sizing loop.
         return true;
     }
 
@@ -95,8 +72,7 @@ internal sealed class GlassWindowFrame
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint hwnd, int index);
     [DllImport("user32.dll", ExactSpelling = true)] private static extern nint SendMessageW(nint hwnd, uint message, nuint wParam, nint lParam);
-    [DllImport("user32.dll", ExactSpelling = true)] private static extern nint LoadCursorW(nint instance, nint name);
-    [DllImport("user32.dll")] private static extern nint SetCursor(nint cursor);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out PointI point);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsZoomed(nint hwnd);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsIconic(nint hwnd);

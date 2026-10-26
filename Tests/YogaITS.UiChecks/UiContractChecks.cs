@@ -5,7 +5,6 @@ using YogaITS.Tray.UI.Glass.Controls;
 using YogaITS.Tray.UI.Glass.Animation;
 using YogaITS.Tray.UI.Glass.Layout;
 using YogaITS.Tray.UI.Glass.Windowing;
-using Microsoft.UI.Input;
 #endif
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -109,43 +108,31 @@ internal static class UiContractChecks
 
     private static void CheckResizeRegions(TrayMenuWindow full, TrayMenuWindow mini)
     {
-        var input = InputNonClientPointerSource.GetForWindowId(full.AppWindow.Id);
-        var passthrough = new Windows.Graphics.RectInt32(40, 40, 20, 20);
-        input.SetRegionRects(NonClientRegionKind.Passthrough, [passthrough]);
-        using var regions = new GlassResizeRegions(full);
-        try
+        var root = (Grid)full.Content;
+        using var regions = new GlassResizeRegions(full, root);
+        foreach (double width in new[] { 560.0, 700.0, 480.0 })
         {
-            foreach (int width in new[] { 560, 700, 480 })
-            {
-                full.AppWindow.Resize(new Windows.Graphics.SizeInt32(width, 850));
-                regions.Update(true);
-                var size = full.AppWindow.ClientSize;
-                var top = input.GetRegionRects(NonClientRegionKind.TopBorder).Single();
-                var bottom = input.GetRegionRects(NonClientRegionKind.BottomBorder).Single();
-                var left = input.GetRegionRects(NonClientRegionKind.LeftBorder).Single();
-                var right = input.GetRegionRects(NonClientRegionKind.RightBorder).Single();
-                Ensure(top.X == 0 && top.Y == 0 && top.Width == size.Width && top.Height > 0,
-                    "The top grip must span the actual client width.");
-                Ensure(bottom.Y + bottom.Height == size.Height && bottom.Width == size.Width,
-                    "The bottom grip must stay at the resized bottom edge.");
-                Ensure(left.X == 0 && left.Y == top.Height && left.Y + left.Height == bottom.Y &&
-                    right.X + right.Width == size.Width && right.Height == left.Height,
-                    "Both side grips must cover the complete feature area without swallowing content.");
-            }
-            regions.Update(false);
-            foreach (var border in new[] { NonClientRegionKind.TopBorder, NonClientRegionKind.BottomBorder,
-                NonClientRegionKind.LeftBorder, NonClientRegionKind.RightBorder })
-                Ensure(input.GetRegionRects(border) is not { Length: > 0 }, "Native mode must release custom resize regions.");
-            Ensure(input.GetRegionRects(NonClientRegionKind.Passthrough).Single() == passthrough,
-                "Resize regions must preserve independent title-bar input regions.");
-            using var miniRegions = new GlassResizeRegions(mini);
-            miniRegions.Update(true);
-            var miniInput = InputNonClientPointerSource.GetForWindowId(mini.AppWindow.Id);
-            Ensure(miniInput.GetRegionRects(NonClientRegionKind.BottomBorder) is not { Length: > 0 },
-                "The fixed-size mini window must never receive custom resize grips.");
+            regions.Update(true);
+            root.Measure(new Windows.Foundation.Size(width, 850));
+            root.Arrange(new Windows.Foundation.Rect(0, 0, width, 850));
+            var bounds = regions.Children.OfType<FrameworkElement>().Select(grip =>
+                grip.TransformToVisual(root).TransformBounds(new Windows.Foundation.Rect(0, 0, grip.ActualWidth, grip.ActualHeight))).ToArray();
+            Ensure(regions.Visibility == Visibility.Visible && bounds.Length == 8,
+                "A resizable glass window must expose four WinUI edges and four corners.");
+            foreach (var point in new[] { new Windows.Foundation.Point(1, 425), new(width - 1, 425), new(width / 2, 1),
+                new(width / 2, 849), new(1, 1), new(width - 1, 1), new(1, 849), new(width - 1, 849) })
+                Ensure(bounds.Count(rect => rect.Contains(point)) == 1,
+                    "Every visible edge and corner must have exactly one WinUI input owner after resizing.");
+            Ensure(!bounds.Any(rect => rect.Contains(new Windows.Foundation.Point(width / 2, 425))),
+                "Resize input must not cover the settings content.");
         }
-        finally { input.ClearRegionRects(NonClientRegionKind.Passthrough); }
+        regions.Update(false);
+        Ensure(regions.Visibility == Visibility.Collapsed, "Native mode must release custom WinUI resize input.");
+        using var miniRegions = new GlassResizeRegions(mini, (Grid)mini.Content);
+        miniRegions.Update(true);
+        Ensure(miniRegions.Visibility == Visibility.Collapsed, "The fixed-size mini window must never expose resize grips.");
     }
+
 #endif
 
     private static void CheckNaturalHostMeasurement()

@@ -46,7 +46,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
     private nint _hwnd, _registeredHwnd, _siteHwnd;
     private int _siteRepairs;
     private readonly GlassWindowFrame _windowFrame = new();
-    private readonly GlassResizeRegions _resizeRegions = new(window);
+    private readonly GlassResizeRegions _resizeRegions = new(window, root);
     private bool _closed, _requested, _locked, _updating, _repairingTop, _resizing;
     private int _pending;
     private double _sigma = BackgroundTuning.DefaultBlurDip;
@@ -492,8 +492,6 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
             if (_siteSubclass is not null) _ = RemoveWindowSubclass(hwnd, _siteSubclass, SiteSubclassId);
             if (_siteHwnd == hwnd) _siteHwnd = 0;
         }
-        if (!_closed && _requested && _hwnd != 0 &&
-            _windowFrame.TryHandleContentMessage(_hwnd, message, wParam, lParam, out nint handled)) return handled;
         nint result = DefSubclassProc(hwnd, message, wParam, lParam);
         if (_closed || !_requested || message != 0x0046 || lParam == 0 || _hwnd == 0) return result;
         // WinUI can reserve the row again during a move. Correct its proposed
