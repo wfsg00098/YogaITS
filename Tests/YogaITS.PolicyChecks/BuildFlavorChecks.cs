@@ -88,6 +88,16 @@ internal static class BuildFlavorChecks
                 SetMarker(flavor);
                 if (flavor == UiBuildFlavor.LiquidGlass)
                 {
+                    foreach (string asset in new[] { "CaptureIdentity/resources.pri",
+                        "CaptureIdentity/Square44x44Logo.targetsize-32_altform-unplated.png",
+                        "CaptureIdentity/Square44x44Logo.targetsize-256_altform-lightunplated.png" })
+                    {
+                        string path = Path.Combine(source, asset);
+                        byte[] savedAsset = File.ReadAllBytes(path);
+                        File.Delete(path);
+                        Reject(() => Extract(), "Updates missing shell icon assets must not install.");
+                        File.WriteAllBytes(path, savedAsset);
+                    }
                     File.WriteAllText(lockFile, RuntimeLock().Replace("Microsoft.UI.Xaml.dll", "Microsoft.ui.xaml.dll"));
                     Check(File.Exists(Path.Combine(Extract(), "Microsoft.UI.Xaml.dll")), "SDK filename casing matches Windows lookup semantics.");
                     File.WriteAllText(lockFile, RuntimeLock("2.5.1"));

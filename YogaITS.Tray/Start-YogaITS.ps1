@@ -11,7 +11,8 @@ function Register-CaptureIdentity {
     if ($identityName -ne 'YogaITS' -or $manifest.Package.Identity.Publisher -ne 'CN=YogaITS') { throw 'Unexpected YogaITS identity.' }
     $existing = Get-AppxPackage -Name $identityName
     $manifestDirectory = [IO.Path]::GetDirectoryName($manifestPath)
-    if (-not $existing -or -not [string]::Equals($existing.InstallLocation.TrimEnd('\'),$manifestDirectory.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)) {
+    if (-not $existing -or $existing.Version -ne [version]$manifest.Package.Identity.Version -or
+        -not [string]::Equals($existing.InstallLocation.TrimEnd('\'),$manifestDirectory.TrimEnd('\'),[StringComparison]::OrdinalIgnoreCase)) {
         $development = Get-ItemPropertyValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' 'AllowDevelopmentWithoutDevLicense' -ErrorAction SilentlyContinue
         if ($development -ne 1) { throw 'The loose capture identity requires Windows Developer Mode. No system settings were changed.' }
         try {

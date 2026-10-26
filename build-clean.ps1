@@ -109,6 +109,7 @@ if ($Checks) {
     dotnet run --project (Join-Path $root 'Tests/YogaITS.PolicyChecks') -c Release -p:EnableLiquidGlass=false -- --check-package $output
     if ($LASTEXITCODE -ne 0) { throw 'Published update package check failed.' }
     if ($LiquidGlass) {
+        & (Join-Path $root 'Tests/IdentityIconChecks.ps1') -PublishedDirectory $output
         & (Join-Path $root 'Tests/UiContractChecks.ps1') -PublishedDirectory $output
         & $shaderChecker $glassShader
         if ($LASTEXITCODE -ne 0) { throw 'Synthetic shader checks failed.' }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace YogaITS.Tray.UI.Glass.Runtime;
 
@@ -32,8 +33,10 @@ internal static class CaptureIdentityBootstrap
         uint length = 0;
         if (GetCurrentPackageFullName(ref length, null) != InsufficientBuffer) return false;
         var name = new StringBuilder(checked((int)length));
-        if (GetCurrentPackageFullName(ref length, name) != 0 ||
-            !name.ToString().StartsWith("YogaITS_", StringComparison.Ordinal)) return false;
+        string? version = XDocument.Load(Path.Combine(directory, "CaptureIdentity", "AppxManifest.xml"))
+            .Root?.Elements().FirstOrDefault(element => element.Name.LocalName == "Identity")?.Attribute("Version")?.Value;
+        if (string.IsNullOrEmpty(version) || GetCurrentPackageFullName(ref length, name) != 0 ||
+            !name.ToString().StartsWith($"YogaITS_{version}_", StringComparison.Ordinal)) return false;
         length = 0;
         if (GetCurrentPackagePath2(5, ref length, null) != InsufficientBuffer) return false;
         var external = new StringBuilder(checked((int)length));

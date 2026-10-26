@@ -123,6 +123,8 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 既有 5.x 实机结论继续保留。用户确认 Probe 玻璃材质已完成测试；6.0 新 UI 与真实服务的组合尚待实机回归，构建、策略、WinUI 契约与 shader 检查不能写作整机验收。
 
+玻璃版稀疏身份的任务栏图标使用 `CaptureIdentity/Square44x44Logo.targetsize-*` 的默认、`unplated` 和 `lightunplated` 三种变体，覆盖 16–256 像素的系统目标尺寸，均由原始 ICO 导出并保留 alpha；原生窗口和托盘继续使用内置 HICON。独立 shell `resources.pri` 位于包根 `CaptureIdentity/`，资源 URI 保留 `Files/CaptureIdentity/` 前缀，不覆盖应用的 `YogaITS.Tray.pri`。更新包要求完整携带这些变体和索引。修改身份资源时递增 manifest 的身份版本；启动同时校验目录和该版本，原目录覆盖更新也会交接给独立注册进程刷新身份。`Tests/IdentityIconChecks.ps1` 验证实际 PNG 的尺寸/透明度、亮暗变体一致性、索引 URI/qualifier 及资源版本，不注册身份或启动可见窗口。
+
 ## 架构与刷新
 
 四组 probe 后端整合为独立服务，不依赖厂商 RPC 客户端 DLL。`SerializedFeatureService` 串行执行同一服务的读、写和关闭；首次检测及不同服务之间可并行。写入由用户操作或已保存显卡偏好的受约束协调触发，不通过试写检测能力。保活 helper 只在用户启用且当前模式允许时驻留；其低频检查独立于原有硬件状态刷新。
