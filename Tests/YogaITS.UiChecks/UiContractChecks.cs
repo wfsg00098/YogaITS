@@ -47,6 +47,7 @@ internal static class UiContractChecks
         Ensure(!host.IsHitTestVisible && host.Visibility == Visibility.Collapsed, "Collapsed host must stop input.");
         host.SetExpanded(true);
         Ensure(host.IsHitTestVisible && host.Visibility == Visibility.Visible, "Host must support reversal.");
+        CheckNaturalHostMeasurement();
         var cards = TrayMenuWindow.CreateTileGrid([
             TrayMenuWindow.CreateOptionTile("单人", true, false, TrayMenuWindow.OptionTileHeightDip),
             TrayMenuWindow.CreateOptionTile("关闭", false, false, TrayMenuWindow.OptionTileHeightDip)], 2, TrayMenuWindow.OptionTileHeightDip);
@@ -72,6 +73,34 @@ internal static class UiContractChecks
         Console.WriteLine("UI contract: window declarations");
         CheckWindowDeclarations();
         Console.WriteLine("PASS: shared UI contract; confirmed readback, disable, dynamic remove/add/reorder, host lifecycle, native fallback, real hardware adapter, compile-time renderer isolation. No UI or capture started.");
+    }
+
+    private static void CheckNaturalHostMeasurement()
+    {
+        var rows = new StackPanel();
+        using var host = new AnimatedOptionHost(() => false, _ => { });
+        host.SetChild(rows);
+        rows.Children.Add(new Border { Height = 64 });
+        host.Measure(new Windows.Foundation.Size(120, double.PositiveInfinity));
+        Ensure(host.DesiredSize.Height >= 64, "Content added before first display must contribute its natural height.");
+
+        rows.Children.Clear();
+        var text = new TextBlock
+        {
+            Text = string.Concat(Enumerable.Repeat("窗口中的功能说明需要完整显示。", 8)),
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 14
+        };
+        rows.Children.Add(text);
+        double previous = 0;
+        foreach (double width in new[] { 240.0, 100.0, 300.0 })
+        {
+            host.Measure(new Windows.Foundation.Size(width, double.PositiveInfinity));
+            Ensure(text.DesiredSize.Width <= width + 0.5, "Wrapped content must use the measured width before activation.");
+            Ensure(host.DesiredSize.Height >= text.DesiredSize.Height - 0.5, "The host must reserve the complete wrapped content height.");
+            if (width == 100) Ensure(host.DesiredSize.Height > previous, "Narrowing the menu must increase the reserved text height.");
+            previous = host.DesiredSize.Height;
+        }
     }
 
     private static async Task CheckHardwareAdapterAsync()
@@ -177,6 +206,24 @@ internal static class UiContractChecks
         var mini = Create(false);
         try
         {
+            Ensure(!full.AppWindow.IsVisible && !mini.AppWindow.IsVisible,
+                "Constructing settings windows must not display an intermediate window.");
+            Ensure(full.AppWindow.Size.Width < full.AppWindow.Size.Height,
+                "The control center must already have portrait bounds before content is shown.");
+            foreach (double width in new[] { 244.0, 228.0, 196.0 })
+            {
+                int height = mini.MeasureMiniContentHeight(width);
+                var root = (FrameworkElement)mini.Content;
+                root.Arrange(new Windows.Foundation.Rect(0, 0, width, height));
+                var buttons = Tree(root).OfType<Button>().Where(button => button.ActualWidth > 0 && button.ActualHeight > 0).ToArray();
+                Ensure(buttons.Length == 11, "Every performance, charge, GPU and exit button must be laid out in the mini window.");
+                foreach (var button in buttons)
+                {
+                    var bounds = button.TransformToVisual(root).TransformBounds(new Windows.Foundation.Rect(0, 0, button.ActualWidth, button.ActualHeight));
+                    Ensure(bounds.Top >= -0.5 && bounds.Bottom <= height + 0.5,
+                        "The measured mini window height must include all function buttons and the exit button.");
+                }
+            }
             string[] fullText = TextIn((DependencyObject)full.Content).ToArray();
             string[] miniText = TextIn((DependencyObject)mini.Content).ToArray();
             Ensure(full.Title == "Yoga控制中心" && mini.Title == "Yoga控制中心", "Both windows must retain application branding.");
@@ -193,8 +240,11 @@ internal static class UiContractChecks
     }
 
     private static IEnumerable<string> TextIn(DependencyObject node)
+        => Tree(node).OfType<TextBlock>().Select(text => text.Text);
+
+    private static IEnumerable<DependencyObject> Tree(DependencyObject node)
     {
-        if (node is TextBlock text) yield return text.Text;
+        yield return node;
         IEnumerable<DependencyObject> children = node switch
         {
             Panel panel => panel.Children.Cast<DependencyObject>(),
@@ -203,7 +253,7 @@ internal static class UiContractChecks
             _ => []
         };
         foreach (var child in children)
-            foreach (var value in TextIn(child)) yield return value;
+            foreach (var value in Tree(child)) yield return value;
     }
 
     private static void Ensure(bool condition, string message)

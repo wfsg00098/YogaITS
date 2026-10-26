@@ -98,12 +98,24 @@ internal sealed class AnimatedOptionHost : Grid, IDisposable
         RefreshNaturalSize();
         _spacing?.Refresh();
     }
-    private void RefreshNaturalSize()
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        // Canvas does not measure its children for its own desired size. Feed
+        // it the child's height at the actual width, including before Loaded.
+        RefreshNaturalSize(availableSize.Width, arrange: false);
+        return base.MeasureOverride(availableSize);
+    }
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        RefreshNaturalSize(finalSize.Width);
+        return base.ArrangeOverride(finalSize);
+    }
+    private void RefreshNaturalSize(double? availableWidth = null, bool arrange = true)
     {
         if (_child is null) return;
-        double width=_parent?.ActualWidth>0
+        double width=availableWidth ?? (_parent?.ActualWidth>0
             ? Math.Max(0,_parent.ActualWidth-Margin.Left-Margin.Right)
-            : ActualWidth>0?ActualWidth:double.PositiveInfinity;
+            : ActualWidth>0?ActualWidth:double.PositiveInfinity);
         if(double.IsFinite(width))
         {
             double content=Math.Max(0,width-_child.Margin.Left-_child.Margin.Right);
@@ -111,7 +123,7 @@ internal sealed class AnimatedOptionHost : Grid, IDisposable
         }
         _child.Measure(new Size(width,double.PositiveInfinity));
         if(_child.DesiredSize.Height>0) _naturalHeight=_child.DesiredSize.Height;
-        if(double.IsFinite(width) && _naturalHeight>0)
+        if(arrange && double.IsFinite(width) && _naturalHeight>0)
             _child.Arrange(new Rect(0,0,width,_naturalHeight));
         _canvas.Height=_naturalHeight*_progress;
     }

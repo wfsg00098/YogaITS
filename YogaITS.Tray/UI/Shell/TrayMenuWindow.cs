@@ -2,6 +2,7 @@ using YogaITS.Tray.UI.Accessibility;
 using YogaITS.Tray.UI.Animation;
 using YogaITS.Tray.UI.Controls;
 using YogaITS.Tray.UI.Features;
+using YogaITS.Tray.UI.Layout;
 using YogaITS.Tray.UI.Presentation;
 #if LIQUID_GLASS
 using YogaITS.Tray.UI.Glass.Controls;
@@ -160,6 +161,10 @@ public sealed class TrayMenuWindow : Window
 
         ExtendsContentIntoTitleBar = true;
 
+        // Establish the portrait bounds before XAML/material initialization can
+        // create its first frame at WinUI's default landscape window size.
+        if (_fullWindow) PositionControlCenter();
+
         Content = BuildContent(
             modelName,
             itsCapabilities,
@@ -169,6 +174,8 @@ public sealed class TrayMenuWindow : Window
             flipToStartSnapshot,
             nvidiaGpuSupported);
         ConfigureWindow();
+        if (!_fullWindow && _contentRoot is not null)
+            _contentRoot.Loaded += (_, _) => QueueMiniResize();
 #if LIQUID_GLASS
         if (Content is FrameworkElement materialRoot)
             materialRoot.Loaded += async (_, _) =>
@@ -190,7 +197,14 @@ public sealed class TrayMenuWindow : Window
     {
         uint dpi = GetWindowDpi();
         int width = ScaleDip(BaseWidthDip, dpi);
-        int height = ScaleDip(GetDesiredHeightDip(), dpi);
+        // AppWindow bounds include the non-client frame; XAML measurements do
+        // not. Reserve the real frame instead of a fixed extra 12 DIP.
+        var bounds = AppWindow.Size;
+        var client = AppWindow.ClientSize;
+        int frameWidth = Math.Max(0, bounds.Width - client.Width);
+        int frameHeight = Math.Max(0, bounds.Height - client.Height);
+        double clientWidthDip = Math.Max(1, width - frameWidth) * 96.0 / dpi;
+        int height = ScaleDip(MeasureMiniContentHeight(clientWidthDip), dpi) + frameHeight;
 
         if (!GetCursorPos(out POINT cursor))
         {
@@ -227,13 +241,7 @@ public sealed class TrayMenuWindow : Window
 
     public void ShowControlCenter()
     {
-        uint dpi = GetWindowDpi();
-        RectInt32 area = GetWorkArea(GetCursorPos(out POINT cursor) ? cursor : default);
-        int width = Math.Min(ScaleDip(492, dpi), area.Width - ScaleDip(24, dpi));
-        int height = Math.Min(ScaleDip(820, dpi), area.Height - ScaleDip(24, dpi));
-        AppWindow.MoveAndResize(new RectInt32(
-            area.X + (area.Width - width) / 2,
-            area.Y + (area.Height - height) / 2, width, height));
+        PositionControlCenter();
         ShowInForeground();
         // Start on the title rather than a function tile. Tab then advances to
         // the first available button while retaining normal keyboard visuals.
@@ -249,6 +257,17 @@ public sealed class TrayMenuWindow : Window
         ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
     }
 
+    private void PositionControlCenter()
+    {
+        uint dpi = GetWindowDpi();
+        RectInt32 area = GetWorkArea(GetCursorPos(out POINT cursor) ? cursor : default);
+        int width = WindowSizing.Fit(492, dpi, area.Width);
+        int height = WindowSizing.Fit(820, dpi, area.Height);
+        AppWindow.MoveAndResize(new RectInt32(
+            area.X + (area.Width - width) / 2,
+            area.Y + (area.Height - height) / 2, width, height));
+    }
+
     public void ShowInForeground()
     {
         if (_closed) return;
@@ -261,15 +280,16 @@ public sealed class TrayMenuWindow : Window
             System.Diagnostics.Debug.WriteLine("Windows declined foreground activation for the settings window.");
     }
 
-    private int GetDesiredHeightDip()
+    internal int MeasureMiniContentHeight(double clientWidthDip)
     {
         // Measure the complete visual tree at its natural height. There is no
         // scrolling container: the AppWindow is resized to the content itself.
         _performanceChoices?.RefreshPresentation();
         _chargeChoicesUi?.RefreshPresentation();
-        _contentRoot?.Measure(new Windows.Foundation.Size(BaseWidthDip, 4096));
+        if (_contentRoot is not null) WarmUiTree.ApplyTemplates(_contentRoot);
+        _contentRoot?.Measure(new Windows.Foundation.Size(clientWidthDip, double.PositiveInfinity));
 
-        double desired = (_contentRoot?.DesiredSize.Height ?? 548) + 12;
+        double desired = _contentRoot?.DesiredSize.Height ?? 548;
         if (double.IsFinite(desired) && desired > 0)
             return Math.Clamp((int)Math.Ceiling(desired), 120, 2048);
 
@@ -848,17 +868,19 @@ public sealed class TrayMenuWindow : Window
             error => _showInfo(title + "设置失败", error.Message),
             _fullWindow ? OptionTileHeightDip : miniHeight,
             _fullWindow ? ControlCenterButtonFontSize : MiniButtonFontSize, compact: !_fullWindow);
-        choices.PresentationChanged += () =>
-        {
-            if (_fullWindow || !_shown || _optionResizeQueued) return;
-            _optionResizeQueued = true;
-            DispatcherQueue.TryEnqueue(() =>
-            {
-                _optionResizeQueued = false;
-                if (!_closed) ShowAtCursor();
-            });
-        };
+        choices.PresentationChanged += QueueMiniResize;
         return choices;
+    }
+
+    private void QueueMiniResize()
+    {
+        if (_fullWindow || !_shown || _optionResizeQueued || _closed) return;
+        _optionResizeQueued = true;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            _optionResizeQueued = false;
+            if (!_closed) ShowAtCursor();
+        });
     }
 
     private async Task SetItsModeAsync(ItsMode requested)
