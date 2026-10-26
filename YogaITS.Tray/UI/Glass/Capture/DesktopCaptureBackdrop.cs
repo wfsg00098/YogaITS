@@ -492,14 +492,9 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
             if (_siteSubclass is not null) _ = RemoveWindowSubclass(hwnd, _siteSubclass, SiteSubclassId);
             if (_siteHwnd == hwnd) _siteHwnd = 0;
         }
+        if (!_closed && _requested && _hwnd != 0 &&
+            _windowFrame.TryHandleContentMessage(_hwnd, message, wParam, lParam, out nint handled)) return handled;
         nint result = DefSubclassProc(hwnd, message, wParam, lParam);
-        if (message == 0x0084 && !_closed && _requested && _hwnd != 0)
-        {
-            // The full-client XAML child owns the outer pixels too. Pass resize
-            // grips through to the parent HWND instead of consuming HTCLIENT.
-            nint edge = _windowFrame.HitTest(_hwnd, lParam, 1);
-            if ((long)edge is >= 10 and <= 17) return -1; // HTTRANSPARENT
-        }
         if (_closed || !_requested || message != 0x0046 || lParam == 0 || _hwnd == 0) return result;
         // WinUI can reserve the row again during a move. Correct its proposed
         // position before Win32 applies it, instead of waiting for focus to change.

@@ -23,6 +23,15 @@ internal static class GlassEdgePolicy
         return left ? 10 : right ? 11 : nativeResult;
     }
 
+    public static int ResizeCursor(nint hit) => (long)hit switch
+    {
+        10 or 11 => 32644, // IDC_SIZEWE
+        12 or 15 => 32645, // IDC_SIZENS
+        13 or 17 => 32642, // IDC_SIZENWSE
+        14 or 16 => 32643, // IDC_SIZENESW
+        _ => 0
+    };
+
     // Correct only a full-width WinUI site shifted down by one physical pixel.
     // Its bottom may be clipped to the client or extend one pixel beyond it.
     // Never reposition partial/custom hosts, normal title bars or collapsed sites.
