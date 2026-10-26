@@ -63,6 +63,8 @@ internal sealed class GlassWindowFrame
         ((long)GetWindowLongPtrW(hwnd, -16) & 0x00040000L) == 0 ? 0 :
         Math.Max(1, (int)Math.Round(4 * GetDpiForWindow(hwnd) / 96.0));
 
+    internal static bool PrimaryMouseButtonDown => (GetAsyncKeyState(1) & 0x8000) != 0;
+
     [StructLayout(LayoutKind.Sequential)] private struct PointI { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RectI { public int Left, Top, Right, Bottom; }
     [DllImport("comctl32.dll")] private static extern nint DefSubclassProc(nint hwnd, uint message, nuint wParam, nint lParam);
@@ -73,6 +75,7 @@ internal sealed class GlassWindowFrame
     [DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint hwnd, int index);
     [DllImport("user32.dll", ExactSpelling = true)] private static extern nint SendMessageW(nint hwnd, uint message, nuint wParam, nint lParam);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out PointI point);
+    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsZoomed(nint hwnd);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsIconic(nint hwnd);

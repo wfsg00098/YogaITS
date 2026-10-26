@@ -88,7 +88,14 @@ internal sealed class GlassResizeRegions : Grid, IDisposable
                 if (args.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Mouse ||
                     !args.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
                 args.Handled = true;
-                beginResize(hit);
+                CapturePointer(args.Pointer);
+                ReleasePointerCapture(args.Pointer);
+                // Finish WinUI's pointer dispatch before entering Win32's
+                // modal loop, otherwise WinUI can consume the matching release.
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (GlassWindowFrame.PrimaryMouseButtonDown) beginResize(hit);
+                });
             };
         }
         public void Dispose()
