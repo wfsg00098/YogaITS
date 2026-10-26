@@ -3,6 +3,10 @@ param([Parameter(Mandatory)][string]$PublishedDirectory)
 $ErrorActionPreference = 'Stop'
 $published = (Resolve-Path -LiteralPath $PublishedDirectory).Path
 $identity = Join-Path $published 'CaptureIdentity'
+if ((Get-FileHash -LiteralPath (Join-Path $published 'resources.pri') -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $identity 'resources.pri') -Algorithm SHA256).Hash) {
+    throw 'The external content root and package root must expose the same shell icon index.'
+}
 $dump = Join-Path ([IO.Path]::GetTempPath()) ('YogaITS-Icons-' + [guid]::NewGuid().ToString('N') + '.xml')
 try {
     $makepri = "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.26100.0\x64\makepri.exe"

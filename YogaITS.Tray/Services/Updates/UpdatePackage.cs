@@ -19,7 +19,7 @@ internal static class UpdatePackage
         "build-flavor.json", "runtime.lock.json", "Start-YogaITS.ps1", "CaptureIdentity/AppxManifest.xml",
         "CaptureIdentity/StoreLogo.png", "CaptureIdentity/Square150x150Logo.png", "CaptureIdentity/Square44x44Logo.png",
         "LiquidGlassWinUI.dll", "CustomEffectRuntimeNative.dll", "Microsoft.UI.Xaml.dll", "Microsoft.WindowsAppRuntime.dll",
-        "Microsoft.Graphics.Canvas.dll", "YogaITS.DesktopCapture_lg.dll", "CaptureIdentity/resources.pri",
+        "Microsoft.Graphics.Canvas.dll", "YogaITS.DesktopCapture_lg.dll", "CaptureIdentity/resources.pri", "resources.pri",
         .. new[] { 16,20,24,30,32,36,40,48,60,64,72,80,96,256 }.SelectMany(size =>
             new[] { "", "_altform-unplated", "_altform-lightunplated" }.Select(form =>
                 $"CaptureIdentity/Square44x44Logo.targetsize-{size}{form}.png"))

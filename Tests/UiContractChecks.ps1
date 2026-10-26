@@ -18,6 +18,10 @@ try {
         "-p:EnableLiquidGlass=$enabled" -p:EnableUiChecks=true -o $temporary
     if ($LASTEXITCODE -ne 0) { throw 'UI check host build failed.' }
     if ($enabled -eq 'true') {
+        # Exercise the deployed shell PRI alongside the application PRI too;
+        # copying identity resources does not register or activate the identity.
+        Copy-Item -LiteralPath (Join-Path $published 'resources.pri') -Destination $temporary
+        Copy-Item -LiteralPath (Join-Path $published 'CaptureIdentity') -Destination $temporary -Recurse
         $hashes = [ordered]@{}
         foreach ($file in Get-ChildItem $temporary -File -Filter '*.dll' | Sort-Object Name) {
             $hashes[$file.Name] = (Get-FileHash $file.FullName -Algorithm SHA256).Hash

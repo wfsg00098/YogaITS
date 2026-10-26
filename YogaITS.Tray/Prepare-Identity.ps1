@@ -33,8 +33,8 @@ foreach ($size in 16,20,24,30,32,36,40,48,60,64,72,80,96,256) {
     }
 }
 
-# Keep the shell index at the sparse package root. It indexes external-relative
-# CaptureIdentity paths only, leaving the application's YogaITS.Tray.pri intact.
+# Build a combined default index from the application/library PRI and shell
+# assets, retaining external-relative paths and the original YogaITS.Tray.pri.
 $tools = "${env:ProgramFiles(x86)}\Windows Kits\10\bin\10.0.26100.0\x64"
 $intermediate = Join-Path $PSScriptRoot '../obj/liquid-glass/YogaITS.Tray'
 [IO.Directory]::CreateDirectory($intermediate) | Out-Null
@@ -43,6 +43,11 @@ if (Test-Path -LiteralPath $assetRoot) { Remove-Item -LiteralPath $assetRoot -Re
 $assetFolder = Join-Path $assetRoot 'CaptureIdentity'
 [IO.Directory]::CreateDirectory($assetFolder) | Out-Null
 Get-ChildItem -LiteralPath $identity -File -Filter '*.png' | Copy-Item -Destination $assetFolder
+# The external-root PRI is also WinUI's default resource index. Merge the
+# existing application/library maps so adding shell icons cannot shadow them.
+$applicationPri = Join-Path $OutputDirectory 'YogaITS.Tray.pri'
+if (-not (Test-Path -LiteralPath $applicationPri)) { throw 'Application PRI is required before preparing shell identity assets.' }
+Copy-Item -LiteralPath $applicationPri -Destination $assetRoot
 $config = Join-Path $intermediate 'identity-priconfig.xml'
 & (Join-Path $tools 'makepri.exe') createconfig /cf $config /dq lang-zh-CN /o
 if ($LASTEXITCODE -ne 0) { throw 'Cannot create the shell icon resource configuration.' }
@@ -50,11 +55,14 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot create the shell icon resource configur
 if ($priConfig.resources.packaging) { [void]$priConfig.resources.RemoveChild($priConfig.resources.packaging) }
 $index = $priConfig.resources.index
 foreach ($indexer in @($index.'indexer-config')) {
-    if ($indexer.type -ne 'folder') { [void]$index.RemoveChild($indexer) }
+    if ($indexer.type -notin 'folder','PRI') { [void]$index.RemoveChild($indexer) }
 }
 $priConfig.Save($config)
 & (Join-Path $tools 'makepri.exe') new /pr $assetRoot /cf $config /in YogaITS /of (Join-Path $identity 'resources.pri') /o
 if ($LASTEXITCODE -ne 0) { throw 'Cannot index taskbar icon variants.' }
+# Sparse packages resolve shell resources through the effective external root.
+# Retain the same index at both roots; neither replaces YogaITS.Tray.pri.
+Copy-Item -LiteralPath (Join-Path $identity 'resources.pri') -Destination (Join-Path $OutputDirectory 'resources.pri') -Force
 # SDK schema validation only. /nv skips semantic file-reference validation for
 # sparse external content. Nothing is registered, installed, signed or launched.
 $makeappx = Join-Path $tools 'makeappx.exe'

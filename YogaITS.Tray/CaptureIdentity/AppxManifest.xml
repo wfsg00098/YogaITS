@@ -6,7 +6,7 @@
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
          IgnorableNamespaces="uap uap10 uap11 rescap">
   <!-- Bump this resource revision when shell identity assets change. -->
-  <Identity Name="YogaITS" Publisher="CN=YogaITS" Version="1.0.0.1" ProcessorArchitecture="neutral" />
+  <Identity Name="YogaITS" Publisher="CN=YogaITS" Version="1.0.0.2" ProcessorArchitecture="neutral" />
   <Properties>
     <DisplayName>Yoga控制中心</DisplayName>
     <PublisherDisplayName>YogaITS</PublisherDisplayName>

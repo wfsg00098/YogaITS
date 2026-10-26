@@ -88,7 +88,7 @@ internal static class BuildFlavorChecks
                 SetMarker(flavor);
                 if (flavor == UiBuildFlavor.LiquidGlass)
                 {
-                    foreach (string asset in new[] { "CaptureIdentity/resources.pri",
+                    foreach (string asset in new[] { "CaptureIdentity/resources.pri", "resources.pri",
                         "CaptureIdentity/Square44x44Logo.targetsize-32_altform-unplated.png",
                         "CaptureIdentity/Square44x44Logo.targetsize-256_altform-lightunplated.png" })
                     {

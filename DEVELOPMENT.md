@@ -123,7 +123,7 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 既有 5.x 实机结论继续保留。用户确认 Probe 玻璃材质已完成测试；6.0 新 UI 与真实服务的组合尚待实机回归，构建、策略、WinUI 契约与 shader 检查不能写作整机验收。
 
-玻璃版稀疏身份的任务栏图标使用 `CaptureIdentity/Square44x44Logo.targetsize-*` 的默认、`unplated` 和 `lightunplated` 三种变体，覆盖 16–256 像素的系统目标尺寸，均由原始 ICO 导出并保留 alpha；原生窗口和托盘继续使用内置 HICON。独立 shell `resources.pri` 位于包根 `CaptureIdentity/`，资源 URI 保留 `Files/CaptureIdentity/` 前缀，不覆盖应用的 `YogaITS.Tray.pri`。更新包要求完整携带这些变体和索引。修改身份资源时递增 manifest 的身份版本；启动同时校验目录和该版本，原目录覆盖更新也会交接给独立注册进程刷新身份。`Tests/IdentityIconChecks.ps1` 验证实际 PNG 的尺寸/透明度、亮暗变体一致性、索引 URI/qualifier 及资源版本，不注册身份或启动可见窗口。
+玻璃版稀疏身份的任务栏图标使用 `CaptureIdentity/Square44x44Logo.targetsize-*` 的默认、`unplated` 和 `lightunplated` 三种变体，覆盖 16–256 像素的系统目标尺寸，均由原始 ICO 导出并保留 alpha；原生窗口和托盘继续使用内置 HICON。默认 `resources.pri` 合并原有应用/依赖 PRI 和 shell 图标，避免仅含图标的索引遮住 WinUI 主题资源；相同副本部署到包根 `CaptureIdentity/` 和实际外部内容根目录，满足 Shell 从有效外部位置加载索引的路径。图标资源 URI 保留 `Files/CaptureIdentity/` 前缀，不覆盖应用的 `YogaITS.Tray.pri`。更新包要求完整携带这些变体和索引。修改身份资源时递增 manifest 的身份版本；启动同时校验目录和该版本，原目录覆盖更新也会交接给独立注册进程刷新身份。`Tests/IdentityIconChecks.ps1` 验证实际 PNG 的尺寸/透明度、亮暗变体一致性、索引 URI/qualifier 及资源版本，不注册身份或启动可见窗口。隔离 WinUI 检查宿主同时复制已发布的默认 PRI 和身份资源，按真实发布布局检查 XAML/主题加载。
 
 ## 架构与刷新
 
