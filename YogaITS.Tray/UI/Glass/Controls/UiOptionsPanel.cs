@@ -8,7 +8,7 @@ using YogaITS.Tray.UI.Glass.Settings;
 using YogaITS.Tray.UI.Glass.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Windows.Storage.Pickers;
+using Microsoft.Windows.Storage.Pickers;
 
 namespace YogaITS.Tray.UI.Glass.Controls;
 
@@ -117,8 +117,8 @@ internal sealed class UiOptionsPanel : IDisposable
         _picking=true; _error=null; _imageButton.IsEnabled=false;
         try
         {
-            var picker=new FileOpenPicker();
-            WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(_window));
+            // The Windows SDK picker cannot run in our elevated process.
+            var picker=new FileOpenPicker(_window.AppWindow.Id);
             foreach(string extension in new[]{".jpg",".jpeg",".png",".bmp",".tif",".tiff",".webp"}) picker.FileTypeFilter.Add(extension);
             var file=await picker.PickSingleFileAsync();
             if(file is not null && !_disposed && GlassBackgroundOptions.Source==GlassBackgroundSource.StaticImage)

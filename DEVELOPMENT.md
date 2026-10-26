@@ -208,7 +208,7 @@ HDR 卡片和色域保护使用实际 `activeColorMode`；ACM 卡片使用独立
 
 [GlassResizeRegions](YogaITS.Tray/UI/Glass/Windowing/GlassResizeRegions.cs) 在四边及四角提供内侧 4 DIP 的透明 WinUI 输入区，系统光标由 `ProtectedCursor` 管理。[WindowResizeGesture](YogaITS.Tray/UI/Glass/Windowing/WindowResizeGesture.cs) 在同一指针捕获会话内处理按下、移动、松开和取消，以屏幕物理坐标调整 AppWindow，避免转交原生模态循环后丢失松开。按系统最小尺寸限制，Escape 还原；失去捕获、切换材质或关闭时结束。最大化、原生模式及迷你窗口隐藏这些输入区。
 
-背景选项保存为 `GlassNativeUI`、`GlassBackgroundSource`、`GlassImagePath`，默认原生 WinUI 3。静态图像先完整复制到应用数据目录，再公布路径；取消/失败和晚到导入不能覆盖较新选择。静态图像/壁纸不捕获桌面，透明桌面使用系统授权的捕获源，不保存帧到文件。
+背景选项保存为 `GlassNativeUI`、`GlassBackgroundSource`、`GlassImagePath`，默认原生 WinUI 3。静态图像使用支持管理员进程的 `Microsoft.Windows.Storage.Pickers.FileOpenPicker`，通过 `AppWindow.Id` 绑定当前窗口；先完整复制到应用数据目录，再公布路径，取消/失败和晚到导入不能覆盖较新选择。静态图像/壁纸不捕获桌面，透明桌面使用系统授权的捕获源，不保存帧到文件。
 
 玻璃版稀疏身份为 `YogaITS` / `CN=YogaITS`。启动校验路径及 manifest 版本，需要时由独立 PowerShell 等待原进程退出后注册并恢复。脚本不启用开发者模式或伪造授权；注册受限时保留可用背景或原生回退。构建不注册包。
 
