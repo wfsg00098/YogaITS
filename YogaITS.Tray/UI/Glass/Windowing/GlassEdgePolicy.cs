@@ -14,7 +14,8 @@ internal static class GlassEdgePolicy
     public static nint ResizeHitTest(int x, int y, int width, int height, int grip, nint nativeResult)
     {
         if (x < 0 || y < 0 || x >= width || y >= height ||
-            (nativeResult != 1 && nativeResult != 2 && nativeResult != 18)) return nativeResult;
+            (nativeResult != 0 && nativeResult != 1 && nativeResult != 2 && nativeResult != 18 &&
+             ((long)nativeResult < 10 || (long)nativeResult > 17))) return nativeResult;
         bool left = x < grip, right = x >= width-grip;
         bool top = y < grip, bottom = y >= height-grip;
         if (top) return left ? 13 : right ? 14 : 12;

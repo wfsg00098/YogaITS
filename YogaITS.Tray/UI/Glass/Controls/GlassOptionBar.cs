@@ -279,8 +279,8 @@ internal sealed class GlassOptionBar : Grid, IDisposable
         _active = new(_compositor, floating: !_useAcceleration);
         if (_useAcceleration)
         {
-            _acceleration = new((frame, rest) => PublishReveal(_active, frame, rest), elasticLayout: true);
-            _trackAcceleration = new((frame, rest) => PublishReveal(_track, frame, rest), layout: true, elasticLayout: true);
+            _acceleration = new((frame, rest) => PublishReveal(_active, frame, rest), CanAnimate, elasticLayout: true);
+            _trackAcceleration = new((frame, rest) => PublishReveal(_track, frame, rest), CanAnimate, layout: true, elasticLayout: true);
         }
         _scene.Children.InsertAtTop(_track.Visual);
         ElementCompositionPreview.SetElementChildVisual(_back, _scene);
@@ -350,9 +350,11 @@ internal sealed class GlassOptionBar : Grid, IDisposable
         RefreshMaterial();
     }
 
+    private bool CanAnimate() => _window is not null && LiquidGlassWindow.EffectsEnabled(_window) && _palette.AnimationsEnabled;
+
     private void ApplyLayout(bool animate, bool layoutChange = false)
     {
-        animate &= _hasPresentedLayout;
+        animate &= _hasPresentedLayout && CanAnimate();
         if (Visibility == Visibility.Visible && ActualWidth > 0 && ActualHeight > 0) _hasPresentedLayout = true;
         if (_fitToContent && _naturalWidths?.Length == _tabs.Length)
         {
@@ -415,7 +417,7 @@ internal sealed class GlassOptionBar : Grid, IDisposable
     private void MoveCapsule(TabFrame frame, bool animate, bool layoutChange = false)
     {
         if (_compositor is null || _active is null) return;
-        animate &= _palette.AnimationsEnabled;
+        animate &= CanAnimate();
         if (_acceleration is not null)
         {
             RefreshMaterial();

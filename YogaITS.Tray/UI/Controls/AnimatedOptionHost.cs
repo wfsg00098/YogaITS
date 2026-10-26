@@ -35,7 +35,8 @@ internal sealed class AnimatedOptionHost : Grid, IDisposable
         Children.Add(_canvas);
         SizeChanged += HostSizeChanged;
 #if LIQUID_GLASS
-        _motion = new AccelerationTabMotion((frame, _) => Apply(frame.X / 1000.0), layout: true);
+        _motion = new AccelerationTabMotion((frame, _) => Apply(frame.X / 1000.0),
+            () => _canAnimate() && SettingsMotion.AnimationsEnabled, layout: true);
         _motion.SetTarget(new(1000, 0, 48, 48), false);
         // The normalized phase has finite endpoints, just like a tab track.
         _motion.Physics.SetHorizontalBounds(0, 1048);

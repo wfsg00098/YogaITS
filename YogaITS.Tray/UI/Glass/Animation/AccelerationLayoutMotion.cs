@@ -64,6 +64,9 @@ internal sealed class AccelerationLayoutMotion
     }
     public void UpdateNow()
     {
+        // Material changes can precede a queued layout/render callback. Never
+        // reuse a glass entry's velocity after switching to native controls.
+        if (_enabled && !LiquidGlassWindow.AcceleratesLayout(_panel)) Clear();
         if (!_enabled || _updating || _panel.ActualWidth <= 0 || _panel.ActualHeight <= 0) return;
         _updating = true;
         try
@@ -121,7 +124,8 @@ internal sealed class AccelerationLayoutMotion
         {
             _offset = new RenderOffset(child);
             _target = target;
-            _motion = new AccelerationTabMotion((frame, _) => _offset.Set(new Vector2(frame.Center - _target.Center, frame.CenterY - _target.CenterY)), layout: true, elasticLayout: true);
+            _motion = new AccelerationTabMotion((frame, _) => _offset.Set(new Vector2(frame.Center - _target.Center, frame.CenterY - _target.CenterY)),
+                () => LiquidGlassWindow.AcceleratesLayout(child), layout: true, elasticLayout: true);
             _motion.SetTarget(target, false);
             _motion.SetPressed(false, true);
         }

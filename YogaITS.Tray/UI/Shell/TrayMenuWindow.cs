@@ -1127,7 +1127,9 @@ public sealed class TrayMenuWindow : Window
             Grid.SetColumn(host, col);
             grid.Children.Add(host);
         }
-        SettingsMotion.Reposition(grid);
+        // Native cards follow column widths immediately during window resizing.
+        // Only the glass renderer applies elastic movement within a card grid.
+        SettingsMotion.Reposition(grid, animateNative: false);
         return grid;
     }
 

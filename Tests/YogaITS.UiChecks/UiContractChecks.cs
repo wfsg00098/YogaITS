@@ -2,6 +2,10 @@ using YogaITS.Tray.UI.Controls;
 using YogaITS.Tray.UI.Shell;
 #if LIQUID_GLASS
 using YogaITS.Tray.UI.Glass.Controls;
+using YogaITS.Tray.UI.Glass.Animation;
+using YogaITS.Tray.UI.Glass.Layout;
+using YogaITS.Tray.UI.Glass.Windowing;
+using Microsoft.UI.Input;
 #endif
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -54,10 +58,13 @@ internal static class UiContractChecks
         using var view = new OptionGroupPresentation(bar.View, cards, () => false, bar.CancelPreview);
         view.Refresh();
         Ensure(cards.Visibility == Visibility.Visible, "Native presentation must remain available.");
+        Ensure(cards.ChildrenTransitions is null || cards.ChildrenTransitions.Count == 0,
+            "Native card grids must resize without reposition easing.");
         var assembly = typeof(ChoiceBar).Assembly;
 #if LIQUID_GLASS
         Ensure(bar.View is GlassOptionBar, "Opt-in build must contain the real glass renderer.");
         Ensure(assembly.GetType("YogaITS.Tray.UI.Glass.Controls.UiOptionsPanel") is not null, "Glass UI options must be compiled.");
+        CheckMotionMaterialSwitch();
 #else
         Ensure(bar.View is null, "Native build must not instantiate a hidden glass tree.");
         foreach (string name in new[] { "Controls.GlassOptionBar", "Windowing.LiquidGlassWindow", "Controls.UiOptionsPanel",
@@ -74,6 +81,72 @@ internal static class UiContractChecks
         CheckWindowDeclarations();
         Console.WriteLine("PASS: shared UI contract; confirmed readback, disable, dynamic remove/add/reorder, host lifecycle, native fallback, real hardware adapter, compile-time renderer isolation. No UI or capture started.");
     }
+
+#if LIQUID_GLASS
+    private static void CheckMotionMaterialSwitch()
+    {
+        bool glass = true;
+        TabFrame published = default;
+        using var motion = new AccelerationTabMotion((frame, _) => published = frame, () => glass, layout: true, elasticLayout: true);
+        motion.SetTarget(new(0, 0, 100, 48), false);
+        motion.SetPressed(false, true);
+        motion.SetTarget(new(70, 20, 160, 48), true);
+        Ensure(!motion.Physics.IsSettled, "Glass resize should retain physical movement.");
+        glass = false;
+        var native = new TabFrame(90, 35, 180, 48);
+        motion.SetTarget(native, true);
+        Ensure(motion.Physics.IsSettled && published == native,
+            "Native mode must snap even if a queued resize still requests physical animation.");
+        glass = true;
+        motion.SetPressed(false, true);
+        motion.SetTarget(new(120, 35, 210, 48), true);
+        Ensure(!motion.Physics.IsSettled, "Switching back to glass must enable its original physics.");
+        glass = false;
+        motion.SetPressed(false, true);
+        Ensure(motion.Physics.IsSettled && published == motion.Physics.Target,
+            "A late input callback must discard glass momentum in native mode.");
+    }
+
+    private static void CheckResizeRegions(TrayMenuWindow full, TrayMenuWindow mini)
+    {
+        var input = InputNonClientPointerSource.GetForWindowId(full.AppWindow.Id);
+        var passthrough = new Windows.Graphics.RectInt32(40, 40, 20, 20);
+        input.SetRegionRects(NonClientRegionKind.Passthrough, [passthrough]);
+        using var regions = new GlassResizeRegions(full);
+        try
+        {
+            foreach (int width in new[] { 560, 700, 480 })
+            {
+                full.AppWindow.Resize(new Windows.Graphics.SizeInt32(width, 850));
+                regions.Update(true);
+                var size = full.AppWindow.ClientSize;
+                var top = input.GetRegionRects(NonClientRegionKind.TopBorder).Single();
+                var bottom = input.GetRegionRects(NonClientRegionKind.BottomBorder).Single();
+                var left = input.GetRegionRects(NonClientRegionKind.LeftBorder).Single();
+                var right = input.GetRegionRects(NonClientRegionKind.RightBorder).Single();
+                Ensure(top.X == 0 && top.Y == 0 && top.Width == size.Width && top.Height > 0,
+                    "The top grip must span the actual client width.");
+                Ensure(bottom.Y + bottom.Height == size.Height && bottom.Width == size.Width,
+                    "The bottom grip must stay at the resized bottom edge.");
+                Ensure(left.X == 0 && left.Y == top.Height && left.Y + left.Height == bottom.Y &&
+                    right.X + right.Width == size.Width && right.Height == left.Height,
+                    "Both side grips must cover the complete feature area without swallowing content.");
+            }
+            regions.Update(false);
+            foreach (var border in new[] { NonClientRegionKind.TopBorder, NonClientRegionKind.BottomBorder,
+                NonClientRegionKind.LeftBorder, NonClientRegionKind.RightBorder })
+                Ensure(input.GetRegionRects(border) is not { Length: > 0 }, "Native mode must release custom resize regions.");
+            Ensure(input.GetRegionRects(NonClientRegionKind.Passthrough).Single() == passthrough,
+                "Resize regions must preserve independent title-bar input regions.");
+            using var miniRegions = new GlassResizeRegions(mini);
+            miniRegions.Update(true);
+            var miniInput = InputNonClientPointerSource.GetForWindowId(mini.AppWindow.Id);
+            Ensure(miniInput.GetRegionRects(NonClientRegionKind.BottomBorder) is not { Length: > 0 },
+                "The fixed-size mini window must never receive custom resize grips.");
+        }
+        finally { input.ClearRegionRects(NonClientRegionKind.Passthrough); }
+    }
+#endif
 
     private static void CheckNaturalHostMeasurement()
     {
@@ -210,6 +283,9 @@ internal static class UiContractChecks
                 "Constructing settings windows must not display an intermediate window.");
             Ensure(full.AppWindow.Size.Width < full.AppWindow.Size.Height,
                 "The control center must already have portrait bounds before content is shown.");
+#if LIQUID_GLASS
+            CheckResizeRegions(full, mini);
+#endif
             foreach (double width in new[] { 244.0, 228.0, 196.0 })
             {
                 int height = mini.MeasureMiniContentHeight(width);

@@ -41,15 +41,18 @@ internal sealed class GlassWindowFrame
 
     public nint HitTest(nint hwnd, nint position, nint nativeResult)
     {
-        if (!_enabled || IsZoomed(hwnd) ||
-            ((long)GetWindowLongPtrW(hwnd, -16) & 0x00040000L) == 0) return nativeResult;
+        int grip = _enabled ? ResizeGrip(hwnd) : 0;
+        if (grip == 0) return nativeResult;
         var origin = new PointI();
         if (!GetClientRect(hwnd, out var client) || !ClientToScreen(hwnd, ref origin)) return nativeResult;
         int x = (short)((long)position & 0xFFFF) - origin.X;
         int y = (short)(((long)position >> 16) & 0xFFFF) - origin.Y;
-        int grip = Math.Max(1, (int)Math.Round(4 * GetDpiForWindow(hwnd) / 96.0));
         return GlassEdgePolicy.ResizeHitTest(x, y, client.Right, client.Bottom, grip, nativeResult);
     }
+
+    internal static int ResizeGrip(nint hwnd) => IsZoomed(hwnd) || IsIconic(hwnd) ||
+        ((long)GetWindowLongPtrW(hwnd, -16) & 0x00040000L) == 0 ? 0 :
+        Math.Max(1, (int)Math.Round(4 * GetDpiForWindow(hwnd) / 96.0));
 
     [StructLayout(LayoutKind.Sequential)] private struct PointI { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RectI { public int Left, Top, Right, Bottom; }

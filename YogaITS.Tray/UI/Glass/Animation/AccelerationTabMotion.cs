@@ -1,5 +1,4 @@
 using YogaITS.Tray.UI.Glass.Layout;
-using YogaITS.Tray.UI.Glass.Rendering;
 using System.Diagnostics;
 using System.Numerics;
 using Microsoft.UI.Xaml.Media;
@@ -10,16 +9,17 @@ namespace YogaITS.Tray.UI.Glass.Animation;
 internal sealed class AccelerationTabMotion : IDisposable
 {
     private readonly Action<TabFrame, Vector2> _publish;
+    private readonly Func<bool> _canAnimate;
     internal FourEdgePhysics Physics { get; }
     private bool _enabled, _rendering, _disposed, _raised;
     private double _lastTime;
     public event Action<bool>? LayerRequested;
     public event Action<TabFrame, Vector2>? FramePublished;
     private static double Now => (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency;
-    public AccelerationTabMotion(GlassTabSurface surface, bool layout = false, bool elasticLayout = false) : this(surface.SetPhysicsFrame, layout, elasticLayout) { }
-    public AccelerationTabMotion(Action<TabFrame, Vector2> publish, bool layout = false, bool elasticLayout = false)
+    public AccelerationTabMotion(Action<TabFrame, Vector2> publish, Func<bool> canAnimate, bool layout = false, bool elasticLayout = false)
     {
         _publish = publish;
+        _canAnimate = canAnimate;
         Physics = new(layout, elasticLayout);
         Physics.Reset(new(6, 16, 140, 48));
     }
@@ -32,6 +32,7 @@ internal sealed class AccelerationTabMotion : IDisposable
     }
     public void SetPressed(bool pressed, bool enabled)
     {
+        enabled &= _canAnimate();
         if (_enabled == enabled && Physics.Pressed == (pressed && enabled)) return;
         bool wasPressed = Physics.Pressed, wasRaised = _raised;
         AdvanceToNow();
@@ -44,14 +45,14 @@ internal sealed class AccelerationTabMotion : IDisposable
     public void SetTarget(TabFrame frame, bool animate, bool? layout = null)
     {
         AdvanceToNow();
-        if (!animate || !_enabled) { Physics.Reset(frame); Stop(); }
+        if (!animate || !_enabled || !_canAnimate()) { Physics.Reset(frame); Stop(); }
         else { Physics.SetTarget(frame, layout); Wake(); }
         Publish();
     }
     public void DragTo(TabFrame frame)
     {
         double now = AdvanceToNow();
-        if (!_enabled) Physics.Reset(frame);
+        if (!_enabled || !_canAnimate()) { Physics.Reset(frame); Stop(); }
         else { Physics.DragTo(frame, now); Wake(); }
         Publish();
     }
@@ -59,7 +60,13 @@ internal sealed class AccelerationTabMotion : IDisposable
     private double AdvanceToNow()
     {
         double now = Now;
-        if (_rendering) Physics.Advance(now - _lastTime);
+        if (!_canAnimate())
+        {
+            _enabled = false;
+            Physics.Reset(Physics.Target);
+            Stop();
+        }
+        else if (_rendering) Physics.Advance(now - _lastTime);
         _lastTime = now;
         return now;
     }

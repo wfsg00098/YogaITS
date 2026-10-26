@@ -556,7 +556,8 @@ internal static class LiquidGlassWindow
             {
                 var compositor = ElementCompositionPreview.GetElementVisual(_view).Compositor;
                 _buttonSurface = new GlassTabSurface(compositor);
-                _buttonMotion = new AccelerationTabMotion(PublishButtonFrame, layout: true, elasticLayout: true);
+                _buttonMotion = new AccelerationTabMotion(PublishButtonFrame,
+                    () => State?.Effects == true && Palette.AnimationsEnabled, layout: true, elasticLayout: true);
                 _buttonTarget = rest;
                 if (MotionLabel is not null) _labelOffset = new RenderOffset(MotionLabel);
                 _buttonSurface.SetFrame(rest, false);

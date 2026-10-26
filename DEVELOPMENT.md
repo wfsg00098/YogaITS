@@ -113,6 +113,8 @@ RPC 的 1 秒/2 秒 call-timeout 设置仅尽力请求，不能宣称约束本�
 
 玻璃 UI 选项保存到现有配置的 `GlassNativeUI`、`GlassBackgroundSource`、`GlassImagePath`，不保存硬件逻辑状态。无配置时默认 WinUI3；首次窗口 Loaded 后恢复保存的偏好，启动默认值和临时能力降级不覆盖用户配置。用户切换时先保存再发布状态，写入失败保留原选项。
 
+加速度模型仅在液态玻璃材质实际启用且系统允许动画时运行；布局、输入和渲染回调都重新检查条件，切回 WinUI3 或材质降级立即丢弃速度并归位。原生卡片网格缩放直接跟随列宽，不施加位置过渡；分组显隐仍使用系统动画。玻璃窗口使用 `InputNonClientPointerSource` 注册四边 4 DIP 缩放区，与 HWND 命中测试共享 DPI/可缩放条件，覆盖功能区两侧和底边；最大化、迷你窗口及原生模式不保留自定义缩放区，不清除标题栏的其他输入区域。隐藏 WinUI 契约检查覆盖材质切换后的动效停止、改变宽度后的四边区域及原生恢复。[WinUI 非客户区区域接口](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.input.inputnonclientpointersource.setregionrects)。
+
 `BackgroundImageStore` 异步将静态图像完整复制到 `%LOCALAPPDATA%\YogaITS\Backgrounds\<GUID>\<原文件名>`，临时文件完成后才公布路径，不修改原图或覆盖正在读取的旧图。重启复用已托管文件，旧配置的外部图片路径在首次开窗时迁移；失败保留配置供重试。图片选择的版本号与材质/来源切换分开，较早的导入完成不能覆盖新图片，也不会撤销之后的样式选择。静态图像/壁纸不请求桌面捕获；透明桌面沿用参考实现的系统授权和边框规则。普通版完全不读取这些材质选项。无硬件检查覆盖复制后删除原图、同名图片、重复恢复、取消和失败清理，均使用独立临时目录。
 
 玻璃版 sparse identity 使用 `YogaITS` / `CN=YogaITS`，不复用 Probe 身份。启动前检查捕获身份与当前路径；需要修复时由独立 PowerShell 等当前进程退出后注册并重新打开，失败也会恢复启动且不循环重试。`Start-YogaITS.ps1 -RegisterOnly` 仅操作自身身份，不改变开发者模式；未启用 Windows Developer Mode 时注册可能失败，保留系统捕获提示或可用背景。不得通过注册表伪造授权，不生成 Logs，不覆盖系统 WinUI DLL。

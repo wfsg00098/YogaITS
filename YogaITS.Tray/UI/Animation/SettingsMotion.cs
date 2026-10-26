@@ -71,13 +71,13 @@ internal static class SettingsMotion
             UiAccessibility.HighContrast ? UiAccessibility.SystemColor(14) : Color.FromArgb(255, channel, channel, channel);
     }
 
-    public static void Reposition(Panel panel)
+    public static void Reposition(Panel panel, bool animateNative = true)
     {
 #if LIQUID_GLASS
-        AccelerationLayoutMotion.Attach(panel, nativeTransitions: true);
+        AccelerationLayoutMotion.Attach(panel, nativeTransitions: animateNative);
 #else
         panel.ChildrenTransitions ??= new TransitionCollection();
-        if (Settings.AnimationsEnabled && !panel.ChildrenTransitions.OfType<RepositionThemeTransition>().Any())
+        if (animateNative && Settings.AnimationsEnabled && !panel.ChildrenTransitions.OfType<RepositionThemeTransition>().Any())
             panel.ChildrenTransitions.Add(new RepositionThemeTransition { IsStaggeringEnabled = false });
         if (!Settings.AnimationsEnabled) panel.ChildrenTransitions.Clear();
 #endif

@@ -46,6 +46,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
     private nint _hwnd, _registeredHwnd, _siteHwnd;
     private int _siteRepairs;
     private readonly GlassWindowFrame _windowFrame = new();
+    private readonly GlassResizeRegions _resizeRegions = new(window);
     private bool _closed, _requested, _locked, _updating, _repairingTop, _resizing;
     private int _pending;
     private double _sigma = BackgroundTuning.DefaultBlurDip;
@@ -139,7 +140,11 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
     private void UpdateWindowFrame()
     {
         if (_closed || _hwnd == 0) return;
-        try { _windowFrame.SetEnabled(_hwnd, _requested); }
+        try
+        {
+            _windowFrame.SetEnabled(_hwnd, _requested);
+            _resizeRegions.Update(_requested);
+        }
         catch (Exception ex)
         {
             if (Error is not null) return;
@@ -186,6 +191,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
     private void GeometryChanged(bool positionOnly=false)
     {
         if (_closed || _hwnd == 0) return;
+        UpdateWindowFrame();
         CoverTopRow();
         bool staticImage=_inputKind==GlassBackgroundSource.StaticImage &&
             GlassBackgroundOptions.Source==GlassBackgroundSource.StaticImage && _imageBackground is not null;
@@ -491,7 +497,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
         {
             // The full-client XAML child owns the outer pixels too. Pass resize
             // grips through to the parent HWND instead of consuming HTCLIENT.
-            nint edge = _windowFrame.HitTest(_hwnd, lParam, result);
+            nint edge = _windowFrame.HitTest(_hwnd, lParam, 1);
             if ((long)edge is >= 10 and <= 17) return -1; // HTTRANSPARENT
         }
         if (_closed || !_requested || message != 0x0046 || lParam == 0 || _hwnd == 0) return result;
@@ -549,7 +555,11 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
     {
         if (_closed) return;
         _requested = false;
-        try { if (_hwnd != 0) _windowFrame.SetEnabled(_hwnd, false); }
+        try
+        {
+            _resizeRegions.Dispose();
+            if (_hwnd != 0) _windowFrame.SetEnabled(_hwnd, false);
+        }
         catch (Exception ex) { CaptureDiagnostics.Write("Restore native window frame: " + ex); }
         _closed = true;
         root.Loaded -= Loaded; root.SizeChanged -= SizeChanged;

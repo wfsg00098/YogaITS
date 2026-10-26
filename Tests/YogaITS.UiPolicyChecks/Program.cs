@@ -559,6 +559,13 @@ Check(presentation.SetNativeRequested(true) && !presentation.UseGlass(true), "Sw
 
 // The glass client fills its HWND without introducing a legacy window region.
 NativeFrameChecks.CheckWindow(Check);
+foreach (nint native in new nint[] { 0, 1, 2, 10, 11, 12, 13, 14, 15, 16, 17, 18 })
+{
+    Check(GlassEdgePolicy.ResizeHitTest(0, 599, 480, 600, 4, native) == 16,
+        "WinUI content and border hits resolve the bottom-left resize corner consistently");
+    Check(GlassEdgePolicy.ResizeHitTest(479, 0, 480, 600, 4, native) == 14,
+        "WinUI content and border hits resolve the top-right resize corner consistently");
+}
 foreach (double scale in new[] { 1.0, 1.25, 1.5, 2.0, 3.0, 4.0 })
 {
     int width = (int)(480*scale), height = (int)(815*scale), grip = (int)Math.Round(4*scale);
