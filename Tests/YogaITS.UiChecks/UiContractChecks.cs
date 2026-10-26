@@ -78,6 +78,7 @@ internal static class UiContractChecks
         await CheckHardwareAdapterAsync();
         Console.WriteLine("UI contract: window declarations");
         CheckWindowDeclarations();
+        await CheckAboutLinksAsync();
         Console.WriteLine("PASS: shared UI contract; confirmed readback, disable, dynamic remove/add/reorder, host lifecycle, native fallback, real hardware adapter, compile-time renderer isolation. No UI or capture started.");
     }
 
@@ -305,7 +306,7 @@ internal static class UiContractChecks
                 aboutText.Any(text => text.Contains("硬件与系统风险")) &&
                 aboutText.Any(text => text.Contains("非官方声明")), "About must include license, risk, and affiliation notices.");
             Ensure(Tree(about).OfType<HyperlinkButton>().Any(link =>
-                link.NavigateUri.AbsoluteUri == "https://github.com/wfsg00098/YogaITS"), "About identifies the original repository.");
+                link.Tag is Uri uri && uri.AbsoluteUri == "https://github.com/wfsg00098/YogaITS"), "About identifies the original repository.");
 #if LIQUID_GLASS
             Ensure(fullText.Any(text => text.Contains("UI选项")), "Glass build must expose the provided material options.");
 #else
@@ -313,6 +314,44 @@ internal static class UiContractChecks
 #endif
         }
         finally { mini.Close(); full.Close(); }
+    }
+
+    private static async Task CheckAboutLinksAsync()
+    {
+        bool fail = false;
+        int launches = 0;
+        var clicked = new TaskCompletionSource<Uri>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var about = AboutDialog.Create(uri =>
+        {
+            launches++;
+            clicked.TrySetResult(uri);
+            if (fail) throw new InvalidOperationException("simulated desktop Shell failure");
+        });
+        var links = Tree(about).OfType<HyperlinkButton>().ToArray();
+        Ensure(links.Length == 2 && links.All(link => link.NavigateUri is null),
+            "Both About links must bypass automatic elevated WinRT navigation.");
+        async Task ClickAsync(HyperlinkButton link)
+        {
+            clicked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var peer = new Microsoft.UI.Xaml.Automation.Peers.HyperlinkButtonAutomationPeer(link);
+            var invoke = (Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider)peer.GetPattern(
+                Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke);
+            invoke.Invoke();
+            Uri uri = await clicked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Ensure(uri == (Uri)link.Tag && uri.Scheme == "https" && uri.Host == "github.com",
+                "Keyboard/automation activation must send the complete intended HTTPS URI to the launcher.");
+        }
+        foreach (var link in links) await ClickAsync(link);
+        Ensure(launches == 2 && Uri.UnescapeDataString(((Uri)links[1].Tag).Fragment) == "#第三方组件与许可",
+            "Each click launches once and preserves the Chinese documentation anchor.");
+        fail = true;
+        await ClickAsync(links[1]);
+        var error = Tree(about).OfType<TextBlock>().Single(text => text.Text.StartsWith("无法打开默认浏览器"));
+        Ensure(error.Visibility == Visibility.Visible && error.IsTextSelectionEnabled &&
+            error.Text.Contains(((Uri)links[1].Tag).AbsoluteUri), "Launch failure must keep a selectable URL in the About dialog.");
+        fail = false;
+        await ClickAsync(links[1]);
+        Ensure(error.Visibility == Visibility.Collapsed && launches == 4, "A successful retry clears the previous error.");
     }
 
     private static IEnumerable<string> TextIn(DependencyObject node)

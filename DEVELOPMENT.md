@@ -221,6 +221,8 @@ HDR 卡片和色域保护使用实际 `activeColorMode`；ACM 卡片使用独立
 
 [Updates/](YogaITS.Tray/Services/Updates/) 在启动后延迟 3 秒、之后每 24 小时检查正式 Release。更新卡片仅在完整窗口“杂项”中，位于“开机自启、关于、退出”三列按钮上方；玻璃版的 UI选项分组在杂项之前。关于按钮复用共享卡片材质，使用绑定当前窗口的原生 `ContentDialog` 展示版本、原仓库与许可/免责说明，两种材质均适用，不在迷你窗口增加入口。普通版选择普通附件，玻璃版选择 `-lg` 附件，不自动跨构建切换；不区分材质的旧版会选择普通附件。
 
+关于的两个网页链接通过 [DesktopLinkLauncher](YogaITS.Tray/Services/DesktopLinkLauncher.cs) 找到现有桌面 Shell 的自动化对象，由它按交互用户的默认浏览器关联打开 HTTPS；不设置 `NavigateUri`，避免从管理员/稀疏包上下文自动启动浏览器。桌面不可用或调用失败时保留对话框并显示可复制的网址，不修改默认浏览器、不强制指定浏览器，也不通过命令解释器传递地址。接口依据见微软的[桌面 Shell 启动说明](https://devblogs.microsoft.com/oldnewthing/20131118-00/?p=2643/)与 [FindWindowSW](https://learn.microsoft.com/windows/win32/api/exdisp/nf-exdisp-ishellwindows-findwindowsw)。
+
 版本格式为 `x.y-yyyyMMddHHmmss-hash`。仅当远端数字系列不低于本地、UTC 日期号严格更新且完整源提交不同，才提示更新。无日期的本地旧版只升级至更高系列的带日期版本；无日期的远端版本不提示更新。
 
 GitHub 与 `https://gh-proxy.org/` 同时请求元数据、同时下载，各自独立暂存，采用最先解析/校验成功的结果；一条失败不取消仍有效的另一条，胜出后取消并等待另一条释放资源。使用默认系统代理，不硬编码代理端口。元数据上限 20 秒，下载读取空闲 20 秒、总时限 8 分钟。每条下载在竞速胜出前必须对照 Release 资产的 `digest` 完成 ZIP SHA-256 校验；缺少有效摘要、大小不符或内容损坏均不能胜出。
