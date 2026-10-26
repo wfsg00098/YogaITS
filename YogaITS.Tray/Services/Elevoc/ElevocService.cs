@@ -104,7 +104,7 @@ internal sealed class ElevocService : SerializedFeatureService
         try
         {
             RequireOk(_client!.SetMicrophoneMode(mode));
-            // Match the final probe: allow the backend to apply the mode before verification.
+            // Allow the backend to apply the mode before the first verification read.
             await Task.Delay(150).ConfigureAwait(false);
         }
         finally { Read(); }

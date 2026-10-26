@@ -3,11 +3,11 @@ Upstream: https://github.com/luckyelysia/LiquidGlassWinUI
 License: MIT (see LICENSE). CustomEffectRuntimeNative.dll is the unmodified x64
 binary from the pinned LiquidGlassWinUI 1.0.3 package.
 
-Local adaptations retained from the supplied UI reference:
+Local adaptations used by YogaITS:
 - BindScalarExpression/StopScalarExpression let the host couple RefThickness
   to compositor-owned capsule geometry and inflation without UI timers.
 - ConnectToVisual/DisconnectFromVisual leases reuse the same pooled glass
-  pipeline for a dynamically sized Composition sprite in the fluid-tab demo.
+  pipeline for dynamically sized Composition sprites in selection capsules and cards.
 - Unused upstream DebugEffect stub removed; its Debug.hlsl is not shipped or used.
 - .NET 10 only, Windows App SDK 2.2.0, Win2D 1.3.2; optional AI/ML/widgets excluded.
 - Current XamlRoot rasterization scale reaches the shader Dpr slot (124).
@@ -45,7 +45,7 @@ Local adaptations retained from the supplied UI reference:
   sizes; connected strokes alone cannot detect folded/sharply notched sampling.
 
 The native material ABI remains unchanged. Test source:
-../../Tests/YogaITS.ShaderChecks; no obsolete wallpaper or WinUI 2 probe is required.
+../../Tests/YogaITS.ShaderChecks. The host, shaders, and checks are included in this repository.
 
 - Snell displacement uses the algebraically equivalent tangent-difference form
   with sin/cos components, avoiding expensive asin/sin/tan expansions. This keeps
