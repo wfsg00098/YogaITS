@@ -46,7 +46,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
     private nint _hwnd, _registeredHwnd, _siteHwnd;
     private int _siteRepairs;
     private readonly GlassWindowFrame _windowFrame = new();
-    private readonly GlassResizeRegions _resizeRegions = new(window, root);
+    private GlassResizeRegions? _resizeRegions;
     private bool _closed, _requested, _locked, _updating, _repairingTop, _resizing;
     private int _pending;
     private double _sigma = BackgroundTuning.DefaultBlurDip;
@@ -76,6 +76,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
 
     public void Connect()
     {
+        _resizeRegions = new(window, root, SetResizing);
         View.Margin = new Thickness(-root.Padding.Left, -root.Padding.Top, -root.Padding.Right, -root.Padding.Bottom);
         Grid.SetRowSpan(View, Math.Max(1, root.RowDefinitions.Count));
         Grid.SetColumnSpan(View, Math.Max(1, root.ColumnDefinitions.Count));
@@ -143,7 +144,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
         try
         {
             _windowFrame.SetEnabled(_hwnd, _requested);
-            _resizeRegions.Update(_requested);
+            _resizeRegions?.Update(_requested);
         }
         catch (Exception ex)
         {
@@ -436,13 +437,8 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
         if (message == 0x0084 && !_closed && _requested)
             return _windowFrame.HitTest(hwnd, lParam, result);
         if (_closed) return result;
-        if (message == 0x0231) { _resizing = true; GeometryChanged(); } // WM_ENTERSIZEMOVE
-        if (message == 0x0232)
-        {
-            _resizing = false;
-            GeometryChanged();
-            root.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, ReportBounds);
-        } // WM_EXITSIZEMOVE: trim local capacity once
+        if (message == 0x0231) SetResizing(true); // WM_ENTERSIZEMOVE
+        if (message == 0x0232) SetResizing(false); // WM_EXITSIZEMOVE
         if (message == 0x02B1) // WM_WTSSESSION_CHANGE
         {
             if (wParam == 7) _locked = true;
@@ -461,6 +457,14 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
             GeometryChanged(positionOnly);
         }
         return result;
+    }
+
+    private void SetResizing(bool resizing)
+    {
+        if (_resizing == resizing) return;
+        _resizing = resizing;
+        GeometryChanged();
+        if (!resizing) root.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, ReportBounds);
     }
 
     private void CoverTopRow()
@@ -550,7 +554,7 @@ internal sealed class DesktopCaptureBackdrop(Window window, Grid root) : IDispos
         _requested = false;
         try
         {
-            _resizeRegions.Dispose();
+            _resizeRegions?.Dispose();
             if (_hwnd != 0) _windowFrame.SetEnabled(_hwnd, false);
         }
         catch (Exception ex) { CaptureDiagnostics.Write("Restore native window frame: " + ex); }

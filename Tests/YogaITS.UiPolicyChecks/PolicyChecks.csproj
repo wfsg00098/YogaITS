@@ -18,6 +18,7 @@
     <Compile Include="../../YogaITS.Tray/UI/Glass/Backgrounds/ImageBackgroundLayout.cs" Link="ImageBackgroundLayout.cs" />
     <Compile Include="../../YogaITS.Tray/UI/Glass/Backgrounds/BackgroundTuning.cs" Link="BackgroundTuning.cs" />
     <Compile Include="../../YogaITS.Tray/UI/Glass/Windowing/GlassEdgePolicy.cs" Link="GlassEdgePolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/UI/Glass/Windowing/WindowResizeGesture.cs" Link="WindowResizeGesture.cs" />
     <Compile Include="../../YogaITS.Tray/UI/Glass/Windowing/GlassWindowFrame.cs" Link="GlassWindowFrame.cs" />
     <Compile Include="../../YogaITS.Tray/UI/Glass/Capture/CaptureExclusionCache.cs" Link="CaptureExclusionCache.cs" />
     <Compile Include="../../YogaITS.Tray/UI/Glass/Capture/CaptureFrameRateMeter.cs" Link="CaptureFrameRateMeter.cs" />

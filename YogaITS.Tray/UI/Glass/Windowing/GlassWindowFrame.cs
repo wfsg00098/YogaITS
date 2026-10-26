@@ -50,20 +50,16 @@ internal sealed class GlassWindowFrame
         return GlassEdgePolicy.ResizeHitTest(x, y, client.Right, client.Bottom, grip, nativeResult);
     }
 
-    internal static bool BeginResize(nint hwnd, int hit)
+    internal static (int Width, int Height) MinimumTrackSize(nint hwnd)
     {
-        if (ResizeGrip(hwnd) == 0 || GlassEdgePolicy.ResizeCursor(hit) == 0 || !GetCursorPos(out var point)) return false;
-        nint position = unchecked((int)((uint)(ushort)point.Y << 16 | (ushort)point.X));
-        _ = ReleaseCapture();
-        _ = SendMessageW(hwnd, 0x00A1, (nuint)hit, position); // WM_NCLBUTTONDOWN: native sizing loop.
-        return true;
+        uint dpi = GetDpiForWindow(hwnd);
+        return (Math.Max(1, GetSystemMetricsForDpi(34, dpi)), Math.Max(1, GetSystemMetricsForDpi(35, dpi)));
     }
 
     internal static int ResizeGrip(nint hwnd) => IsZoomed(hwnd) || IsIconic(hwnd) ||
         ((long)GetWindowLongPtrW(hwnd, -16) & 0x00040000L) == 0 ? 0 :
         Math.Max(1, (int)Math.Round(4 * GetDpiForWindow(hwnd) / 96.0));
 
-    internal static bool PrimaryMouseButtonDown => (GetAsyncKeyState(1) & 0x8000) != 0;
 
     [StructLayout(LayoutKind.Sequential)] private struct PointI { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct RectI { public int Left, Top, Right, Bottom; }
@@ -71,12 +67,9 @@ internal sealed class GlassWindowFrame
     [DllImport("user32.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetClientRect(nint hwnd, out RectI rect);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ClientToScreen(nint hwnd, ref PointI point);
+    [DllImport("user32.dll")] private static extern int GetSystemMetricsForDpi(int index, uint dpi);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern nint GetWindowLongPtrW(nint hwnd, int index);
-    [DllImport("user32.dll", ExactSpelling = true)] private static extern nint SendMessageW(nint hwnd, uint message, nuint wParam, nint lParam);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool GetCursorPos(out PointI point);
-    [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int key);
-    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsZoomed(nint hwnd);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool IsIconic(nint hwnd);
 }

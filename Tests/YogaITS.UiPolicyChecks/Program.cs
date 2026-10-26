@@ -9,7 +9,7 @@ using YogaITS.Tray.UI.Glass.Windowing;
 using System.Numerics;
 using YogaITS.Tray.Services;
 
-int checks = AccelerationChecks.Run() + TrackEndpointChecks.Run() + OptionBarChecks.Run() + MultiRowOptionChecks.Run() + ButtonPressChecks.Run() + DynamicOptionChecks.Run() + ReflowChecks.Run() + LayoutTimingChecks.Run() + ImageBackgroundChecks.Run() + CaptureRetirementChecks.Run() + ElasticLayoutChecks.Run() + MeasuredChoiceChecks.Run();
+int checks = WindowResizeChecks.Run() + AccelerationChecks.Run() + TrackEndpointChecks.Run() + OptionBarChecks.Run() + MultiRowOptionChecks.Run() + ButtonPressChecks.Run() + DynamicOptionChecks.Run() + ReflowChecks.Run() + LayoutTimingChecks.Run() + ImageBackgroundChecks.Run() + CaptureRetirementChecks.Run() + ElasticLayoutChecks.Run() + MeasuredChoiceChecks.Run();
 void Check(bool pass, string message)
 {
     checks++;
@@ -977,13 +977,7 @@ internal static class NativeFrameChecks
         check(hwnd != 0, "Headless HWND is created without WS_VISIBLE");
         nint region = CreateRectRgn(0, 0, 0, 0);
         var frame = new GlassWindowFrame();
-        int sizingRequests = 0;
-        nuint sizingHit = 0;
-        SubclassProc callback = (window, message, wParam, lParam, id, data) =>
-        {
-            if (message is 0x00A1 or 0x00A3) { sizingRequests++; sizingHit = wParam; return 0; }
-            return frame.DefWindowProc(window, message, wParam, lParam);
-        };
+        SubclassProc callback = (window, message, wParam, lParam, id, data) => frame.DefWindowProc(window, message, wParam, lParam);
         check(SetWindowSubclass(hwnd, callback, 1, 0), "Headless HWND uses the actual production frame handler");
         try
         {
@@ -1001,14 +995,6 @@ internal static class NativeFrameChecks
                 check(client.Right == width && client.Bottom == height, "Glass client spans the complete actual HWND");
                 check(origin.X == bounds.Left && origin.Y == bounds.Top, "Glass and HWND share the exact same top-left coordinate");
                 check(GetWindowRgn(hwnd, region) == 0, "Glass never installs a GDI region that changes DWM's frame treatment");
-                foreach (int hit in new[] { 10, 11, 12, 13, 14, 15, 16, 17 })
-                {
-                    int before = sizingRequests;
-                    check(GlassWindowFrame.BeginResize(hwnd, hit), "A valid WinUI grip can request native parent resizing");
-                    check(sizingRequests == before + 1 && sizingHit == (nuint)hit,
-                        "A grip starts the native parent sizing handler exactly once");
-                }
-                check(!GlassWindowFrame.BeginResize(hwnd, 20), "Caption-button input cannot start a resize operation");
                 frame.SetEnabled(hwnd, false);
                 check(GetClientRect(hwnd, out var restored) && restored.Right < width && restored.Bottom < height,
                     "Native mode restores the conventional non-client frame");
