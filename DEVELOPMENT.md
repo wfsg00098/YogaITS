@@ -10,6 +10,7 @@
 | [Services/](YogaITS.Tray/Services/) | 硬件访问、状态快照、串行调度、系统事件、配置及启动任务。 |
 | [Services/Color/](YogaITS.Tray/Services/Color/)、[Elevoc/](YogaITS.Tray/Services/Elevoc/)、[Hpd/](YogaITS.Tray/Services/Hpd/) | 色彩、音频降噪/声纹、人员感知后端。 |
 | [Services/GpuMode/](YogaITS.Tray/Services/GpuMode/)、[KeyboardBacklight/](YogaITS.Tray/Services/KeyboardBacklight/) | 显卡工作模式、键盘背光协议与能力检测。 |
+| [Services/AlwaysOnUsb/](YogaITS.Tray/Services/AlwaysOnUsb/)、[EnergyDriver.cs](YogaITS.Tray/Services/EnergyDriver.cs) | Always-On USB 三态读写，与充电功能共用的 EnergyDrv 设备访问。 |
 | [UI/](YogaITS.Tray/UI/) | `Shell` 窗口、`Controls` 共享控件、`Features` 功能分组、`Layout` 排版、`Animation` 动效、`Accessibility` 无障碍、`Presentation` 材质适配。 |
 | [UI/Glass/](YogaITS.Tray/UI/Glass/) | 玻璃控件、物理动效、shader、背景、捕获、运行时、设置和窗口输入；普通版整体排除此目录。 |
 | [Build/](YogaITS.Tray/Build/)、[CaptureIdentity/](YogaITS.Tray/CaptureIdentity/) | 两种构建的依赖/清单，以及玻璃版稀疏包身份。 |
@@ -189,7 +190,23 @@ HDR 卡片和色域保护使用实际 `activeColorMode`；ACM 卡片使用独立
 
 能力命令 `0x01` 要求 bit0=1，`levels=raw >> 1`；GET 也要求 bit0=1，levels=3 还需 extended flag `(raw >> 1) & 0x8000`，状态取 `(raw >> 1) & 0x7FFF`。SET 前重新验证能力及 GET，SET 后立即回读匹配才确认；无效/异常时隐藏分组，不乐观更新或自动重试写入。
 
-界面不保存档位、不设周期刷新或自动场景。启动、获焦及操作时读取 EC 状态，与 Fn+Space 共用底层状态，不与 Hot Keys 通信。四档顺序是编码 `[0,3,1,2]`；分组位于麦克风/声纹之后、开盖开机之前，仅完整窗口提供。
+界面不保存档位、不设周期刷新或自动场景。启动、获焦及操作时读取 EC 状态，与 Fn+Space 共用底层状态，不与 Hot Keys 通信。四档顺序是编码 `[0,3,1,2]`；分组位于麦克风/声纹之后、Always-On USB 之前，仅完整窗口提供。
+
+### Always-On USB
+
+[AlwaysOnUsb/](YogaITS.Tray/Services/AlwaysOnUsb/) 通过 EnergyDrv 的 `0x831020E8` 设置接口读取与 BIOS 一致的三态。协议核对来源为 LLT 当前 [master `0bb045be`](https://github.com/LenovoLegionToolkit-Team/LenovoLegionToolkit/blob/0bb045be29c4fd772ba9887a3507b6a9b0b56d58/LenovoLegionToolkit.Lib/Features/AlwaysOnUsbFeature.cs) / dev `5db70ed2`，两者行为一致；使用协议事实独立实现，不引入 LLT 依赖。
+
+GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条件。直接解码原始 DWORD 的 bit7（供电开启）和 bit15（始终开启），等价于 LLT 字节序转换后的 bit31/bit23。
+
+| 状态 | 按顺序发送的 SET 输入 |
+| --- | --- |
+| 关闭 | `0x0B`、`0x12` |
+| 仅睡眠时开启 | `0x0A`、`0x12` |
+| 始终开启 | `0x0A`、`0x13` |
+
+每次写入前重新 GET，再发送两条命令，随后立即回读；最多读取 10 次，间隔 50 ms，不重发 SET。仅发布实际回读状态，未确认目标则报告失败。设备按 LLT 的 `FILE_READ_DATA | FILE_WRITE_DATA`、共享读写权限打开；与充电功能复用 [EnergyDriver.cs](YogaITS.Tray/Services/EnergyDriver.cs) 和整笔事务的串行锁，键盘背光保持原有独立访问协议。
+
+启动、完整窗口获焦及操作时读取，不保存偏好、不设定时器。初次 GET 失败隐藏分组，已确认能力后的临时失败保留分组但禁用；明确设备消失或接口不支持时隐藏。完整窗口中位于键盘背光之后、开盖开机之前，普通版与玻璃版共用选择和回读逻辑。无硬件策略检查覆盖命令顺序、字节序、回读重试/失败、串行及设备恢复；新增硬件功能尚待实机验收。
 
 ### 音频与声纹
 

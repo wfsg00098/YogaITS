@@ -15,6 +15,8 @@
     <Compile Include="../../YogaITS.Tray/Services/BoundedProbe.cs" Link="BoundedProbe.cs" />
     <Compile Include="../../YogaITS.Tray/Services/BoundedFileTransfer.cs" Link="BoundedFileTransfer.cs" />
     <Compile Include="../../YogaITS.Tray/Services/BatteryDriverAccess.cs" Link="BatteryDriverAccess.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/EnergyDriver.cs" Link="EnergyDriver.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/AlwaysOnUsb/*.cs" Link="AlwaysOnUsb/%(Filename)%(Extension)" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateStaging.cs" Link="Updates/UpdateStaging.cs" />
     <Compile Include="../../YogaITS.Tray/Services/GpuKeepAwakePolicy.cs" Link="GpuKeepAwakePolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/Updates/UpdateRelease.cs" Link="Updates/UpdateRelease.cs" />

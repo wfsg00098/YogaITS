@@ -8,6 +8,7 @@ using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using Microsoft.UI.Xaml;
 using YogaITS.Tray.Services.KeyboardBacklight;
+using YogaITS.Tray.Services.AlwaysOnUsb;
 
 namespace YogaITS.Tray.UI.Features;
 
@@ -29,6 +30,8 @@ internal sealed class FeaturePanels : IDisposable
     private readonly FeatureCard _voiceCard = new("声纹管理");
     private readonly KeyboardBacklightService _keyboardBacklight;
     private readonly FeatureCard _keyboardBacklightCard = new("键盘背光");
+    private readonly AlwaysOnUsbService _alwaysOnUsb;
+    private readonly FeatureCard _alwaysOnUsbCard = new("Always-On USB");
     private bool _voiceStartPending;
     private bool _voiceWasRegistering;
     private int _voiceRemainingSeconds;
@@ -36,13 +39,14 @@ internal sealed class FeaturePanels : IDisposable
     private bool _closed;
 
     public FeaturePanels(TrayMenuWindow window, LenovoGpuWorkingModeService gpu, HpdService hpd, ColorGamutService color,
-        ElevocService audio, KeyboardBacklightService keyboardBacklight)
+        ElevocService audio, KeyboardBacklightService keyboardBacklight, AlwaysOnUsbService alwaysOnUsb)
     {
         _gpu = gpu;
         _hpd = hpd;
         _color = color;
         _audio = audio;
         _keyboardBacklight = keyboardBacklight;
+        _alwaysOnUsb = alwaysOnUsb;
         _window = window;
         var host = window.AdditionalSections;
         _host = host;
@@ -54,6 +58,7 @@ internal sealed class FeaturePanels : IDisposable
         host.Children.Add(_micCard.View);
         host.Children.Add(_voiceCard.View);
         host.Children.Add(_keyboardBacklightCard.View);
+        host.Children.Add(_alwaysOnUsbCard.View);
         Render();
     }
 
@@ -78,6 +83,7 @@ internal sealed class FeaturePanels : IDisposable
         RenderColor();
         RenderAudio();
         RenderKeyboardBacklight();
+        RenderAlwaysOnUsb();
     }
 
     private async Task SelectGpuPreferenceAsync(GpuWorkingMode mode)
@@ -94,7 +100,7 @@ internal sealed class FeaturePanels : IDisposable
         _closed = true;
         foreach (var choices in _choices.Values) choices.Dispose();
         _choices.Clear();
-        foreach (var card in new[] { _gpuCard, _wakeCard, _videoCard, _colorCard, _micCard, _speakerCard, _voiceCard, _keyboardBacklightCard })
+        foreach (var card in new[] { _gpuCard, _wakeCard, _videoCard, _colorCard, _micCard, _speakerCard, _voiceCard, _keyboardBacklightCard, _alwaysOnUsbCard })
             card.Dispose();
     }
 
@@ -124,6 +130,22 @@ internal sealed class FeaturePanels : IDisposable
                 current.Supported && _keyboardBacklight.IsResponsive, Math.Max(1, current.Levels + 1));
             _keyboardBacklightCard.SetStatus("");
         });
+    }
+
+    private void RenderAlwaysOnUsb()
+    {
+        var current = _alwaysOnUsb.Snapshot;
+        bool available = current.Available && _alwaysOnUsb.IsResponsive;
+        _alwaysOnUsbCard.Update(current.Supported, body =>
+        {
+            Choices(_alwaysOnUsbCard, body, "usb", "Always-On USB",
+                [new("off", "关闭", () => _alwaysOnUsb.SetAsync(AlwaysOnUsbMode.Off)),
+                 new("sleep", "仅睡眠时开启", () => _alwaysOnUsb.SetAsync(AlwaysOnUsbMode.SleepOnly)),
+                 new("always", "始终开启", () => _alwaysOnUsb.SetAsync(AlwaysOnUsbMode.Always))],
+                current.Mode switch { AlwaysOnUsbMode.Off => "off", AlwaysOnUsbMode.SleepOnly => "sleep",
+                    AlwaysOnUsbMode.Always => "always", _ => null }, available, 3);
+            _alwaysOnUsbCard.SetStatus("");
+        }, available);
     }
 
     private void RenderAudio()

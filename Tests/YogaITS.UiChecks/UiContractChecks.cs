@@ -10,6 +10,12 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using YogaITS.Tray.Services;
+using YogaITS.Tray.Services.AlwaysOnUsb;
+using YogaITS.Tray.Services.KeyboardBacklight;
+using YogaITS.Tray.Services.Hpd;
+using YogaITS.Tray.Services.Color;
+using YogaITS.Tray.Services.Elevoc;
+using YogaITS.Tray.UI.Features;
 
 namespace YogaITS.Tray.Tests;
 
@@ -78,6 +84,7 @@ internal static class UiContractChecks
         await CheckHardwareAdapterAsync();
         Console.WriteLine("UI contract: window declarations");
         CheckWindowDeclarations();
+        await CheckAlwaysOnUsbPanelAsync();
         await CheckAboutLinksAsync();
         Console.WriteLine("PASS: shared UI contract; confirmed readback, disable, dynamic remove/add/reorder, host lifecycle, native fallback, real hardware adapter, compile-time renderer isolation. No UI or capture started.");
     }
@@ -251,9 +258,7 @@ internal static class UiContractChecks
         finally { window.Close(); }
     }
 
-    private static void CheckWindowDeclarations()
-    {
-        TrayMenuWindow Create(bool full) => new(0, "contract", new(true, true, true, 8192, 0x20001),
+    private static TrayMenuWindow CreateDeclarationWindow(bool full) => new(0, "contract", new(true, true, true, 8192, 0x20001),
             new(ItsMode.Intelligent, 0, "智能模式"), new(true, BatteryChargeMode.Normal, "常规模式"),
             new(true, false), new(true, false, "contract"), true, false,
             _ => throw new InvalidOperationException("No hardware writes in declaration checks"),
@@ -263,8 +268,10 @@ internal static class UiContractChecks
             () => throw new InvalidOperationException("No GPU actions in declaration checks"),
             _ => throw new InvalidOperationException("No task writes in declaration checks"),
             (_, _) => throw new InvalidOperationException("No dialogs in declaration checks"), () => { }, fullWindow: full);
-        var full = Create(true);
-        var mini = Create(false);
+    private static void CheckWindowDeclarations()
+    {
+        var full = CreateDeclarationWindow(true);
+        var mini = CreateDeclarationWindow(false);
         try
         {
             Ensure(!full.AppWindow.IsVisible && !mini.AppWindow.IsVisible,
@@ -314,6 +321,60 @@ internal static class UiContractChecks
 #endif
         }
         finally { mini.Close(); full.Close(); }
+    }
+
+    private static async Task CheckAlwaysOnUsbPanelAsync()
+    {
+        uint raw = 0x80;
+        bool fail = false;
+        await using var usb = new AlwaysOnUsbService(new(() => new AlwaysOnUsbUiDevice(() =>
+            fail ? throw new IOException("temporary read failure") : raw)));
+        await using var keyboard = new KeyboardBacklightService();
+        await using var gpu = new LenovoGpuWorkingModeService(new LenovoGpuModeBackend(), GpuWorkingMode.Default, _ => { });
+        await using var hpd = new HpdService();
+        await using var color = new ColorGamutService();
+        await using var audio = new ElevocService();
+        var window = CreateDeclarationWindow(true);
+        try
+        {
+            using var panels = new FeaturePanels(window, gpu, hpd, color, audio, keyboard, usb);
+            var groups = window.AdditionalSections.Children;
+            var keyboardView = (FrameworkElement)groups[groups.Count - 2];
+            var usbView = (FrameworkElement)groups[groups.Count - 1];
+            Ensure(TextIn(keyboardView).Contains("键盘背光") && TextIn(usbView).Contains("Always-On USB"),
+                "Always-On USB must immediately follow keyboard backlight in additional sections.");
+            Ensure(usbView.Visibility == Visibility.Collapsed, "Unsupported USB must start hidden without writing a probe.");
+            var sectionTitles = TextIn((DependencyObject)window.Content).ToArray();
+            Ensure(Array.IndexOf(sectionTitles, "Always-On USB") < Array.IndexOf(sectionTitles, "开盖开机"),
+                "Always-On USB must precede lid-open startup.");
+            await usb.RefreshAsync();
+            panels.Render();
+            Ensure(usbView.Visibility == Visibility.Visible, "Successful USB GET must dynamically reveal the section.");
+            var text = TextIn(usbView).ToArray();
+            Ensure(new[] { "关闭", "仅睡眠时开启", "始终开启" }.All(text.Contains), "USB must expose all three BIOS modes in order.");
+            foreach (var button in Tree(usbView).OfType<Button>())
+                if (AutomationProperties.GetName(button).Contains("仅睡眠时开启"))
+                    Ensure(AutomationProperties.GetName(button).Contains("Always-On USB"), "USB narrator labels identify the feature group.");
+            fail = true;
+            await usb.RefreshAsync();
+            panels.Render();
+            Ensure(usbView.Visibility == Visibility.Visible && Tree(usbView).OfType<Button>().All(button => !button.IsEnabled),
+                "Known USB capability remains visible but disabled during a transient read failure.");
+            fail = false;
+            raw = 0x8080;
+            await usb.RefreshAsync();
+            panels.Render();
+            Ensure(usb.Snapshot.Mode == AlwaysOnUsbMode.Always && Tree(usbView).OfType<Button>().Any(button => button.IsEnabled),
+                "A subsequent real readback must restore USB controls without reopening the window.");
+        }
+        finally { window.Close(); }
+    }
+
+    private sealed class AlwaysOnUsbUiDevice(Func<uint> read) : IAlwaysOnUsbDevice
+    {
+        public uint Read() => read();
+        public void Write(uint command) => throw new InvalidOperationException("No hardware writes in USB declarations");
+        public void Dispose() { }
     }
 
     private static async Task CheckAboutLinksAsync()

@@ -638,6 +638,7 @@ checks += await BackgroundImageChecks.RunAsync();
 checks += await FactoryCalibrationChecks.RunAsync(Icc);
 checks += await OptimizationChecks.RunAsync();
 checks += await KeyboardBacklightChecks.RunAsync();
+checks += await AlwaysOnUsbChecks.RunAsync();
 checks += await GpuModeChecks.RunAsync();
 int gpuRestartIndex = Array.IndexOf(args, "--gpu-restart-executable");
 checks += await GpuDeviceRestartChecks.RunAsync(gpuRestartIndex >= 0 ? args[gpuRestartIndex + 1] : null);

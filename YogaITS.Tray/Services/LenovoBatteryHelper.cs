@@ -1,7 +1,5 @@
 ﻿using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
-using System.ComponentModel;
-using System.Runtime.InteropServices;
 
 namespace YogaITS.Tray.Services;
 
@@ -43,15 +41,6 @@ public static class LenovoBatteryHelper
     private const string BatteryRegistryPath = @"Software\Lenovo\VantageService\AddinData\IdeaNotebookAddin";
     private const string BatteryRegistryName = "BatteryChargeMode";
 
-    // Match LLT Drivers.GetEnergy(): FILE_READ_DATA | FILE_WRITE_DATA,
-    // not GENERIC_READ | GENERIC_WRITE.
-    private const uint FileReadData = 0x00000001;
-    private const uint FileWriteData = 0x00000002;
-    private const uint FileShareRead = 0x00000001;
-    private const uint FileShareWrite = 0x00000002;
-    private const uint OpenExisting = 3;
-    private const uint FileAttributeNormal = 0x00000080;
-
     public static BatteryChargeSnapshot ReadChargeMode()
         => BatteryDriverAccess.Read(ReadChargeModeCore);
 
@@ -59,8 +48,8 @@ public static class LenovoBatteryHelper
     {
         try
         {
-            using SafeFileHandle handle = OpenEnergyDriver();
-            uint raw = SendCode(handle, IoctlBatteryChargeMode, ChargeModeRead);
+            using SafeFileHandle handle = EnergyDriver.Open();
+            uint raw = EnergyDriver.SendCode(handle, IoctlBatteryChargeMode, ChargeModeRead);
             BatteryChargeMode mode = DecodeChargeMode(raw);
             return new(true, mode, GetDisplayName(mode));
         }
@@ -77,8 +66,8 @@ public static class LenovoBatteryHelper
     {
         try
         {
-            using SafeFileHandle handle = OpenEnergyDriver();
-            uint raw = SendCode(handle, IoctlBatteryNightCharge, NightChargeRead);
+            using SafeFileHandle handle = EnergyDriver.Open();
+            uint raw = EnergyDriver.SendCode(handle, IoctlBatteryNightCharge, NightChargeRead);
             return new(true, DecodeNightCharge(raw));
         }
         catch
@@ -92,7 +81,7 @@ public static class LenovoBatteryHelper
         {
             try
             {
-                using SafeFileHandle handle = OpenEnergyDriver();
+                using SafeFileHandle handle = EnergyDriver.Open();
 
                 // LLT BatteryFeature.ToInternalAsync():
                 // Conservation => 0x08, 0x03
@@ -107,7 +96,7 @@ public static class LenovoBatteryHelper
                 };
 
                 foreach (uint code in codes)
-                    _ = SendCode(handle, IoctlBatteryChargeMode, code);
+                    _ = EnergyDriver.SendCode(handle, IoctlBatteryChargeMode, code);
 
                 BatteryChargeMode actual = await VerifyChargeModeAsync(handle, mode).ConfigureAwait(false);
                 SetCompatibilityRegistry(actual);
@@ -133,9 +122,9 @@ public static class LenovoBatteryHelper
         {
             try
             {
-                using SafeFileHandle handle = OpenEnergyDriver();
+                using SafeFileHandle handle = EnergyDriver.Open();
                 uint command = enabled ? 0x80000012u : 0x12u;
-                _ = SendCode(handle, IoctlBatteryNightCharge, command);
+                _ = EnergyDriver.SendCode(handle, IoctlBatteryNightCharge, command);
 
                 bool actual = await VerifyNightChargeAsync(handle, enabled).ConfigureAwait(false);
                 bool success = actual == enabled;
@@ -160,7 +149,7 @@ public static class LenovoBatteryHelper
         BatteryChargeMode actual = target;
         for (int i = 0; i < 10; i++)
         {
-            actual = DecodeChargeMode(SendCode(handle, IoctlBatteryChargeMode, ChargeModeRead));
+            actual = DecodeChargeMode(EnergyDriver.SendCode(handle, IoctlBatteryChargeMode, ChargeModeRead));
             if (actual == target)
                 return actual;
 
@@ -177,7 +166,7 @@ public static class LenovoBatteryHelper
         bool actual = target;
         for (int i = 0; i < 10; i++)
         {
-            actual = DecodeNightCharge(SendCode(handle, IoctlBatteryNightCharge, NightChargeRead));
+            actual = DecodeNightCharge(EnergyDriver.SendCode(handle, IoctlBatteryNightCharge, NightChargeRead));
             if (actual == target)
                 return actual;
 
@@ -235,65 +224,4 @@ public static class LenovoBatteryHelper
         }
     }
 
-    private static SafeFileHandle OpenEnergyDriver()
-    {
-        SafeFileHandle handle = CreateFileW(
-            @"\\.\EnergyDrv",
-            FileReadData | FileWriteData,
-            FileShareRead | FileShareWrite,
-            IntPtr.Zero,
-            OpenExisting,
-            FileAttributeNormal,
-            IntPtr.Zero);
-
-        if (handle.IsInvalid)
-        {
-            int error = Marshal.GetLastWin32Error();
-            handle.Dispose();
-            throw new Win32Exception(error, "无法打开 Lenovo EnergyDrv");
-        }
-
-        return handle;
-    }
-
-    private static uint SendCode(SafeFileHandle handle, uint controlCode, uint input)
-    {
-        uint output = 0;
-        bool ok = DeviceIoControl(
-            handle,
-            controlCode,
-            ref input,
-            sizeof(uint),
-            out output,
-            sizeof(uint),
-            out _,
-            IntPtr.Zero);
-
-        if (!ok)
-            throw new Win32Exception(Marshal.GetLastWin32Error(), $"EnergyDrv DeviceIoControl 失败：0x{controlCode:X8}");
-
-        return output;
-    }
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    private static extern SafeFileHandle CreateFileW(
-        string lpFileName,
-        uint dwDesiredAccess,
-        uint dwShareMode,
-        IntPtr lpSecurityAttributes,
-        uint dwCreationDisposition,
-        uint dwFlagsAndAttributes,
-        IntPtr hTemplateFile);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool DeviceIoControl(
-        SafeFileHandle hDevice,
-        uint dwIoControlCode,
-        ref uint lpInBuffer,
-        int nInBufferSize,
-        out uint lpOutBuffer,
-        int nOutBufferSize,
-        out uint lpBytesReturned,
-        IntPtr lpOverlapped);
 }
