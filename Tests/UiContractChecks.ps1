@@ -41,17 +41,23 @@ try {
     $manifest.Save($manifestPath)
     & $mt -nologo -manifest $manifestPath "-outputresource:$exe;#1"
     if ($LASTEXITCODE -ne 0) { throw 'Cannot prepare disposable UI check host.' }
-    $report = Join-Path $temporary 'check.txt'
-    $errors = Join-Path $temporary 'errors.txt'
-    $process = Start-Process -FilePath $exe -ArgumentList '--check-ui-contract' -WorkingDirectory $temporary `
-        -RedirectStandardOutput $report -RedirectStandardError $errors -PassThru
-    try {
-        if (-not $process.WaitForExit(30000)) { $process.Kill(); $process.WaitForExit(); throw 'UI contract check timed out.' }
-        $text = [IO.File]::ReadAllText($report)
-        Write-Host $text
-        if ($process.ExitCode -ne 0 -or -not $text.Contains('PASS: shared UI contract;')) {
-            Get-Content $errors
-            throw "UI contract check failed: exit=$($process.ExitCode)."
-        }
-    } finally { $process.Dispose() }
+    # Keep manually measured, unshown declarations separate from real XAML window
+    # connections: closing their hidden HWNDs must not shut down the lifecycle host.
+    $cases = @('--check-ui-contract')
+    if ($enabled -eq 'true') { $cases += '--check-ui-contract --renderer-lifecycle-only' }
+    for ($caseIndex = 0; $caseIndex -lt $cases.Count; $caseIndex++) {
+        $report = Join-Path $temporary "check-$caseIndex.txt"
+        $errors = Join-Path $temporary "errors-$caseIndex.txt"
+        $process = Start-Process -FilePath $exe -ArgumentList $cases[$caseIndex] -WorkingDirectory $temporary `
+            -RedirectStandardOutput $report -RedirectStandardError $errors -PassThru
+        try {
+            if (-not $process.WaitForExit(30000)) { $process.Kill(); $process.WaitForExit(); throw 'UI contract check timed out.' }
+            $text = [IO.File]::ReadAllText($report)
+            Write-Host $text
+            if ($process.ExitCode -ne 0 -or -not $text.Contains('PASS: shared UI contract;')) {
+                Get-Content $errors
+                throw "UI contract check failed: exit=$($process.ExitCode)."
+            }
+        } finally { $process.Dispose() }
+    }
 } finally { Remove-Item -LiteralPath $temporary -Recurse -Force }

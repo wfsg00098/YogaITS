@@ -24,8 +24,20 @@ namespace YogaITS.Tray.Tests;
 // Runs inside the real WinUI dispatcher, never activates or captures a window.
 internal static class UiContractChecks
 {
+#if LIQUID_GLASS
+    // Real XAML windows must outlive all asynchronous checks and their dispatcher.
+    private static readonly List<Window> LifecycleWindows = [];
+#endif
     public static async Task RunAsync()
     {
+#if LIQUID_GLASS
+        if (Environment.GetCommandLineArgs().Contains("--renderer-lifecycle-only"))
+        {
+            await CheckRendererReconnectionAsync();
+            Console.WriteLine("PASS: shared UI contract; real off-screen renderer connection, replacement and recovery. No capture or hardware started.");
+            return;
+        }
+#endif
         Console.WriteLine("UI contract: choice control");
         int requests = 0;
         using var bar = new ChoiceBar(null!, options: ["关闭", "单人", "多人"], columns: 3);
@@ -90,10 +102,73 @@ internal static class UiContractChecks
         CheckWindowDeclarations();
         await CheckAlwaysOnUsbPanelAsync();
         await CheckAboutLinksAsync();
-        Console.WriteLine("PASS: shared UI contract; confirmed readback, disable, dynamic remove/add/reorder, host lifecycle, native fallback, real hardware adapter, compile-time renderer isolation. No UI or capture started.");
+        Console.WriteLine("PASS: shared UI contract; confirmed readback, disable, dynamic remove/add/reorder, host lifecycle, native fallback, real hardware adapter, compile-time renderer isolation. No visible UI, capture or hardware started.");
     }
 
 #if LIQUID_GLASS
+    private static async Task CheckRendererReconnectionAsync()
+    {
+        var root = new Grid();
+        var window = new Window { Content = root };
+        LifecycleWindows.Add(window);
+        window.AppWindow.IsShownInSwitchers = false;
+        window.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(-32000, -32000, 600, 400));
+        using var bar = new ChoiceBar(window, options: ["关闭", "仅睡眠时开启", "始终开启"], columns: 3);
+        ChoiceBar activeBar = bar;
+        var renderer = (GlassOptionBar)bar.View!;
+        using var presentation = new OptionGroupPresentation(renderer, new Grid(), () => true,
+            () => activeBar.CancelPreview(), () => activeBar.RefreshPresentation());
+        root.Children.Add(presentation);
+        static object? Scene(GlassOptionBar renderer) => typeof(GlassOptionBar)
+            .GetField("_scene", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(renderer);
+        try
+        {
+            // A real off-screen XAML connection exercises Loaded/Unloaded and Composition.
+            // No window material, capture session or hardware service is attached.
+            window.AppWindow.Show(false);
+            for (int attempt = 0; attempt < 100 && (!renderer.IsLoaded || Scene(renderer) is null); attempt++)
+                await Task.Delay(20);
+            Ensure(renderer.IsLoaded && Scene(renderer) is not null,
+                "The off-screen renderer must have real Loaded and Composition resources.");
+            Console.WriteLine("Renderer lifecycle: initial connection");
+            typeof(GlassOptionBar).GetMethod("Disconnect", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(renderer, [renderer, new RoutedEventArgs()]);
+            Ensure(renderer.IsLoaded && Scene(renderer) is null, "Reproduce a loaded tab whose render resources were released.");
+            bar.SelectIndex(2);
+            bar.SetOptionEnabled(0, false);
+            var captions = WarmUiTree.Elements(renderer).OfType<TextBlock>().ToArray();
+            var palette = new Windows.UI.ViewManagement.UISettings();
+            var accent = palette.GetColorValue(renderer.ActualTheme == ElementTheme.Dark
+                ? Windows.UI.ViewManagement.UIColorType.AccentLight2 : Windows.UI.ViewManagement.UIColorType.AccentDark1);
+            Ensure(captions[2].Foreground is SolidColorBrush selected && selected.Color == accent &&
+                captions[0].Foreground is SolidColorBrush disabled && disabled.Color == OptionLabelAppearance.DisabledColor(renderer.ActualTheme == ElementTheme.Dark),
+                "Readback and disabled label colors must update even while renderer resources are disconnected.");
+            OptionGroupPresentation.RefreshTree(root);
+            Ensure(Scene(renderer) is not null,
+                "Refreshing an active presentation must reconnect its track/capsule without closing the window.");
+            Console.WriteLine("Renderer lifecycle: recovered connection and label state");
+            using var lateBar = new ChoiceBar(window, options: ["集显模式", "智能模式", "双显模式"], columns: 3);
+            lateBar.SelectIndex(1);
+            activeBar = lateBar;
+            presentation.ReplaceGlass(lateBar.View);
+            Ensure(Scene(renderer) is null, "Replacing capabilities must dispose only the old renderer.");
+            renderer = (GlassOptionBar)lateBar.View!;
+            for (int attempt = 0; attempt < 100 && (!renderer.IsLoaded || Scene(renderer) is null); attempt++)
+                await Task.Delay(20);
+            Ensure(renderer.IsLoaded && Scene(renderer) is not null && lateBar.SelectedIndex == 1,
+                "Capabilities arriving after the window loads must connect their track and confirmed capsule on first display.");
+            Console.WriteLine("Renderer lifecycle: late capability connection");
+            lateBar.Dispose();
+            OptionGroupPresentation.RefreshTree(root);
+            await Task.Delay(40);
+            Ensure(Scene(renderer) is null, "A queued lifecycle refresh must never resurrect a disposed tab bar.");
+            Console.WriteLine("Renderer lifecycle: disposed control stays disconnected");
+        }
+        // Closing the last shown Window would stop the dispatcher before the async
+        // report returns. Keep this off-screen HWND hidden until the check host exits.
+        finally { window.AppWindow.Hide(); }
+    }
+
     private static void CheckMotionMaterialSwitch()
     {
         bool glass = true;
@@ -281,10 +356,13 @@ internal static class UiContractChecks
                 group!.Update(Options(), actual, true, 3, domain: "device-a");
             }
             using var owned = group = new(window, "真实回读契约", Refresh, _ => errors++);
+            var stablePresentation = Tree(group.View).OfType<OptionGroupPresentation>().Single();
             Refresh();
             Ensure(group.ConfirmedId is null && writes == 0, "Unknown readback must not select or write a fallback.");
             actual = "off";
             Refresh();
+            Ensure(ReferenceEquals(stablePresentation, Tree(group.View).OfType<OptionGroupPresentation>().Single()),
+                "Late initial readback must retain the same attached presentation as startup sections.");
             await group.RequestAsync("unsupported");
             Ensure(writes == 0 && group.ConfirmedId == "off", "Disabled capability must not issue a SET.");
             completion = new();
@@ -311,6 +389,8 @@ internal static class UiContractChecks
             completion = new();
             request = group.RequestAsync("on");
             group.Update(Options(), "off", true, 2, domain: "device-b");
+            Ensure(ReferenceEquals(stablePresentation, Tree(group.View).OfType<OptionGroupPresentation>().Single()),
+                "Changing endpoint or capabilities must not replace the presentation or animated host.");
             int before = refreshes;
             completion.SetResult();
             await request;

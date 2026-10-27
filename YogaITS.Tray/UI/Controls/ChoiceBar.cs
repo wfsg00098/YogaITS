@@ -123,6 +123,13 @@ internal sealed class ChoiceBar : IDisposable
 #endif
     }
 
+    internal void RefreshPresentation()
+    {
+#if LIQUID_GLASS
+        _glass.RefreshPresentation();
+#endif
+    }
+
     public void Dispose()
     {
 #if LIQUID_GLASS

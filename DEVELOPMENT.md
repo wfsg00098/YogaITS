@@ -80,7 +80,7 @@ Start-Process (Join-Path $directory 'YogaITS.Tray.exe') -WorkingDirectory $direc
 | [DistributionChecks.ps1](Tests/DistributionChecks.ps1) | SHA-256 已知向量、清单路径与编码、重复生成及源文件变化。 |
 | [YogaITS.PolicyChecks](Tests/YogaITS.PolicyChecks/) | 真实生产策略、ABI、并发/超时、更新竞速、ZIP 安全、安装回滚、助手身份和发布程序集。使用模拟后端、临时目录及测试自建进程。 |
 | [YogaITS.UiPolicyChecks](Tests/YogaITS.UiPolicyChecks/) | DPI、布局、选择/手势、玻璃物理、捕获生命周期、图标身份和窗口缩放状态。部分检查创建不显示的 HWND。 |
-| [UiContractChecks.ps1](Tests/UiContractChecks.ps1) | 重编译同一套 UI 为隔离检查宿主，在 WinUI dispatcher 下验证控件、真实布局及构建边界，不显示窗口或初始化硬件服务。 |
+| [UiContractChecks.ps1](Tests/UiContractChecks.ps1) | 重编译同一套 UI 为隔离宿主，验证控件、布局及构建边界；玻璃版另起进程，在不激活的屏幕外窗口验证真实 XAML/Composition 连接、能力后到及资源恢复。不捕获屏幕或初始化硬件服务。 |
 | [IdentityIconChecks.ps1](Tests/IdentityIconChecks.ps1) | 玻璃版图标透明度、资源索引、身份版本；不注册包。 |
 | [YogaITS.ShaderChecks](Tests/YogaITS.ShaderChecks/) | C++ 编译及 WARP 合成图像，验证 shader 边界、曲面、DPI 和采样；由玻璃版脚本调用，不捕获桌面。 |
 
@@ -221,6 +221,8 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 两版共用 `ChoiceBar`、`HardwareChoiceGroup` 和服务快照；`WindowMaterial` 隔离材质差异，普通版不实例化隐藏玻璃树。选项 ID 与标签分离，重排保留确认状态，能力/端点变化使过期请求失效。文字按实测宽度分行、每行铺满，同排卡片等高；原生卡片使用灰色/强调色边框，讲述人名称包含功能分组。
 
 性能、充电、动态硬件分组以及玻璃版的材质/背景选择统一由 `HardwareChoiceGroup` 初始化、确认选择及切换呈现。窗口材质就绪后，`OptionGroupPresentation.RefreshTree` 遍历完整内容树，包含未 Loaded 或折叠的分组；宿主准备、选项更新及宽度变化也刷新呈现，避免首次恢复玻璃设置时部分分组滞留为按钮。所有 tab bar 使用同一加速度动画入口，按钮统一由 `CreateOptionTile` 创建；禁用文字共用 `OptionLabelAppearance` 的灰色及删除线，重新启用立即恢复。
+
+每个选项组终身持有同一个呈现容器和动画宿主；能力首次读出或端点变化只替换其拥有的渲染器，不重新挂接整个容器。呈现刷新同时校验已加载、可见的 tab bar 是否连接轨道/胶囊资源，缺失时重连；已释放控件不会复活。文字选中/禁用颜色独立于 Composition 资源更新，断连期间仍反映确认状态。回归检查包括真实资源断连后的恢复，以及窗口加载后才取得能力时的首次连接。
 
 完整窗口默认四周留白 8 DIP，滚动条位于右侧留白内；系统始终显示滚动条时额外避让。标题保留系统控制按钮，初始焦点放标题，Tab 从首个可用按钮开始；复用控件保持键盘操作后的焦点。原生界面的大窗口获焦时强制强调色细边框，失焦恢复系统默认；玻璃界面由材质轮廓与 DWM 收边。
 

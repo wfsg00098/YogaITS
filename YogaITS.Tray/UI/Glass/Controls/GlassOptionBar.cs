@@ -270,6 +270,27 @@ internal sealed class GlassOptionBar : Grid, IDisposable
     }
 
     private void Connect(object sender, RoutedEventArgs args)
+        => RefreshPresentation();
+
+    internal void RefreshPresentation()
+    {
+        if (_disposed) return;
+        if (HasVisibleHost()) EnsureConnected();
+        RefreshMaterial();
+    }
+
+    private bool HasVisibleHost()
+    {
+        if (!IsLoaded || XamlRoot is null) return false;
+        for (UIElement? element = this; element is not null; element = VisualTreeHelper.GetParent(element) as UIElement)
+        {
+            if (element.Visibility != Visibility.Visible) return false;
+            if (ReferenceEquals(element, _window.Content)) return true;
+        }
+        return false;
+    }
+
+    private void EnsureConnected()
     {
         if (_disposed || _scene is not null || !GlassCapability.Supported) return;
         _compositor = ElementCompositionPreview.GetElementVisual(this).Compositor;
@@ -468,18 +489,22 @@ internal sealed class GlassOptionBar : Grid, IDisposable
 
     private void RefreshMaterial(TimeSpan? arrival)
     {
-        if (_track is null || _active is null) return;
         bool dark = ActualTheme == ElementTheme.Dark;
-        bool glass = LiquidGlassWindow.EffectsEnabled(_window);
+        bool glass = _window is not null && LiquidGlassWindow.EffectsEnabled(_window);
+        Color accent = _palette.GetColorValue(dark ? UIColorType.AccentLight2 : UIColorType.AccentDark1);
+        byte channel = dark ? (byte)255 : (byte)0;
+        // Label state is independent of Composition connection/visibility.
+        for (int i = 0; i < _tabs.Length; i++)
+            _foregrounds[i].Color = !_selection.IsEnabled(i) ? OptionLabelAppearance.DisabledColor(dark) :
+                i == SelectedIndex || i == _selection.PendingIndex ? accent : Color.FromArgb(255, channel, channel, channel);
+        if (_track is null || _active is null) return;
         if (!glass || !_palette.AnimationsEnabled)
         {
             foreach (var pair in _retiring.ToArray()) RemoveRetired(pair.Key, pair.Value);
             foreach (var fade in _fades.Values) fade.Dispose();
             _fades.Clear();
         }
-        Color accent = _palette.GetColorValue(dark ? UIColorType.AccentLight2 : UIColorType.AccentDark1);
         float scale = (float)(XamlRoot?.RasterizationScale ?? 1);
-        byte channel = dark ? (byte)255 : (byte)0;
         var neutral = Color.FromArgb(GlassMaterialPolicy.SelectionTintAlpha, channel, channel, channel);
         try
         {
@@ -489,9 +514,6 @@ internal sealed class GlassOptionBar : Grid, IDisposable
             _trackAcceleration?.SetPressed(false, glass && _palette.AnimationsEnabled);
             if (_acceleration is not null) _acceleration.SetPressed(_pointer is not null, glass && _palette.AnimationsEnabled);
             else _active.SetMotion(_pointer is not null, glass && _palette.AnimationsEnabled, arrival);
-            for (int i = 0; i < _tabs.Length; i++)
-                _foregrounds[i].Color = !_selection.IsEnabled(i) ? OptionLabelAppearance.DisabledColor(dark) :
-                    i == SelectedIndex || i == _selection.PendingIndex ? accent : Color.FromArgb(255, channel, channel, channel);
         }
         catch (Exception ex) { CaptureDiagnostics.Write("Floating material: " + ex); }
     }

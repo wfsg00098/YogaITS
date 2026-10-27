@@ -28,7 +28,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
     private HardwareChoice[] _choices = [];
     private string[] _barIds = [], _barLabels = [];
     private ChoiceBar? _bar;
-    private OptionGroupPresentation? _presentation;
+    private readonly OptionGroupPresentation _presentation;
     private string? _confirmed, _pending, _domain;
     private int _revision, _columns;
     private bool _available, _visible = true, _disposed;
@@ -36,7 +36,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
     internal string? ConfirmedId => _confirmed;
     internal string? PendingId => _pending;
     public event Action? PresentationChanged;
-    public void RefreshPresentation() => _presentation?.Refresh();
+    public void RefreshPresentation() => _presentation.Refresh();
 
     public HardwareChoiceGroup(Window window, string title, Action refresh, Action<Exception> reportError,
         double height = TrayMenuWindow.OptionTileHeightDip, double fontSize = TrayMenuWindow.ControlCenterButtonFontSize,
@@ -65,7 +65,11 @@ internal sealed class HardwareChoiceGroup : IDisposable
                 RefreshPresentation();
             }
         };
-        RebuildPresentation(null, [], [], 1);
+        _presentation = new(null, _native,
+            () => _bar is not null && !_needsNativeWrapping && WindowMaterial.EffectsEnabled(_window),
+            () => _bar?.CancelPreview(), () => _bar?.RefreshPresentation());
+        _presentation.PresentationChanged += () => { View.RefreshMotion(); PresentationChanged?.Invoke(); };
+        View.SetChild(_presentation);
     }
 
     public void Update(IEnumerable<HardwareChoice> choices, string? confirmed, bool available,
@@ -127,10 +131,8 @@ internal sealed class HardwareChoiceGroup : IDisposable
 
     private void RebuildPresentation(int? selected, string[] ids, string[] labels, int columns)
     {
-        // Parent can still be null before Loaded; detach from the owned
-        // collection directly when capability/readback replaces a presentation.
-        _presentation?.Children.Remove(_native);
-        _presentation?.Dispose();
+        // Keep the presentation and animated host attached for their entire lifetime.
+        // Late capability/endpoint discovery replaces only the renderer it owns.
         _bar = null;
         _barIds = ids;
         _barLabels = labels;
@@ -146,10 +148,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
                     await RequestAsync(_barIds[index]);
             };
         }
-        _presentation = new(_bar?.View, _native,
-            () => _bar is not null && !_needsNativeWrapping && WindowMaterial.EffectsEnabled(_window), () => _bar?.CancelPreview());
-        _presentation.PresentationChanged += () => { View.RefreshMotion(); PresentationChanged?.Invoke(); };
-        View.SetChild(_presentation);
+        _presentation.ReplaceGlass(_bar?.View);
     }
 
     private void RefreshNative()
@@ -279,7 +278,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
         ++_revision;
         _pending = null;
         View.Dispose();
-        _presentation?.Dispose();
+        _presentation.Dispose();
         _cards.Clear();
     }
 }
