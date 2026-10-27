@@ -3,10 +3,9 @@ Copyright (c) 2026, wfsg00098 and YogaITS contributors
 Project: https://github.com/wfsg00098/YogaITS
 
 YogaITS original code is licensed under the BSD 3-Clause License in LICENSE.
-This permits use, modification, commercial use, and source or binary
-redistribution subject to retaining the required notices. No warranty or
-support commitment is made. The license contains a limitation of liability;
-mandatory rights that cannot legally be excluded are unaffected.
+Redistributions must retain the required copyright, license, and disclaimer
+notices. The software is provided AS IS, without warranty or support.
+See LICENSE for the full terms and disclaimer.
 
 Third-party code, binaries, SDKs, and notices retain their respective licenses.
 The project license does not relicense them or grant rights to OEM drivers,
@@ -27,8 +26,6 @@ release assets from this repository. The original project's tests, support,
 and any statements about compatibility do not certify third-party changes.
 Any support or warranty offered by a distributor is that distributor's own
 offer, not an undertaking by the original authors or contributors.
-Distributors are encouraged to identify their changes and contact details;
-this recommendation adds no license condition or restriction on paid distribution.
 
 Hardware and system operations may interrupt applications or displays, cause
 system instability, or result in data loss or hardware problems. Validation
@@ -37,4 +34,3 @@ Release checksums establish byte-for-byte consistency with the referenced
 assets; they are not an independent publisher signature or a warranty.
 
 For source references and the scope of the licensing review, see DEVELOPMENT.md.
-This NOTICE explains scope and attribution; it adds no conditions to LICENSE.
