@@ -1,5 +1,6 @@
 using YogaITS.Tray.UI.Accessibility;
 using YogaITS.Tray.UI.Shell;
+using YogaITS.Tray.UI.Controls;
 using YogaITS.Tray.UI.Glass.Animation;
 using YogaITS.Tray.UI.Glass.Backgrounds;
 using YogaITS.Tray.UI.Glass.Capture;
@@ -200,7 +201,7 @@ internal static class LiquidGlassWindow
                 ((SolidColorBrush)_button.Resources["ButtonBackgroundPressed"]).Color =
                     UiAccessibility.HighContrast ? UiAccessibility.SystemColor(13) : Color.FromArgb(16, channel, channel, channel);
                 _button.ClearValue(Control.ForegroundProperty);
-                _label?.ClearValue(TextBlock.ForegroundProperty);
+                if (_label is not null) OptionLabelAppearance.Apply(_button, _label);
                 return;
             }
             ((SolidColorBrush)_button.Resources["ButtonBackgroundPointerOver"]).Color = Microsoft.UI.Colors.Transparent;
@@ -235,10 +236,7 @@ internal static class LiquidGlassWindow
             // The native Button hover state sets ContentPresenter.Foreground.
             // A local label value keeps selection visible in every pointer state.
             if (_label is not null)
-            {
-                if (Emphasized) _label.Foreground = _button.Foreground;
-                else _label.ClearValue(TextBlock.ForegroundProperty);
-            }
+                OptionLabelAppearance.Apply(_button, _label, Emphasized ? _button.Foreground : null);
         }
 
     }
@@ -413,6 +411,9 @@ internal static class LiquidGlassWindow
                     if (_surfaces[i].TryGetTarget(out var surface)) surface.Refresh();
                     else _surfaces.RemoveAt(i);
                 }
+                // Initial style restoration can precede Loaded for dynamic feature groups.
+                // Refresh every presentation after the actual material state is established.
+                OptionGroupPresentation.RefreshTree(root);
                 AccelerationLayoutMotion.RefreshTree(root);
                 BorderResult = SetWindowFrame(window, effects);
                 if (window is TrayMenuWindow menu) menu.RefreshMaterialAppearance();

@@ -96,6 +96,7 @@ internal sealed class AnimatedOptionHost : Grid, IDisposable
         // ApplyTemplate does not attach or refresh glass. Loaded/Unloaded remain
         // the sole owners of renderer connection, as for an ordinary card.
         if(!_templatePrepared) { WarmUiTree.ApplyTemplates(_child); _templatePrepared=true; }
+        OptionGroupPresentation.RefreshTree(_child);
         RefreshNaturalSize();
         _spacing?.Refresh();
     }

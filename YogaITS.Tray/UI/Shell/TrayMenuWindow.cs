@@ -285,8 +285,7 @@ public sealed class TrayMenuWindow : Window
     {
         // Measure the complete visual tree at its natural height. There is no
         // scrolling container: the AppWindow is resized to the content itself.
-        _performanceChoices?.RefreshPresentation();
-        _chargeChoicesUi?.RefreshPresentation();
+        if (_contentRoot is not null) OptionGroupPresentation.RefreshTree(_contentRoot);
         if (_contentRoot is not null) WarmUiTree.ApplyTemplates(_contentRoot);
         _contentRoot?.Measure(new Windows.Foundation.Size(clientWidthDip, double.PositiveInfinity));
 
@@ -1093,6 +1092,10 @@ public sealed class TrayMenuWindow : Window
         SetTileStateResources(button, outline);
         SettingsMotion.AttachHover(button);
         WindowMaterial.AttachTile(button, content, selected);
+        button.IsEnabledChanged += (_, _) => RefreshOptionAvailability(button);
+        button.ActualThemeChanged += (_, _) => RefreshOptionAvailability(button);
+        button.Loaded += (_, _) => RefreshOptionAvailability(button);
+        RefreshOptionAvailability(button);
         AutomationProperties.SetName(button, text.Replace("\n", ""));
         if (!isAction) UiAccessibility.SetState(button, selected ? "已选中" : "未选中");
         return button;
@@ -1259,10 +1262,18 @@ public sealed class TrayMenuWindow : Window
         Color outlineColor = GetTileOutlineColor(selected || pending);
         state.Accent = selected || pending;
         if (state.Outline.Color != outlineColor) state.Outline.Color = outlineColor;
+        OptionLabelAppearance.Apply(button, state.Label);
         WindowMaterial.SetTileState(button, state.Accent);
         UiAccessibility.SetState(button, pending ? "正在设置" : state.IsAction ? "" : selected ? "已选中" : "未选中");
 
         state.Label.FontWeight = Microsoft.UI.Text.FontWeights.Normal;
+    }
+
+    private static void RefreshOptionAvailability(Button button)
+    {
+        if (button.Tag is not OptionTileState state) return;
+        OptionLabelAppearance.Apply(button, state.Label);
+        WindowMaterial.RefreshTileAppearance(button);
     }
 
     internal static void SetOptionText(Button button, string text)
@@ -1386,6 +1397,7 @@ public sealed class TrayMenuWindow : Window
         {
             state.Outline.Color = GetTileOutlineColor(state.Accent);
             SettingsMotion.RefreshHoverColors((Button)element);
+            RefreshOptionAvailability((Button)element);
         }
         for (int i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
             RefreshContrastOutlines(VisualTreeHelper.GetChild(element, i));

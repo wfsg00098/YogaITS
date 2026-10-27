@@ -59,7 +59,11 @@ internal sealed class HardwareChoiceGroup : IDisposable
         });
         View.SizeChanged += (_, args) =>
         {
-            if (_fitToContent && !_disposed && args.NewSize.Width != args.PreviousSize.Width) RefreshNative();
+            if (_fitToContent && !_disposed && args.NewSize.Width != args.PreviousSize.Width)
+            {
+                RefreshNative();
+                RefreshPresentation();
+            }
         };
         RebuildPresentation(null, [], [], 1);
     }
@@ -117,6 +121,7 @@ internal sealed class HardwareChoiceGroup : IDisposable
         RefreshNative();
         if (_bar is { } bar)
             for (int i = 0; i < next.Length; i++) bar.SetOptionEnabled(i, available && next[i].Enabled);
+        RefreshPresentation();
         View.SetExpanded(_visible);
     }
 
@@ -243,7 +248,6 @@ internal sealed class HardwareChoiceGroup : IDisposable
             _native.RowDefinitions.RemoveAt(_native.RowDefinitions.Count - 1);
         }
         _bar?.SetNaturalWidths(sizes);
-        _presentation?.Refresh();
     }
 
     internal async Task RequestAsync(string id)

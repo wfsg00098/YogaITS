@@ -27,7 +27,7 @@ internal sealed class ChoiceBar : IDisposable
     public event Action<int>? SelectionRequested;
     public event Action<int>? SelectionChanged;
 
-    public ChoiceBar(Window window, bool acceleration = true, IReadOnlyList<string>? options = null,
+    public ChoiceBar(Window window, IReadOnlyList<string>? options = null,
         string groupName = "性能选项", double fontSize = TrayMenuWindow.ControlCenterButtonFontSize,
         bool compactLabels = false, int columns = 0, bool fitToContent = false)
     {
@@ -36,7 +36,7 @@ internal sealed class ChoiceBar : IDisposable
         if (columns < 1 || columns > labels.Length) throw new ArgumentOutOfRangeException(nameof(columns));
         _ = OptionSetPolicy.RemapConfirmed(labels, 0, labels);
 #if LIQUID_GLASS
-        _glass = new(window, acceleration, labels, groupName, fontSize, compactLabels, columns, fitToContent);
+        _glass = new(window, acceleration: true, labels, groupName, fontSize, compactLabels, columns, fitToContent);
         _glass.SelectionRequested += index =>
         {
             if (SelectionRequested is { } requested) requested(index);

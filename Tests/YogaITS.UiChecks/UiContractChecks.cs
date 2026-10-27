@@ -16,6 +16,8 @@ using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.UI.Features;
+using YogaITS.Tray.UI.Layout;
+using Microsoft.UI.Xaml.Media;
 
 namespace YogaITS.Tray.Tests;
 
@@ -57,6 +59,8 @@ internal static class UiContractChecks
         host.SetExpanded(true);
         Ensure(host.IsHitTestVisible && host.Visibility == Visibility.Visible, "Host must support reversal.");
         CheckNaturalHostMeasurement();
+        CheckPresentationLifecycle();
+        CheckDisabledTiles();
         var cards = TrayMenuWindow.CreateTileGrid([
             TrayMenuWindow.CreateOptionTile("单人", true, false, TrayMenuWindow.OptionTileHeightDip),
             TrayMenuWindow.CreateOptionTile("关闭", false, false, TrayMenuWindow.OptionTileHeightDip)], 2, TrayMenuWindow.OptionTileHeightDip);
@@ -142,6 +146,91 @@ internal static class UiContractChecks
     }
 
 #endif
+
+    private static void CheckPresentationLifecycle()
+    {
+        bool glass = false;
+        int canceled = 0;
+        var root = new StackPanel();
+        var deferred = new StackPanel { Visibility = Visibility.Collapsed };
+        root.Children.Add(deferred);
+        var groups = Enumerable.Range(0, 8).Select(index => new OptionGroupPresentation(
+            new Border { Height = 48 }, new Button { Content = index.ToString() }, () => glass, () => canceled++)).ToArray();
+        try
+        {
+            foreach (var group in groups) deferred.Children.Add(group);
+            Ensure(groups.All(group => !group.IsLoaded && group.Children[0].Visibility == Visibility.Visible),
+                "Cold-start declarations begin as native cards before material restoration and Loaded.");
+            glass = true;
+            OptionGroupPresentation.RefreshTree(root);
+            Ensure(groups.All(group => group.Children[0].Visibility == Visibility.Collapsed &&
+                group.Children[1].Visibility == Visibility.Visible),
+                "The first material-ready refresh must update every unloaded/collapsed group to tabs.");
+            OptionGroupPresentation.RefreshTree(root);
+            Ensure(canceled == 0, "Idempotent glass refresh must preserve pending gestures and selection.");
+            glass = false;
+            OptionGroupPresentation.RefreshTree(root);
+            Ensure(groups.All(group => group.Children[0].Visibility == Visibility.Visible) && canceled == groups.Length,
+                "Native fallback must update all groups together and cancel each stale preview once.");
+            using var late = new OptionGroupPresentation(new Border { Height = 48 }, new Button(), () => glass);
+            using var host = new AnimatedOptionHost(() => false, _ => { });
+            root.Children.Add(host);
+            glass = true;
+            host.SetChild(late);
+            Ensure(late.Children[0].Visibility == Visibility.Collapsed,
+                "A dynamically replaced presentation must use the current material before its first Loaded event.");
+            OptionGroupPresentation.RefreshTree(root);
+            Ensure(groups.All(group => group.Children[0].Visibility == Visibility.Collapsed),
+                "Late feature discovery must use the same presentation refresh as startup sections.");
+        }
+        finally { foreach (var group in groups) group.Dispose(); }
+    }
+
+    private static void CheckDisabledTiles()
+    {
+        foreach (bool action in new[] { false, true })
+        {
+            var button = TrayMenuWindow.CreateOptionTile("禁用选项", true, action, TrayMenuWindow.OptionTileHeightDip);
+            var label = WarmUiTree.Elements(button).OfType<TextBlock>().Single();
+            button.IsEnabled = false;
+            TrayMenuWindow.RefreshOptionTile(button, true, pending: true);
+            Ensure(label.TextDecorations == Windows.UI.Text.TextDecorations.Strikethrough &&
+                label.Foreground is SolidColorBrush disabled && disabled.Color == OptionLabelAppearance.DisabledColor(button.ActualTheme == ElementTheme.Dark),
+                "Disabled action and selection cards must be gray and struck through, including selected/pending cards before Loaded.");
+            TrayMenuWindow.SetOptionText(button, "更新后的禁用选项");
+            TrayMenuWindow.RefreshOptionTile(button, false);
+            Ensure(label.TextDecorations == Windows.UI.Text.TextDecorations.Strikethrough,
+                "Refreshing a disabled card label must preserve its disabled decoration.");
+            button.IsEnabled = true;
+            TrayMenuWindow.RefreshOptionTile(button, false);
+            Ensure(label.TextDecorations == Windows.UI.Text.TextDecorations.None,
+                "Reenabling a card must immediately remove its strike-through.");
+        }
+        using var card = new FeatureCard("共享按钮");
+        bool available = true;
+        void Render() => card.Update(true, body => card.Options(body, card.Option("仅听机主", false,
+            () => Task.CompletedTask, available)));
+        Render();
+        var retained = Tree(card.View).OfType<Button>().Single();
+        available = false;
+        Render();
+        Ensure(ReferenceEquals(retained, Tree(card.View).OfType<Button>().Single()) &&
+            WarmUiTree.Elements(retained).OfType<TextBlock>().Single().TextDecorations == Windows.UI.Text.TextDecorations.Strikethrough,
+            "Retained feature buttons must apply availability before refreshing appearance, even while unloaded.");
+        available = true;
+        Render();
+        Ensure(WarmUiTree.Elements(retained).OfType<TextBlock>().Single().TextDecorations == Windows.UI.Text.TextDecorations.None,
+            "Retained feature buttons must restore normal labels after capability recovers.");
+#if LIQUID_GLASS
+        var tab = new RadioButton();
+        var caption = new TextBlock();
+        GlassOptionBar.SetLabelAvailability(tab, caption, false);
+        Ensure(caption.TextDecorations == Windows.UI.Text.TextDecorations.Strikethrough,
+            "Tab and card disabled labels share the same decoration.");
+        GlassOptionBar.SetLabelAvailability(tab, caption, true);
+        Ensure(caption.TextDecorations == Windows.UI.Text.TextDecorations.None, "Reenabled tabs restore their labels too.");
+#endif
+    }
 
     private static void CheckNaturalHostMeasurement()
     {

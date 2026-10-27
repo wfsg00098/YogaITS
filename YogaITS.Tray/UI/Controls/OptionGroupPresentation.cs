@@ -3,6 +3,7 @@ using YogaITS.Tray.UI.Glass.Windowing;
 #endif
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using YogaITS.Tray.UI.Layout;
 
 namespace YogaITS.Tray.UI.Controls;
 
@@ -62,6 +63,12 @@ internal sealed class OptionGroupPresentation : Grid, IDisposable
         if (_glass is not null) _glass.Visibility = glass ? Visibility.Visible : Visibility.Collapsed;
         _native.Visibility = glass ? Visibility.Collapsed : Visibility.Visible;
         PresentationChanged?.Invoke();
+    }
+
+    internal static void RefreshTree(UIElement root)
+    {
+        foreach (var presentation in WarmUiTree.Elements(root).OfType<OptionGroupPresentation>())
+            presentation.Refresh();
     }
     public void Dispose()
     {

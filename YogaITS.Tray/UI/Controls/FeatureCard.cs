@@ -142,8 +142,8 @@ internal sealed class FeatureCard : IDisposable
                 _bindings.Remove(retained);
                 _bindings.Add(retained, binding);
                 TrayMenuWindow.UpdateOptionLabel(retained, candidate);
-                TrayMenuWindow.RefreshOptionTile(retained, binding.Selected);
                 retained.IsEnabled = candidate.IsEnabled;
+                TrayMenuWindow.RefreshOptionTile(retained, binding.Selected);
             }
             StretchLastRow(grid, columns, stretchLastRow);
             _nextChild++;

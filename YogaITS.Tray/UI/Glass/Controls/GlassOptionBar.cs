@@ -253,8 +253,7 @@ internal sealed class GlassOptionBar : Grid, IDisposable
     {
         tab.IsEnabled = enabled;
         // Apply explicitly: unloaded/collapsed controls may defer IsEnabledChanged.
-        caption.TextDecorations = enabled
-            ? Windows.UI.Text.TextDecorations.None : Windows.UI.Text.TextDecorations.Strikethrough;
+        OptionLabelAppearance.Decorate(caption, enabled);
     }
 
     internal static void LayoutLabels(RadioButton[] tabs, ChoiceTrackLayout layout)
@@ -491,7 +490,7 @@ internal sealed class GlassOptionBar : Grid, IDisposable
             if (_acceleration is not null) _acceleration.SetPressed(_pointer is not null, glass && _palette.AnimationsEnabled);
             else _active.SetMotion(_pointer is not null, glass && _palette.AnimationsEnabled, arrival);
             for (int i = 0; i < _tabs.Length; i++)
-                _foregrounds[i].Color = !_selection.IsEnabled(i) ? Color.FromArgb(85, channel, channel, channel) :
+                _foregrounds[i].Color = !_selection.IsEnabled(i) ? OptionLabelAppearance.DisabledColor(dark) :
                     i == SelectedIndex || i == _selection.PendingIndex ? accent : Color.FromArgb(255, channel, channel, channel);
         }
         catch (Exception ex) { CaptureDiagnostics.Write("Floating material: " + ex); }
