@@ -26,6 +26,7 @@ namespace YogaITS.Tray.UI.Shell;
 public sealed class TrayMenuWindow : Window
 {
     private const int BaseWidthDip = 244;
+    private const int FallbackMiniHeightDip = 548;
     internal const double OptionTileHeightDip = 48;
     internal const double ControlCenterButtonFontSize = 12.5;
     internal const double MiniButtonFontSize = 10.5;
@@ -162,9 +163,14 @@ public sealed class TrayMenuWindow : Window
 
         ExtendsContentIntoTitleBar = true;
 
-        // Establish the portrait bounds before XAML/material initialization can
-        // create its first frame at WinUI's default landscape window size.
+        // Both windows need compact bounds before XAML/material initialization
+        // can create a first frame at WinUI's default landscape window size.
         if (_fullWindow) PositionControlCenter();
+        else
+        {
+            uint dpi = GetWindowDpi();
+            AppWindow.Resize(new SizeInt32(ScaleDip(BaseWidthDip, dpi), ScaleDip(FallbackMiniHeightDip, dpi)));
+        }
 
         Content = BuildContent(
             modelName,
@@ -176,7 +182,12 @@ public sealed class TrayMenuWindow : Window
             nvidiaGpuSupported);
         ConfigureWindow();
         if (!_fullWindow && _contentRoot is not null)
+        {
+            // Measure with the tool-window frame already configured, but before
+            // attaching the material can initialize its first rendered frame.
+            PositionMiniWindow();
             _contentRoot.Loaded += (_, _) => QueueMiniResize();
+        }
 #if LIQUID_GLASS
         if (Content is FrameworkElement materialRoot)
             materialRoot.Loaded += async (_, _) =>
@@ -196,6 +207,12 @@ public sealed class TrayMenuWindow : Window
 
     public void ShowAtCursor()
     {
+        PositionMiniWindow();
+        ShowMenu();
+    }
+
+    private void PositionMiniWindow()
+    {
         uint dpi = GetWindowDpi();
         int width = ScaleDip(BaseWidthDip, dpi);
         // AppWindow bounds include the non-client frame; XAML measurements do
@@ -210,7 +227,6 @@ public sealed class TrayMenuWindow : Window
         if (!GetCursorPos(out POINT cursor))
         {
             AppWindow.Resize(new SizeInt32(width, height));
-            ShowMenu();
             return;
         }
 
@@ -237,7 +253,6 @@ public sealed class TrayMenuWindow : Window
             y = workArea.Y;
 
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
-        ShowMenu();
     }
 
     public void ShowControlCenter()
@@ -289,11 +304,11 @@ public sealed class TrayMenuWindow : Window
         if (_contentRoot is not null) WarmUiTree.ApplyTemplates(_contentRoot);
         _contentRoot?.Measure(new Windows.Foundation.Size(clientWidthDip, double.PositiveInfinity));
 
-        double desired = _contentRoot?.DesiredSize.Height ?? 548;
+        double desired = _contentRoot?.DesiredSize.Height ?? FallbackMiniHeightDip;
         if (double.IsFinite(desired) && desired > 0)
             return Math.Clamp((int)Math.Ceiling(desired), 120, 2048);
 
-        return 548;
+        return FallbackMiniHeightDip;
     }
 
     private void ShowMenu()

@@ -447,6 +447,20 @@ internal static class UiContractChecks
                 "Constructing settings windows must not display an intermediate window.");
             Ensure(full.AppWindow.Size.Width < full.AppWindow.Size.Height,
                 "The control center must already have portrait bounds before content is shown.");
+            Ensure(mini.AppWindow.Size.Width < mini.AppWindow.Size.Height,
+                "The mini window must already have compact portrait bounds before material initialization and activation.");
+            var miniBounds = mini.AppWindow.Size;
+            var miniClient = mini.AppWindow.ClientSize;
+            var miniRoot = (FrameworkElement)mini.Content;
+            double miniScale = Math.Max(96u, GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(mini))) / 96.0;
+            double miniWidthDip = miniClient.Width / miniScale;
+            Ensure(miniRoot.DesiredSize.Height > 0 && miniWidthDip > 0,
+                "Mini content must be measured at its actual client width before the window is shown.");
+            int measuredMiniHeight = mini.MeasureMiniContentHeight(miniWidthDip);
+            Ensure(Math.Abs(miniClient.Height - Math.Round(measuredMiniHeight * miniScale)) <= 1,
+                $"Initial mini client {miniClient.Width}x{miniClient.Height} must contain measured height {measuredMiniHeight} DIP at scale {miniScale}.");
+            Ensure(mini.AppWindow.Size == miniBounds && !mini.AppWindow.IsVisible,
+                "Measuring mini content must not display or reposition the window.");
 #if LIQUID_GLASS
             CheckResizeRegions(full, mini);
 #endif
@@ -605,4 +619,7 @@ internal static class UiContractChecks
     {
         if (!condition) throw new InvalidOperationException(message);
     }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint hwnd);
 }
