@@ -26,6 +26,8 @@ namespace YogaITS.Tray.UI.Shell;
 
 public sealed class TrayMenuWindow : Window
 {
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _quickSettingsFocusTimer;
+    private bool _raisedAboveQuickSettings;
     private IconOptionsPanel? _iconOptions;
     private Action<IconPlacement>? _selectIconPlacement;
     private const int BaseWidthDip = 244;
@@ -208,10 +210,10 @@ public sealed class TrayMenuWindow : Window
         Closed += TrayMenuWindow_Closed;
     }
 
-    public void ShowAtCursor()
+    public void ShowAtCursor(bool fromQuickSettings = false)
     {
         PositionMiniWindow();
-        ShowMenu();
+        ShowMenu(fromQuickSettings);
     }
 
     private void PositionMiniWindow()
@@ -258,10 +260,10 @@ public sealed class TrayMenuWindow : Window
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
     }
 
-    public void ShowControlCenter()
+    public void ShowControlCenter(bool fromQuickSettings = false)
     {
         PositionControlCenter();
-        ShowInForeground();
+        ShowInForeground(fromQuickSettings);
         // Start on the title rather than a function tile. Tab then advances to
         // the first available button while retaining normal keyboard visuals.
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
@@ -287,16 +289,55 @@ public sealed class TrayMenuWindow : Window
             area.Y + (area.Height - height) / 2, width, height));
     }
 
-    public void ShowInForeground()
+    public void ShowInForeground(bool fromQuickSettings = false)
     {
         if (_closed) return;
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         if (IsIconic(hwnd)) _ = ShowWindow(hwnd, 9); // SW_RESTORE; retain the previous size and position.
+        if (fromQuickSettings) RaiseAboveQuickSettings(hwnd);
         Activate();
         // Activate alone can leave Explorer's tray panel in the foreground.
         // Request foreground activation only in the user's window-opening path.
         if (!SetForegroundWindow(hwnd))
             System.Diagnostics.Debug.WriteLine("Windows declined foreground activation for the settings window.");
+        if (fromQuickSettings)
+        {
+            // WinUI can apply the presenter during activation. Bring the
+            // window to the front of the topmost group after that as well.
+            RaiseAboveQuickSettings(hwnd);
+            if (_raisedAboveQuickSettings && !_isActive)
+            {
+                _quickSettingsFocusTimer ??= CreateQuickSettingsFocusTimer();
+                _quickSettingsFocusTimer.Start();
+            }
+        }
+    }
+
+    private void RaiseAboveQuickSettings(nint hwnd)
+    {
+        bool restore = _fullWindow && (GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64() & WS_EX_TOPMOST) == 0;
+        if (SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, PositionOnlyInZOrder) && restore)
+            _raisedAboveQuickSettings = true;
+    }
+
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer CreateQuickSettingsFocusTimer()
+    {
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromSeconds(1);
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) =>
+        {
+            if (!_closed && !_isActive) RestoreControlCenterZOrder();
+        };
+        return timer;
+    }
+
+    private void RestoreControlCenterZOrder()
+    {
+        if (!_raisedAboveQuickSettings) return;
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        if (SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, PositionOnlyInZOrder))
+            _raisedAboveQuickSettings = false;
     }
 
     internal int MeasureMiniContentHeight(double clientWidthDip)
@@ -314,13 +355,13 @@ public sealed class TrayMenuWindow : Window
         return FallbackMiniHeightDip;
     }
 
-    private void ShowMenu()
+    private void ShowMenu(bool fromQuickSettings)
     {
         nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         if (!_shown)
         {
             _shown = true;
-            ShowInForeground();
+            ShowInForeground(fromQuickSettings);
         }
         ApplyDwmAppearance(hwnd);
         InstallOutsideClickHook();
@@ -329,7 +370,10 @@ public sealed class TrayMenuWindow : Window
     private void TrayMenuWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
         if (_closed) return;
+        bool wasActive = _isActive;
         _isActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        if (_isActive) _quickSettingsFocusTimer?.Stop();
+        else if (wasActive) RestoreControlCenterZOrder();
         if (_fullWindow)
             ApplyDwmAppearance(WinRT.Interop.WindowNative.GetWindowHandle(this));
         // WindowMaterial owns the active/fallback transition. An opaque
@@ -1528,6 +1572,8 @@ public sealed class TrayMenuWindow : Window
         WindowEventArgs args)
     {
         _closed = true;
+        _quickSettingsFocusTimer?.Stop();
+        _quickSettingsFocusTimer = null;
 #if LIQUID_GLASS
         UiOptions?.Dispose();
 #endif
@@ -1671,7 +1717,10 @@ public sealed class TrayMenuWindow : Window
 
     private const int GWL_EXSTYLE = -20;
     private const int GWLP_HWNDPARENT = -8;
+    private static readonly nint HWND_TOPMOST = -1;
+    private static readonly nint HWND_NOTOPMOST = -2;
 
+    private const long WS_EX_TOPMOST = 0x00000008L;
     private const long WS_EX_TOOLWINDOW = 0x00000080L;
     private const long WS_EX_NOACTIVATE = 0x08000000L;
     private const long WS_EX_APPWINDOW = 0x00040000L;
@@ -1688,6 +1737,8 @@ public sealed class TrayMenuWindow : Window
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_FRAMECHANGED = 0x0020;
+    private const uint SWP_NOOWNERZORDER = 0x0200;
+    private const uint PositionOnlyInZOrder = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT

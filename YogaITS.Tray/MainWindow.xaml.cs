@@ -172,8 +172,8 @@ public sealed partial class MainWindow : Window
                     right => DispatcherQueue.TryEnqueue(() =>
                     {
                         if (_exiting || !_quickSettingsReady || _iconPlacement != IconPlacement.QuickSettings) return;
-                        if (right) ShowTrayMenu();
-                        else ToggleControlCenter();
+                        if (right) ShowTrayMenu(fromQuickSettings: true);
+                        else ToggleControlCenter(fromQuickSettings: true);
                     }));
             }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Quick Settings initialization failed: " + ex.Message); }
@@ -193,7 +193,7 @@ public sealed partial class MainWindow : Window
         else if (_trayIcon is null)
         {
             _trayIcon = new NativeTrayIcon(_mainHwnd, BuildTooltip(_stateCache.Snapshot));
-            _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ToggleControlCenter);
+            _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(() => ToggleControlCenter());
             _trayIcon.RightClick += TrayIcon_Click;
         }
     }
@@ -203,31 +203,31 @@ public sealed partial class MainWindow : Window
 
     private void TrayIcon_Click()
     {
-        DispatcherQueue.TryEnqueue(ShowTrayMenu);
+        DispatcherQueue.TryEnqueue(() => ShowTrayMenu());
     }
 
-    private void ShowTrayMenu()
+    private void ShowTrayMenu(bool fromQuickSettings = false)
     {
-        if (!_exiting) ShowSettingsWindow(false);
+        if (!_exiting) ShowSettingsWindow(false, fromQuickSettings);
     }
 
-    private void ShowControlCenter()
+    private void ShowControlCenter(bool fromQuickSettings = false)
     {
         if (_controlCenterWindow is not null)
         {
-            _controlCenterWindow.ShowInForeground();
+            _controlCenterWindow.ShowInForeground(fromQuickSettings);
             return;
         }
-        ShowSettingsWindow(true);
+        ShowSettingsWindow(true, fromQuickSettings);
     }
 
-    private void ToggleControlCenter()
+    private void ToggleControlCenter(bool fromQuickSettings = false)
     {
         if (_exiting) return;
         if (_controlCenterWindow is { } window)
             window.Close(); // Closed releases panels and clears the window reference.
         else
-            ShowControlCenter();
+            ShowControlCenter(fromQuickSettings);
     }
 
     internal void RequestOpenControlCenter() => DispatcherQueue.TryEnqueue(() =>
@@ -240,7 +240,7 @@ public sealed partial class MainWindow : Window
         if (!_exiting) ShowTrayMenu();
     });
 
-    private void ShowSettingsWindow(bool fullWindow)
+    private void ShowSettingsWindow(bool fullWindow, bool fromQuickSettings = false)
     {
         // Critical path: cache only. No WMI, EnergyDrv, registry/service state
         // probing, or schtasks query is performed before the window is shown.
@@ -315,9 +315,9 @@ public sealed partial class MainWindow : Window
             };
 
             if (fullWindow)
-                menu.ShowControlCenter();
+                menu.ShowControlCenter(fromQuickSettings);
             else
-                menu.ShowAtCursor();
+                menu.ShowAtCursor(fromQuickSettings);
 
             // Once the cached UI is already visible, read the dynamic states as
             // one background refresh batch. When complete, apply them to the

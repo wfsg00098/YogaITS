@@ -55,6 +55,20 @@ void Publish(PCWSTR name, bool value = true) noexcept
     CloseHandle(event);
 }
 
+void DismissActiveFlyout() noexcept
+{
+    HWND flyout = GetForegroundWindow();
+    if (!flyout || GetWindowThreadProcessId(flyout, nullptr) != GetCurrentThreadId()) return;
+
+    // Only the foreground flyout on this XAML thread receives its normal
+    // Escape dismissal. Do not send input to the new YogaITS window.
+    HWND focus = GetFocus();
+    HWND target = focus && GetAncestor(focus, GA_ROOT) == flyout ? focus : flyout;
+    auto key = static_cast<LPARAM>(1u | (MapVirtualKeyW(VK_ESCAPE, MAPVK_VK_TO_VSC) << 16));
+    if (PostMessageW(target, WM_KEYDOWN, VK_ESCAPE, key))
+        PostMessageW(target, WM_KEYUP, VK_ESCAPE, key | 0xC0000000);
+}
+
 void OpenWindow(PCWSTR action) noexcept
 {
     if (!ReadSignal(Owner) || !ReadSignal(Enabled) || !ReadSignal(Ready)) return;
@@ -62,6 +76,7 @@ void OpenWindow(PCWSTR action) noexcept
     if (HWND owner = FindWindowW(nullptr, L"YogaITS.QuickSettings.Owner"))
         GetWindowThreadProcessId(owner, &pid);
     if (pid) AllowSetForegroundWindow(pid);
+    DismissActiveFlyout();
     Publish(action);
 }
 
@@ -180,6 +195,10 @@ struct Footer
             icon = controls::Image();
             icon.Width(20);
             icon.Height(20);
+            // Align the optical center with the neighboring footer glyph.
+            media::TranslateTransform iconAlignment;
+            iconAlignment.Y(-1);
+            icon.RenderTransform(iconAlignment);
             icon.IsHitTestVisible(false);
             button.Content(icon);
             button.IsEnabled(false);

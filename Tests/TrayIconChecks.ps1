@@ -41,9 +41,23 @@ for ($i=0; $i -lt $sizes.Count; $i++) {
             }
         }
         if ($visible -eq 0) { throw "Empty icon at $size px." }
+        # The outline must stay closed even in the smallest tray frame.
+        $center = $size / 2.0
+        $radius = $size * 0.4
+        for ($degrees=0; $degrees -lt 360; $degrees+=5) {
+            $angle = $degrees * [math]::PI / 180
+            $coverage = 0
+            # Allow one pixel either way for edges falling between raster samples.
+            foreach ($distance in -1,-0.5,0,0.5,1) {
+                $ringX = [int][math]::Floor($center + ($radius + $distance) * [math]::Cos($angle))
+                $ringY = [int][math]::Floor($center + ($radius + $distance) * [math]::Sin($angle))
+                $coverage = [math]::Max($coverage, $images[0].GetPixel($ringX,$ringY).A)
+            }
+            if ($coverage -lt 64) { throw "Outline seam at $size px ($degrees degrees)." }
+        }
     } finally {
         foreach ($image in $images) { $image.Dispose() }
         foreach ($stream in $streams) { $stream.Dispose() }
     }
 }
-Write-Host 'PASS: 30 transparent monochrome tray frames, identical theme alpha masks, exact black/white ink and complete 16-256 px coverage.'
+Write-Host 'PASS: 30 transparent monochrome tray frames, identical theme alpha masks, closed outlines and complete 16-256 px coverage.'
