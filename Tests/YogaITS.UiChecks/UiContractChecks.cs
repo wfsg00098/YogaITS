@@ -488,6 +488,10 @@ internal static class UiContractChecks
                 .Take(4).SequenceEqual(new[] { "杂项", "开机自启", "关于", "退出" }),
                 "Full-window About must sit between startup and exit in the existing miscellaneous section.");
             Ensure(!miniText.Contains("关于"), "The mini window must keep its existing layout without About.");
+            int iconOptions = Array.IndexOf(fullText, "图标选项");
+            Ensure(iconOptions >= 0 && iconOptions < Array.IndexOf(fullText, "杂项") &&
+                !miniText.Contains("图标选项"),
+                "Icon placement choices belong before miscellaneous in the full window only.");
             var about = AboutDialog.Create();
             Ensure(about.Title as string == "关于 Yoga控制中心" && about.CloseButtonText == "关闭",
                 "Both builds use the same native modal About dialog.");
@@ -499,6 +503,7 @@ internal static class UiContractChecks
                 link.Tag is Uri uri && uri.AbsoluteUri == "https://github.com/wfsg00098/YogaITS"), "About identifies the original repository.");
 #if LIQUID_GLASS
             Ensure(fullText.Any(text => text.Contains("UI选项")), "Glass build must expose the provided material options.");
+            Ensure(Array.IndexOf(fullText, "UI选项") < iconOptions, "Icon placement follows the material options.");
 #else
             Ensure(!fullText.Any(text => text.Contains("UI选项")), "Native build must omit glass options.");
 #endif

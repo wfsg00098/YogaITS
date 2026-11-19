@@ -7,6 +7,7 @@ using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
 using YogaITS.Tray.Services.Updates;
 using YogaITS.Tray.Services.KeyboardBacklight;
+using YogaITS.Tray.Services.QuickSettings;
 using YogaITS.Tray.Services.AlwaysOnUsb;
 
 namespace YogaITS.Tray;
@@ -17,6 +18,9 @@ public sealed partial class MainWindow : Window
     private readonly AppStateCache _stateCache;
 
     private NativeTrayIcon? _trayIcon;
+    private QuickSettingsHost? _quickSettings;
+    private IconPlacement _iconPlacement;
+    private bool _quickSettingsReady;
     private TrayMenuWindow? _trayMenuWindow;
     private TrayMenuWindow? _controlCenterWindow;
     private readonly LenovoGpuWorkingModeService _gpu = new();
@@ -121,15 +125,8 @@ public sealed partial class MainWindow : Window
     private void InitializeHiddenTrayHost()
     {
         _mainHwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-
-        AppRuntimeSnapshot state = _stateCache.Snapshot;
-
-        _trayIcon = new NativeTrayIcon(
-            _mainHwnd,
-            BuildTooltip(state));
-
-        _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ToggleControlCenter);
-        _trayIcon.RightClick += TrayIcon_Click;
+        Title = "YogaITS.QuickSettings.Owner";
+        ApplyIconPlacement(UserSettingsStore.Get("IconPlacement", IconPlacement.Tray));
 
         // Keep the HWND/message pump alive, but never present this host
         // window to the user. Because App.OnLaunched no longer calls Activate(),
@@ -146,13 +143,73 @@ public sealed partial class MainWindow : Window
         _ = ShowWindow(_mainHwnd, SW_HIDE);
     }
 
+    private void SelectIconPlacement(IconPlacement placement)
+    {
+        if (_iconPlacement != placement)
+        {
+            UserSettingsStore.Set("IconPlacement", placement);
+            ApplyIconPlacement(placement);
+        }
+        RefreshIconOptions();
+    }
+
+    private void ApplyIconPlacement(IconPlacement placement)
+    {
+        _iconPlacement = Enum.IsDefined(placement) ? placement : IconPlacement.Tray;
+        bool quick = _iconPlacement == IconPlacement.QuickSettings && QuickSettingsHost.Supported;
+        if (quick && _quickSettings is null)
+        {
+            try
+            {
+                _quickSettings = new QuickSettingsHost(
+                    ready => DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (_exiting || _iconPlacement != IconPlacement.QuickSettings) return;
+                        _quickSettingsReady = ready;
+                        UpdateTrayIcon(!ready);
+                        RefreshIconOptions();
+                    }),
+                    right => DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (_exiting || !_quickSettingsReady || _iconPlacement != IconPlacement.QuickSettings) return;
+                        if (right) ShowTrayMenu();
+                        else ToggleControlCenter();
+                    }));
+            }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Quick Settings initialization failed: " + ex.Message); }
+        }
+        _quickSettings?.SetEnabled(quick);
+        _quickSettingsReady = false;
+        UpdateTrayIcon(true);
+    }
+
+    private void UpdateTrayIcon(bool visible)
+    {
+        if (!visible)
+        {
+            _trayIcon?.Dispose();
+            _trayIcon = null;
+        }
+        else if (_trayIcon is null)
+        {
+            _trayIcon = new NativeTrayIcon(_mainHwnd, BuildTooltip(_stateCache.Snapshot));
+            _trayIcon.LeftClick += () => DispatcherQueue.TryEnqueue(ToggleControlCenter);
+            _trayIcon.RightClick += TrayIcon_Click;
+        }
+    }
+
+    private void RefreshIconOptions() => _controlCenterWindow?.SetIconOptions(
+        _iconPlacement, _quickSettingsReady, QuickSettingsHost.Supported, SelectIconPlacement);
+
     private void TrayIcon_Click()
     {
         DispatcherQueue.TryEnqueue(ShowTrayMenu);
     }
 
     private void ShowTrayMenu()
-        => ShowSettingsWindow(false);
+    {
+        if (!_exiting) ShowSettingsWindow(false);
+    }
 
     private void ShowControlCenter()
     {
@@ -229,6 +286,7 @@ public sealed partial class MainWindow : Window
             if (fullWindow)
             {
                 _controlCenterWindow = menu;
+                RefreshIconOptions();
                 RefreshUpdateCard();
                 _featurePanels = new FeaturePanels(menu, _gpu, _hpd, _color, _audio, _keyboardBacklight, _alwaysOnUsb);
                 bool active = false;
@@ -628,6 +686,8 @@ public sealed partial class MainWindow : Window
 
     private void DisposeTray()
     {
+        _quickSettings?.Dispose();
+        _quickSettings = null;
         try
         {
             _trayMenuWindow?.Close();

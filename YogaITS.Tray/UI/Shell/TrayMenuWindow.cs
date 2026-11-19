@@ -19,12 +19,15 @@ using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.UI;
 using YogaITS.Tray.Services;
+using YogaITS.Tray.Services.QuickSettings;
 using YogaITS.Tray.Services.Updates;
 
 namespace YogaITS.Tray.UI.Shell;
 
 public sealed class TrayMenuWindow : Window
 {
+    private IconOptionsPanel? _iconOptions;
+    private Action<IconPlacement>? _selectIconPlacement;
     private const int BaseWidthDip = 244;
     private const int FallbackMiniHeightDip = 548;
     internal const double OptionTileHeightDip = 48;
@@ -594,6 +597,8 @@ public sealed class TrayMenuWindow : Window
             UiOptions=new UiOptionsPanel(this);
             stack.Children.Add(UiOptions.View);
 #endif
+            _iconOptions ??= new IconOptionsPanel(this, placement => _selectIconPlacement?.Invoke(placement));
+            stack.Children.Add(_iconOptions.View);
             _startupVisual = CreateToggleTile("开机自启", _startupEnabled, StartupButton_Click, "开机自启动，无 UAC");
             _updateButton = CreateOptionTile("", false, true, OptionTileHeightDip, ControlCenterButtonFontSize);
             _updateButton.Click += async (_, _) =>
@@ -622,6 +627,12 @@ public sealed class TrayMenuWindow : Window
 #if LIQUID_GLASS
     internal void RefreshUiOptions()=>UiOptions?.Refresh();
 #endif
+
+    internal void SetIconOptions(IconPlacement placement, bool ready, bool available, Action<IconPlacement> select)
+    {
+        _selectIconPlacement = select;
+        _iconOptions?.Refresh(placement, ready, available);
+    }
 
     public void ApplyKeepAwakeState(GpuKeepAwakeSnapshot state)
     {
@@ -1520,6 +1531,7 @@ public sealed class TrayMenuWindow : Window
 #if LIQUID_GLASS
         UiOptions?.Dispose();
 #endif
+        _iconOptions?.Dispose();
         _performanceChoices?.Dispose();
         _chargeChoicesUi?.Dispose();
         _transientScrollBar?.Dispose();

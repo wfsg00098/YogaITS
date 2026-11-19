@@ -27,7 +27,13 @@ try {
                     }
                 }
                 $bitmap.Save($png,[Drawing.Imaging.ImageFormat]::Png)
-                $frames.Add($png.ToArray())
+                $frame = $png.ToArray()
+                $frames.Add($frame)
+                if ($size -eq 48) {
+                    $theme = if ($ink -eq 0) { 'Light' } else { 'Dark' }
+                    $panel = Join-Path (Split-Path $assets) "Services/QuickSettings/Native/Icon$theme.png"
+                    [IO.File]::WriteAllBytes($panel, $frame)
+                }
             } finally { $png.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
         }
         $stream = [IO.File]::Create((Join-Path $assets $variant[0]))

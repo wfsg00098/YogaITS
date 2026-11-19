@@ -32,10 +32,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Unable to read build commit.' }
 $release = & (Join-Path $root 'scripts/Get-ReleaseVersion.ps1') -CommitSha $commit -Flavor $flavor
 $intermediate = Join-Path $root "obj/$flavor/YogaITS.Tray"
 [IO.Directory]::CreateDirectory($intermediate) | Out-Null
+$locator = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+$msbuild = & $locator -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+if (-not $msbuild) { throw 'Visual Studio 2026 C++ Build Tools (v145) are required.' }
+$quickSettings = Join-Path $projectDir 'Services/QuickSettings/Native'
+& $msbuild (Join-Path $quickSettings 'QuickSettings.vcxproj') /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
+if ($LASTEXITCODE -ne 0) { throw 'Quick Settings component build failed; previous output retained.' }
 if ($LiquidGlass) {
-    $locator = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-    $msbuild = & $locator -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-    if (-not $msbuild) { throw 'Visual Studio 2026 C++ Build Tools (v145) are required.' }
     & $msbuild (Join-Path $projectDir 'UI/Glass/Capture/Native/DesktopCaptureInterop.vcxproj') /m /nologo /v:minimal /p:Configuration=Release /p:Platform=x64
     if ($LASTEXITCODE -ne 0) { throw 'Capture bridge build failed; previous output retained.' }
     $kits = "${env:ProgramFiles(x86)}\Windows Kits\10"
@@ -69,6 +72,7 @@ foreach ($project in $name,'YogaITS.Updater','YogaITS.dGPUKeepAwake','YogaITS.dG
     }
 }
 if (-not (Test-Path (Join-Path $output "$name.pri"))) { throw 'Application PRI is missing.' }
+Copy-Item -LiteralPath (Join-Path $quickSettings 'Output/x64/Release/YogaITS.QuickSettings.dll') -Destination $output
 if (Test-Path (Join-Path $output 'coreclr.dll')) { throw '.NET must remain framework-dependent.' }
 $config = Get-Content (Join-Path $output "$name.runtimeconfig.json") -Raw | ConvertFrom-Json
 if ($config.runtimeOptions.tfm -ne 'net10.0') { throw 'Expected .NET 10.' }
@@ -76,6 +80,7 @@ if ($config.runtimeOptions.tfm -ne 'net10.0') { throw 'Expected .NET 10.' }
 Get-ChildItem $output -Recurse -File -Filter '*.pdb' | Remove-Item -Force
 @{ flavor=$flavor; executable="$name.exe"; version=$release.Version; commit=$release.CommitSha;
     repository='https://github.com/wfsg00098/YogaITS'; checksumManifest='SHA256SUMS.txt';
+    quickSettingsComponent='YogaITS.QuickSettings.dll';
     dotnet='10'; windowsAppSdk=if($LiquidGlass){'2.2.0-app-local'}else{'system-runtime'} } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $output 'build-flavor.json') -Encoding utf8NoBOM
 if ($LiquidGlass) {
@@ -84,7 +89,9 @@ if ($LiquidGlass) {
         if (-not (Test-Path (Join-Path $output $file))) { throw "Missing glass file: $file" }
     }
     $hashes = [ordered]@{}
-    foreach ($file in Get-ChildItem $output -File -Filter '*.dll' | Sort-Object Name) { $hashes[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash }
+    foreach ($file in Get-ChildItem $output -File -Filter '*.dll' | Where-Object Name -ne 'YogaITS.QuickSettings.dll' | Sort-Object Name) {
+        $hashes[$file.Name] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+    }
     @{ windowsAppSdk='2.2.0'; files=$hashes } | ConvertTo-Json -Depth 4 |
         Set-Content -LiteralPath (Join-Path $output 'runtime.lock.json') -Encoding utf8NoBOM
     & (Join-Path $projectDir 'Prepare-Identity.ps1') -OutputDirectory $output

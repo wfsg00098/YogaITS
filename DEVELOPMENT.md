@@ -30,7 +30,7 @@
 ### 前提
 
 - Windows 11 x64、Git、PowerShell 7、[.NET 10 SDK](https://dotnet.microsoft.com/zh-cn/download/dotnet/10.0)，并允许 NuGet 还原依赖。
-- 玻璃版另需 Visual Studio 2026 C++ x64 工具链 **v145**（含 MSBuild 和 C++ 编译器），以及 Windows SDK **10.0.26100.0** 的 `fxc`、`makepri`、`makeappx`、`mt`；脚本通过 `vswhere` 定位 VS。
+- 两版均需 Visual Studio 2026 C++ x64 工具链 **v145** 和包含 C++/WinRT 的 Windows SDK **10.0.26100.0**。玻璃版还使用 SDK 的 `fxc`、`makepri`、`makeappx` 和 `mt`。构建脚本通过 `vswhere` 定位 VS。
 - 运行普通版需兼容的系统 Windows App Runtime；当前依赖 Runtime **2.5.1**，可从[微软下载页](https://learn.microsoft.com/windows/apps/windows-app-sdk/downloads)安装 x64 版本。玻璃版私有部署 SDK 运行文件。两版运行均依赖 .NET 10；运行硬件功能还需要管理员权限及设备对应的联想驱动/服务。
 
 使用 Git 克隆，保留 `.git`：版本脚本读取提交 SHA 和时间，直接下载源码 ZIP 不能代替此流程。
@@ -242,6 +242,12 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 托盘单色图稿为 [YogaITS.Monochrome.png](YogaITS.Tray/Assets/YogaITS.Monochrome.png)，保留圆环与 Y，笔画约为原彩色版的一半。[Write-ApplicationIcons.ps1](scripts/Write-ApplicationIcons.ps1) 用同一 alpha 轮廓生成 16–256 px 的 `YogaITS.Light.ico`（黑）与 `YogaITS.Dark.ico`（白），均内置于程序集，无独立图标文件分发。更新图稿后运行该脚本并提交两份 ICO。`YogaITS.ico` 保留原彩色图案，继续用于 EXE、窗口和玻璃版身份资源。
 
 [ApplicationIcon](YogaITS.Tray/Services/ApplicationIcon.cs) 按 `SystemUsesLightTheme` 选择托盘前景，独立于应用颜色模式；高对比度时按系统文字亮度选择。`NativeTrayIcon` 响应主题通知，通过 `NIM_MODIFY/NIF_ICON` 替换图标；Explorer 重启时重新读取主题，替换或退出即释放旧 HICON，不设轮询。设置含义见[微软设置参考](https://learn.microsoft.com/windows/apps/develop/settings/settings-common)。策略检查覆盖普通/高对比度选择及两种图标在各 DPI 下的加载、释放；实际主题切换仍需实机确认。
+
+「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。普通界面使用 WinUI 胶囊按钮，液态玻璃界面复用 `ChoiceBar`。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它通过 [Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex) 观察底栏，在 `FooterButton` 左侧留 5 DIP 的间隔，复用按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。
+
+快速设置确认挂载后撤下托盘。左键与右键分别复用完整窗口和迷你窗口入口。应用使用会话内事件交换就绪状态及两个打开窗口的命令。禁用或退出后，宿主移除自己的控件。ShellHost 重启时重新连接。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
+
+在 Windows 11 x64 `26300.9974` 上使用隔离测试程序连接系统 ShellHost，验证了与 HidBatteryTray 同屏的相对位置、悬停高亮、左右鼠标事件以及停用和重新启用。隔离测试通过窗口命令的接收结果确认点击路由。
 
 ## 自动更新与发布
 

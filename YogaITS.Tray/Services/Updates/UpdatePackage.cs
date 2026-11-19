@@ -84,6 +84,10 @@ internal static class UpdatePackage
             if (metadata.RootElement.GetProperty("flavor").GetString() != expected ||
                 metadata.RootElement.GetProperty("executable").GetString() != AppBuild.ExecutableFor(flavor))
                 throw new InvalidDataException("更新包构建类型不匹配。");
+            if (metadata.RootElement.TryGetProperty("quickSettingsComponent", out var component) &&
+                (component.GetString() != "YogaITS.QuickSettings.dll" ||
+                 !File.Exists(Path.Combine(directory, "YogaITS.QuickSettings.dll"))))
+                throw new InvalidDataException("更新包缺少快速设置组件。");
             if (metadata.RootElement.TryGetProperty("checksumManifest", out var checksumManifest))
             {
                 if (checksumManifest.GetString() != "SHA256SUMS.txt")
