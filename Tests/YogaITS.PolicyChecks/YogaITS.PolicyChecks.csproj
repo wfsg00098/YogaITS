@@ -6,6 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../YogaITS.Tray/Assets/YogaITS.Light.ico" LogicalName="YogaITS.Icon.Light" />
+    <EmbeddedResource Include="../../YogaITS.Tray/Assets/YogaITS.Dark.ico" LogicalName="YogaITS.Icon.Dark" />
     <Compile Include="../../YogaITS.Tray/Services/AppBuild.cs" Link="AppBuild.cs" />
     <Compile Include="../../YogaITS.Tray/Services/BackgroundImageStore.cs" Link="BackgroundImageStore.cs" />
     <Compile Include="../../YogaITS.Tray/Services/SnapshotRevisions.cs" Link="SnapshotRevisions.cs" />

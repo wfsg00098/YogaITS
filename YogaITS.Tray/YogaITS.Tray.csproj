@@ -33,6 +33,8 @@
   <Import Project="Build/Native.props" Condition="'$(EnableLiquidGlass)' != 'true'" />
   <Import Project="Build/LiquidGlass.props" Condition="'$(EnableLiquidGlass)' == 'true'" />
   <ItemGroup>
+    <EmbeddedResource Include="Assets/YogaITS.Light.ico" LogicalName="YogaITS.Icon.Light" />
+    <EmbeddedResource Include="Assets/YogaITS.Dark.ico" LogicalName="YogaITS.Icon.Dark" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.0" />
     <PackageReference Include="System.Management" Version="10.0.0" />
     <Content Include="../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

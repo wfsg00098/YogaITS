@@ -40,6 +40,7 @@ public sealed class NativeTrayIcon : IDisposable
     private readonly uint _taskbarCreatedMessage;
     private nint _hIcon;
     private ApplicationIcon? _icon;
+    private bool _lightForeground;
     private string _tooltip;
     private bool _added;
     private bool _version4;
@@ -66,7 +67,8 @@ public sealed class NativeTrayIcon : IDisposable
             throw new InvalidOperationException(
                 $"无法注册 TaskbarCreated 消息。Win32 error={Marshal.GetLastWin32Error()}");
 
-        _icon = ApplicationIcon.Load(small: true);
+        _lightForeground = ApplicationIcon.UseLightForeground();
+        _icon = ApplicationIcon.LoadThemed(small: true, _lightForeground, GetDpiForWindow(_hwnd));
         _hIcon = _icon.DangerousGetHandle();
 
         if (!SetWindowSubclass(_hwnd, _subclassProc, SubclassId, 0))
@@ -122,9 +124,14 @@ public sealed class NativeTrayIcon : IDisposable
             // so our previous registration no longer exists even though this
             // process and HWND are still alive. Recreate the icon and opt back
             // into NOTIFYICON_VERSION_4. No polling is required.
+            _added = false;
+            RefreshAppearance();
             _ = AddIconToShell();
             return 0;
         }
+
+        if (uMsg is 0x001A or 0x031A) // WM_SETTINGCHANGE / WM_THEMECHANGED
+            RefreshAppearance();
 
         if (uMsg == CallbackMessage)
         {
@@ -181,6 +188,35 @@ public sealed class NativeTrayIcon : IDisposable
             uMsg,
             wParam,
             lParam);
+    }
+
+    private void RefreshAppearance()
+    {
+        if (_disposed) return;
+        try
+        {
+            bool lightForeground = ApplicationIcon.UseLightForeground();
+            if (lightForeground == _lightForeground) return;
+            ApplicationIcon? replacement = ApplicationIcon.LoadThemed(small: true, lightForeground, GetDpiForWindow(_hwnd));
+            try
+            {
+                if (_added)
+                {
+                    var data = CreateData(_tooltip);
+                    data.uFlags = NIF_ICON;
+                    data.hIcon = replacement.DangerousGetHandle();
+                    if (!Shell_NotifyIcon(NIM_MODIFY, ref data)) return;
+                }
+                var previous = _icon;
+                _icon = replacement;
+                _hIcon = replacement.DangerousGetHandle();
+                _lightForeground = lightForeground;
+                replacement = null;
+                previous?.Dispose();
+            }
+            finally { replacement?.Dispose(); }
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Tray icon theme refresh failed: " + ex.Message); }
     }
 
     private bool AddIconToShell()
@@ -306,6 +342,9 @@ public sealed class NativeTrayIcon : IDisposable
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern uint RegisterWindowMessageW(string lpString);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint hwnd);
 
     [DllImport("comctl32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -82,6 +82,7 @@ Start-Process (Join-Path $directory 'YogaITS.Tray.exe') -WorkingDirectory $direc
 | [YogaITS.UiPolicyChecks](Tests/YogaITS.UiPolicyChecks/) | DPI、布局、选择/手势、玻璃物理、捕获生命周期、图标身份和窗口缩放状态。部分检查创建不显示的 HWND。 |
 | [UiContractChecks.ps1](Tests/UiContractChecks.ps1) | 重编译同一套 UI 为隔离宿主，验证控件、布局及构建边界；玻璃版另起进程，在不激活的屏幕外窗口验证真实 XAML/Composition 连接、能力后到及资源恢复。不捕获屏幕或初始化硬件服务。 |
 | [IdentityIconChecks.ps1](Tests/IdentityIconChecks.ps1) | 玻璃版图标透明度、资源索引、身份版本；不注册包。 |
+| [TrayIconChecks.ps1](Tests/TrayIconChecks.ps1) | 黑白托盘 ICO 的尺寸、透明轮廓一致性与单色值。 |
 | [YogaITS.ShaderChecks](Tests/YogaITS.ShaderChecks/) | C++ 编译及 WARP 合成图像，验证 shader 边界、曲面、DPI 和采样；由玻璃版脚本调用，不捕获桌面。 |
 
 可单独运行：
@@ -237,6 +238,10 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 玻璃版稀疏身份为 `YogaITS` / `CN=YogaITS`。启动校验路径及 manifest 版本，需要时由独立 PowerShell 等待原进程退出后注册并恢复。脚本不启用开发者模式或伪造授权；注册受限时保留可用背景或原生回退。构建不注册包。
 
 [Prepare-Identity.ps1](YogaITS.Tray/Prepare-Identity.ps1) 从内置 ICO 生成透明亮暗图标变体，并将 shell 图标与应用/依赖 PRI 合并，复制到发布根和 `CaptureIdentity/`。不能用仅含图标的 `resources.pri` 遮盖 WinUI 主题资源；保留 `YogaITS.Tray.pri`。修改身份资源需同步递增 manifest 版本，更新包必须完整携带索引及变体。
+
+托盘单色图稿为 [YogaITS.Monochrome.png](YogaITS.Tray/Assets/YogaITS.Monochrome.png)，保留圆环与 Y，笔画约为原彩色版的一半。[Write-ApplicationIcons.ps1](scripts/Write-ApplicationIcons.ps1) 用同一 alpha 轮廓生成 16–256 px 的 `YogaITS.Light.ico`（黑）与 `YogaITS.Dark.ico`（白），均内置于程序集，无独立图标文件分发。更新图稿后运行该脚本并提交两份 ICO。`YogaITS.ico` 保留原彩色图案，继续用于 EXE、窗口和玻璃版身份资源。
+
+[ApplicationIcon](YogaITS.Tray/Services/ApplicationIcon.cs) 按 `SystemUsesLightTheme` 选择托盘前景，独立于应用颜色模式；高对比度时按系统文字亮度选择。`NativeTrayIcon` 响应主题通知，通过 `NIM_MODIFY/NIF_ICON` 替换图标；Explorer 重启时重新读取主题，替换或退出即释放旧 HICON，不设轮询。设置含义见[微软设置参考](https://learn.microsoft.com/windows/apps/develop/settings/settings-common)。策略检查覆盖普通/高对比度选择及两种图标在各 DPI 下的加载、释放；实际主题切换仍需实机确认。
 
 ## 自动更新与发布
 

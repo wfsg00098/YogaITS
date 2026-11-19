@@ -321,6 +321,10 @@ var failed = HpdFeatureProfile.Create(0x40, Hpd(1, 3), -1);
 Check(!failed.WakeSleepSection && !failed.AutoVideoPause && !failed.CameraAssist, "Failed HPD read hides features");
 
 Check(AppLaunchPolicy.ShouldOpenControlCenter([]), "Argument-free launch opens the control center");
+Check(!ApplicationIcon.SelectLightForeground(1) && ApplicationIcon.SelectLightForeground(0) &&
+    ApplicationIcon.SelectLightForeground(null), "Shell icons use black on a light taskbar and white on a dark/default taskbar");
+Check(ApplicationIcon.SelectLightForeground(1, 0xFFFFFF) && !ApplicationIcon.SelectLightForeground(0, 0),
+    "High contrast foreground overrides the normal shell color preference");
 int iconIndex = Array.IndexOf(args, "--icon-executable");
 if (iconIndex >= 0)
 {
@@ -331,6 +335,15 @@ if (iconIndex >= 0)
         Check(!icon.IsInvalid && !icon.IsClosed, "Published executable supplies a valid embedded icon handle");
         icon.Dispose();
         Check(icon.IsClosed, "Extracted icon ownership is released safely");
+    }
+    foreach (bool light in new[] { false, true })
+    foreach (bool small in new[] { false, true })
+    foreach (uint dpi in new[] { 96u, 120u, 144u, 192u, 240u, 288u, 384u })
+    {
+        using var icon = ApplicationIcon.LoadThemed(small, light, dpi);
+        Check(!icon.IsInvalid && !icon.IsClosed, "Both embedded monochrome themes load at every supported shell DPI");
+        icon.Dispose();
+        Check(icon.IsClosed, "Replaced themed icons release their owned HICON");
     }
 }
 foreach (string[] arguments in new[] { new[] { "--startup" }, new[] { "--STARTUP" }, new[] { "other", "--startup" } })

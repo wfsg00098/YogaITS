@@ -99,6 +99,7 @@ if ($LiquidGlass) {
 & (Join-Path $root 'scripts/Copy-DistributionNotices.ps1') -OutputDirectory $output -Flavor $flavor
 & (Join-Path $root 'scripts/Write-Checksums.ps1') -Directory $output
 if ($Checks) {
+    & (Join-Path $root 'Tests/TrayIconChecks.ps1')
     & (Join-Path $root 'Tests/ReleaseVersionChecks.ps1')
     & (Join-Path $root 'Tests/DistributionChecks.ps1')
     dotnet run --project (Join-Path $root 'Tests/YogaITS.UiPolicyChecks') -c Release "-p:EnableLiquidGlass=$enabled"
