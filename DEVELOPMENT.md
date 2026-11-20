@@ -239,13 +239,15 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 
 [Prepare-Identity.ps1](YogaITS.Tray/Prepare-Identity.ps1) 从内置 ICO 生成透明亮暗图标变体，并将 shell 图标与应用/依赖 PRI 合并，复制到发布根和 `CaptureIdentity/`。不能用仅含图标的 `resources.pri` 遮盖 WinUI 主题资源；保留 `YogaITS.Tray.pri`。修改身份资源需同步递增 manifest 版本，更新包必须完整携带索引及变体。
 
-[Write-ApplicationIcons.ps1](scripts/Write-ApplicationIcons.ps1) 以同一居中坐标绘制闭合圆环与 Y，再缩采样生成 16–256 px 的黑白托盘 ICO、快速设置 PNG 和 [图稿预览](YogaITS.Tray/Assets/YogaITS.Monochrome.png)。圆环在 16 px 时仍保持超过一个像素的笔画。两版内置生成的资源。`YogaITS.ico` 保留原彩色图案，继续用于 EXE、窗口和玻璃版身份资源。
+[Write-ApplicationIcons.ps1](scripts/Write-ApplicationIcons.ps1) 以同一居中坐标绘制闭合圆环与 Y，再缩采样生成 16–256 px 的黑白托盘 ICO 和 [图稿预览](YogaITS.Tray/Assets/YogaITS.Monochrome.png)。圆环在 16 px 时仍保持超过一个像素的笔画。两版内置生成的资源。`YogaITS.ico` 保留原彩色图案，继续用于 EXE、窗口和玻璃版身份资源。
 
 [ApplicationIcon](YogaITS.Tray/Services/ApplicationIcon.cs) 按 `SystemUsesLightTheme` 选择托盘前景，独立于应用颜色模式；高对比度时按系统文字亮度选择。`NativeTrayIcon` 响应主题通知，通过 `NIM_MODIFY/NIF_ICON` 替换图标；Explorer 重启时重新读取主题，替换或退出即释放旧 HICON，不设轮询。设置含义见[微软设置参考](https://learn.microsoft.com/windows/apps/develop/settings/settings-common)。策略检查覆盖普通/高对比度选择及两种图标在各 DPI 下的加载、释放；实际主题切换仍需实机确认。
 
 「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。普通界面使用 WinUI 胶囊按钮，液态玻璃界面复用 `ChoiceBar`。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它通过 [Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex) 观察底栏，在 `FooterButton` 左侧留 5 DIP 的间隔，复用按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。
 
 快速设置确认挂载后撤下托盘。左键与右键分别复用完整窗口和迷你窗口入口。应用使用会话内事件交换就绪状态及两个打开窗口的命令。禁用或退出后，宿主移除自己的控件。ShellHost 重启时重新连接。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
+
+快速设置用独立的矢量图层绘制闭合圆环和 Y，绕开外壳按钮模板的内容裁剪。图形跟随相邻齿轮的图标尺寸、中心和前景画刷，在 16 DIP 图标框内使用 1 DIP 笔画。按钮继续使用系统模板提供悬停与点击状态。齿轮图标的前景来自 [WinUI AnimatedIcon 的基类](https://learn.microsoft.com/en-us/windows/winui/api/microsoft.ui.xaml.controls.animatedicon?view=winui-2.8)。
 
 快速设置的点击在对应的前台 XAML 线程上请求收起面板，并交接前台激活。由该入口打开的两个窗口都排到现有置顶窗口之前。完整窗口失焦后恢复普通层级。若窗口未获得焦点，启动时的临时置顶约一秒后取消。窗口层级操作使用 [SetWindowPos](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setwindowpos)。
 

@@ -57,11 +57,6 @@ try {
                 if ($size -eq 256 -and $ink -eq 0) {
                     [IO.File]::WriteAllBytes((Join-Path $assets 'YogaITS.Monochrome.png'), $frame)
                 }
-                if ($size -eq 48) {
-                    $theme = if ($ink -eq 0) { 'Light' } else { 'Dark' }
-                    $panel = Join-Path (Split-Path $assets) "Services/QuickSettings/Native/Icon$theme.png"
-                    [IO.File]::WriteAllBytes($panel, $frame)
-                }
             } finally { $png.Dispose(); $graphics.Dispose(); $bitmap.Dispose() }
         }
         $stream = [IO.File]::Create((Join-Path $assets $variant[0]))

@@ -28,8 +28,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Panel.cpp" /><ResourceCompile Include="Panel.rc" />
-    <Image Include="IconLight.png" /><Image Include="IconDark.png" />
+    <ClCompile Include="Panel.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

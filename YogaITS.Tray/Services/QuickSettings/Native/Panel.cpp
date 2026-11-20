@@ -4,14 +4,13 @@
 #undef GetCurrentTime
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
-#include <winrt/Windows.UI.Xaml.Media.Imaging.h>
+#include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <algorithm>
 #include <atomic>
 #include <memory>
@@ -22,7 +21,7 @@ namespace xaml = winrt::Windows::UI::Xaml;
 namespace controls = xaml::Controls;
 namespace media = xaml::Media;
 namespace wf = winrt::Windows::Foundation;
-namespace streams = winrt::Windows::Storage::Streams;
+namespace shapes = xaml::Shapes;
 
 namespace {
 constexpr CLSID TapClass{0xa3b07347,0xa74a,0x4486,{0xa3,0x97,0x2d,0x71,0x59,0x4b,0x96,0x5a}};
@@ -34,6 +33,7 @@ constexpr auto Right = L"Local\\YogaITS.QuickSettings.Right";
 constexpr auto Tag = L"YogaITS.QuickSettings.Button";
 constexpr unsigned RefreshMessage = WM_APP + 1;
 constexpr double Gap = 5;
+constexpr double GlyphSize = 16;
 HMODULE module;
 std::atomic<bool> subscribed;
 
@@ -119,51 +119,72 @@ bool Overlaps(wf::Rect a, wf::Rect b)
         a.Y < b.Y + b.Height && b.Y < a.Y + a.Height;
 }
 
-winrt::fire_and_forget SetImage(media::Imaging::BitmapImage image, uint8_t const* data, DWORD length)
+shapes::Path CreateGlyph()
 {
-    try
+    media::EllipseGeometry ring;
+    ring.Center({8, 8});
+    ring.RadiusX(6.5);
+    ring.RadiusY(6.5);
+
+    media::GeometryGroup outline;
+    outline.Children().Append(ring);
+    auto line = [&](wf::Point start, wf::Point end)
     {
-        streams::InMemoryRandomAccessStream stream;
-        streams::DataWriter writer(stream);
-        writer.WriteBytes(winrt::array_view<uint8_t const>(data, data + length));
-        co_await writer.StoreAsync();
-        writer.DetachStream();
-        stream.Seek(0);
-        co_await image.SetSourceAsync(stream);
-    }
-    catch (...) { OutputDebugStringW(L"YogaITS: Quick Settings icon could not be decoded.\n"); }
+        media::LineGeometry segment;
+        segment.StartPoint(start);
+        segment.EndPoint(end);
+        outline.Children().Append(segment);
+    };
+    line({5, 5.7f}, {8, 8.2f});
+    line({11, 5.7f}, {8, 8.2f});
+    line({8, 8.2f}, {8, 11.4f});
+
+    shapes::Path glyph;
+    glyph.Data(outline);
+    glyph.Stretch(media::Stretch::None);
+    glyph.StrokeThickness(1);
+    glyph.StrokeStartLineCap(media::PenLineCap::Round);
+    glyph.StrokeEndLineCap(media::PenLineCap::Round);
+    return glyph;
 }
 
-media::Imaging::BitmapImage ImageFor(bool lightInk)
+xaml::FrameworkElement GearGlyph(controls::Button const& settings)
 {
-    HRSRC resource = FindResourceW(module, MAKEINTRESOURCEW(lightInk ? 102 : 101), MAKEINTRESOURCEW(10));
-    if (!resource) winrt::throw_last_error();
-    HGLOBAL handle = LoadResource(module, resource);
-    auto data = static_cast<uint8_t const*>(LockResource(handle));
-    DWORD length = SizeofResource(module, resource);
-    if (!data || !length) throw winrt::hresult_error(E_FAIL);
-    media::Imaging::BitmapImage result;
-    SetImage(result, data, length);
+    if (auto content = settings.Content().try_as<controls::IconElement>()) return content;
+    xaml::FrameworkElement result{nullptr};
+    Visit(settings, [&](xaml::FrameworkElement const& element)
+    {
+        if (element.Name() != L"FooterButtonIcon") return false;
+        result = element;
+        return true;
+    });
     return result;
 }
 
 struct Footer
 {
     winrt::weak_ref<controls::Grid> grid;
+    controls::Grid slotHost{nullptr};
     controls::Button button{nullptr};
-    controls::Image icon{nullptr};
-    media::Imaging::BitmapImage light{nullptr}, dark{nullptr};
+    controls::Viewbox icon{nullptr};
+    shapes::Path glyph{nullptr};
+    media::TranslateTransform iconOffset{nullptr};
+    media::SolidColorBrush fallbackInk{nullptr};
 
     void Remove()
     {
-        if (!button) return;
+        if (!slotHost) return;
         if (auto root = grid.get())
         {
             uint32_t index;
-            if (root.Children().IndexOf(button, index)) root.Children().RemoveAt(index);
+            if (root.Children().IndexOf(slotHost, index)) root.Children().RemoveAt(index);
         }
+        slotHost = nullptr;
         button = nullptr;
         icon = nullptr;
+        glyph = nullptr;
+        iconOffset = nullptr;
+        fallbackInk = nullptr;
     }
 
     bool Refresh(controls::Grid const& root, controls::Button const& settings)
@@ -191,56 +212,82 @@ struct Footer
             for (auto const& child : root.Children())
                 if (auto element = child.try_as<xaml::FrameworkElement>(); element &&
                     winrt::unbox_value_or<winrt::hstring>(element.Tag(), L"") == Tag) return false;
+            slotHost = controls::Grid();
+            slotHost.Tag(winrt::box_value(Tag));
+            slotHost.HorizontalAlignment(xaml::HorizontalAlignment::Left);
+            slotHost.VerticalAlignment(xaml::VerticalAlignment::Top);
             button = controls::Button();
-            icon = controls::Image();
-            icon.Width(20);
-            icon.Height(20);
-            // Align the optical center with the neighboring footer glyph.
-            media::TranslateTransform iconAlignment;
-            iconAlignment.Y(-1);
-            icon.RenderTransform(iconAlignment);
+            // Reuse the shell button for interaction. Keep the glyph outside
+            // its content presenter so its padding and clip cannot cut the ring.
+            glyph = CreateGlyph();
+            controls::Canvas canvas;
+            canvas.Width(GlyphSize);
+            canvas.Height(GlyphSize);
+            canvas.Children().Append(glyph);
+            icon = controls::Viewbox();
+            icon.Child(canvas);
+            icon.Stretch(media::Stretch::Uniform);
+            icon.HorizontalAlignment(xaml::HorizontalAlignment::Center);
+            icon.VerticalAlignment(xaml::VerticalAlignment::Center);
+            iconOffset = media::TranslateTransform();
+            icon.RenderTransform(iconOffset);
             icon.IsHitTestVisible(false);
-            button.Content(icon);
+            fallbackInk = media::SolidColorBrush();
             button.IsEnabled(false);
-            button.Tag(winrt::box_value(Tag));
             xaml::Automation::AutomationProperties::SetName(button, L"Yoga控制中心");
             xaml::Automation::AutomationProperties::SetAutomationId(button, Tag);
             controls::ToolTipService::SetToolTip(button, winrt::box_value(L"Yoga控制中心"));
-            button.HorizontalAlignment(xaml::HorizontalAlignment::Left);
-            button.VerticalAlignment(xaml::VerticalAlignment::Top);
+            button.HorizontalAlignment(xaml::HorizontalAlignment::Stretch);
+            button.VerticalAlignment(xaml::VerticalAlignment::Stretch);
             button.Click([](auto&&, auto&&) { OpenWindow(Left); });
             button.RightTapped([](auto&&, xaml::Input::RightTappedRoutedEventArgs const& args)
             {
                 args.Handled(true);
                 OpenWindow(Right);
             });
-            controls::Grid::SetColumnSpan(button, std::max(1u, root.ColumnDefinitions().Size()));
-            controls::Grid::SetRowSpan(button, std::max(1u, root.RowDefinitions().Size()));
-            root.Children().Append(button);
+            slotHost.Children().Append(button);
+            slotHost.Children().Append(icon);
+            controls::Grid::SetColumnSpan(slotHost, std::max(1u, root.ColumnDefinitions().Size()));
+            controls::Grid::SetRowSpan(slotHost, std::max(1u, root.RowDefinitions().Size()));
+            root.Children().Append(slotHost);
         }
         if (button.Style() != settings.Style()) button.Style(settings.Style());
         if (button.Template() != settings.Template()) button.Template(settings.Template());
-        if (button.Padding() != settings.Padding()) button.Padding(settings.Padding());
-        button.HorizontalContentAlignment(xaml::HorizontalAlignment::Center);
-        button.VerticalContentAlignment(xaml::VerticalAlignment::Center);
         if (button.BorderThickness() != settings.BorderThickness()) button.BorderThickness(settings.BorderThickness());
         if (button.CornerRadius() != settings.CornerRadius()) button.CornerRadius(settings.CornerRadius());
         if (button.Background() != settings.Background()) button.Background(settings.Background());
         if (button.BorderBrush() != settings.BorderBrush()) button.BorderBrush(settings.BorderBrush());
         xaml::Thickness position{slot.X, slot.Y, 0, 0};
-        if (button.Margin() != position) button.Margin(position);
-        if (button.Width() != slot.Width) button.Width(slot.Width);
-        if (button.Height() != slot.Height) button.Height(slot.Height);
-        bool lightInk = settings.ActualTheme() == xaml::ElementTheme::Dark;
-        if (auto brush = settings.Foreground().try_as<media::SolidColorBrush>())
+        if (slotHost.Margin() != position) slotHost.Margin(position);
+        if (slotHost.Width() != slot.Width) slotHost.Width(slot.Width);
+        if (slotHost.Height() != slot.Height) slotHost.Height(slot.Height);
+        auto gear = GearGlyph(settings);
+        double size = GlyphSize;
+        double x = 0, y = 0;
+        if (gear && gear.ActualWidth() > 0 && gear.ActualHeight() > 0)
         {
-            auto color = brush.Color();
-            lightInk = 299 * color.R + 587 * color.G + 114 * color.B >= 128000;
+            auto anchor = Bounds(gear, root);
+            size = std::min(anchor.Width, anchor.Height);
+            x = anchor.X + anchor.Width / 2.0 - bounds.X - bounds.Width / 2.0;
+            // The gear's visible stroke sits 1 DIP above its icon viewport center.
+            y = anchor.Y + anchor.Height / 2.0 - bounds.Y - bounds.Height / 2.0 - 1;
         }
-        auto& source = lightInk ? light : dark;
-        if (!source) source = ImageFor(lightInk);
-        if (source.PixelWidth() > 0 && icon.Source() != source) icon.Source(source);
-        bool ready = button.IsLoaded() && button.ActualWidth() > 0 && icon.Source();
+        if (icon.Width() != size) icon.Width(size);
+        if (icon.Height() != size) icon.Height(size);
+        if (iconOffset.X() != x) iconOffset.X(x);
+        if (iconOffset.Y() != y) iconOffset.Y(y);
+        media::Brush ink{nullptr};
+        if (auto nativeIcon = gear.try_as<controls::IconElement>()) ink = nativeIcon.Foreground();
+        if (!ink) ink = settings.Foreground();
+        if (!ink)
+        {
+            auto color = settings.ActualTheme() == xaml::ElementTheme::Dark
+                ? winrt::Windows::UI::Colors::White() : winrt::Windows::UI::Colors::Black();
+            if (fallbackInk.Color() != color) fallbackInk.Color(color);
+            ink = fallbackInk;
+        }
+        if (glyph.Stroke() != ink) glyph.Stroke(ink);
+        bool ready = button.IsLoaded() && button.ActualWidth() > 0 && icon.ActualWidth() > 0;
         if (button.IsEnabled() != ready) button.IsEnabled(ready);
         return ready;
     }
