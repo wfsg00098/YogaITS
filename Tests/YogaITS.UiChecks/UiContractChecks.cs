@@ -12,6 +12,7 @@ using Microsoft.UI.Xaml.Controls;
 using YogaITS.Tray.Services;
 using YogaITS.Tray.Services.AlwaysOnUsb;
 using YogaITS.Tray.Services.KeyboardBacklight;
+using YogaITS.Tray.Services.QuickSettings;
 using YogaITS.Tray.Services.Hpd;
 using YogaITS.Tray.Services.Color;
 using YogaITS.Tray.Services.Elevoc;
@@ -492,6 +493,7 @@ internal static class UiContractChecks
             Ensure(iconOptions >= 0 && iconOptions < Array.IndexOf(fullText, "杂项") &&
                 !miniText.Contains("图标选项"),
                 "Icon placement choices belong before miscellaneous in the full window only.");
+            CheckIconPlacementPresentation(full);
             var about = AboutDialog.Create();
             Ensure(about.Title as string == "关于 Yoga控制中心" && about.CloseButtonText == "关闭",
                 "Both builds use the same native modal About dialog.");
@@ -509,6 +511,28 @@ internal static class UiContractChecks
 #endif
         }
         finally { mini.Close(); full.Close(); }
+    }
+
+    private static void CheckIconPlacementPresentation(TrayMenuWindow window)
+    {
+        var presentation = Tree(window.Content).OfType<OptionGroupPresentation>()
+            .Single(group => TextIn(group).Contains("任务栏托盘"));
+        var nativeGrid = presentation.Children.OfType<Grid>().Single(grid => grid.GetType() == typeof(Grid));
+        var cards = Tree(nativeGrid).OfType<Button>().ToArray();
+        Ensure(cards.Length == 2 && nativeGrid.ColumnDefinitions.Count == 2,
+            "WinUI must show the two icon placement choices as individual card buttons.");
+        Ensure(AutomationProperties.GetItemStatus(cards[0]) == "已选中" &&
+            AutomationProperties.GetItemStatus(cards[1]) == "未选中",
+            "Only the tray card is selected by default.");
+        window.SetIconOptions(IconPlacement.QuickSettings, true, true,
+            _ => throw new InvalidOperationException("Rendering must not change the icon placement preference."));
+        Ensure(AutomationProperties.GetItemStatus(cards[0]) == "未选中" &&
+            AutomationProperties.GetItemStatus(cards[1]) == "已选中",
+            "Changing the icon placement snapshot transfers selection to the other card.");
+#if LIQUID_GLASS
+        Ensure(presentation.Children.OfType<GlassOptionBar>().Count() == 1,
+            "Liquid glass must use the shared track and capsule for icon placement.");
+#endif
     }
 
     private static async Task CheckAlwaysOnUsbPanelAsync()

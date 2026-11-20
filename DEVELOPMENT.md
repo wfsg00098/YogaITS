@@ -243,7 +243,7 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 
 [ApplicationIcon](YogaITS.Tray/Services/ApplicationIcon.cs) 按 `SystemUsesLightTheme` 选择托盘前景，独立于应用颜色模式；高对比度时按系统文字亮度选择。`NativeTrayIcon` 响应主题通知，通过 `NIM_MODIFY/NIF_ICON` 替换图标；Explorer 重启时重新读取主题，替换或退出即释放旧 HICON，不设轮询。设置含义见[微软设置参考](https://learn.microsoft.com/windows/apps/develop/settings/settings-common)。策略检查覆盖普通/高对比度选择及两种图标在各 DPI 下的加载、释放；实际主题切换仍需实机确认。
 
-「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。普通界面使用 WinUI 胶囊按钮，液态玻璃界面复用 `ChoiceBar`。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它通过 [Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex) 观察底栏，在 `FooterButton` 左侧留 5 DIP 的间隔，复用按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。
+「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。选项复用 `HardwareChoiceGroup`，WinUI 3 显示两张互斥卡片，液态玻璃显示导轨和胶囊。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它通过 [Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex) 观察底栏，在 `FooterButton` 左侧留 5 DIP 的间隔，复用按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。
 
 快速设置确认挂载后撤下托盘。左键与右键分别复用完整窗口和迷你窗口入口。应用使用会话内事件交换就绪状态及两个打开窗口的命令。禁用或退出后，宿主移除自己的控件。ShellHost 重启时重新连接。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
 
