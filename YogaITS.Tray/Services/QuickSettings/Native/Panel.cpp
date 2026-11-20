@@ -34,6 +34,9 @@ constexpr auto Tag = L"YogaITS.QuickSettings.Button";
 constexpr unsigned RefreshMessage = WM_APP + 1;
 constexpr double Gap = 5;
 constexpr double GlyphSize = 16;
+// The static outline has more fully covered pixels than the animated gear.
+// Keep the shared theme brush and soften the composited stroke slightly.
+constexpr double GlyphOpacity = 0.93;
 HMODULE module;
 std::atomic<bool> subscribed;
 
@@ -232,6 +235,7 @@ struct Footer
             iconOffset = media::TranslateTransform();
             icon.RenderTransform(iconOffset);
             icon.IsHitTestVisible(false);
+            icon.Opacity(GlyphOpacity);
             fallbackInk = media::SolidColorBrush();
             button.IsEnabled(false);
             xaml::Automation::AutomationProperties::SetName(button, L"Yoga控制中心");

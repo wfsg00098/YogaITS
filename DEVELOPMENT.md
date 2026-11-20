@@ -247,7 +247,7 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 
 快速设置确认挂载后撤下托盘。左键与右键分别复用完整窗口和迷你窗口入口。应用使用会话内事件交换就绪状态及两个打开窗口的命令。禁用或退出后，宿主移除自己的控件。ShellHost 重启时重新连接。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
 
-快速设置用独立的矢量图层绘制闭合圆环和 Y，绕开外壳按钮模板的内容裁剪。图形跟随相邻齿轮的图标尺寸、中心和前景画刷，在 16 DIP 图标框内使用 1 DIP 笔画。按钮继续使用系统模板提供悬停与点击状态。齿轮图标的前景来自 [WinUI AnimatedIcon 的基类](https://learn.microsoft.com/en-us/windows/winui/api/microsoft.ui.xaml.controls.animatedicon?view=winui-2.8)。
+快速设置用独立的矢量图层绘制闭合圆环和 Y，绕开外壳按钮模板的内容裁剪。图形跟随相邻齿轮的图标尺寸、中心和前景画刷，在 16 DIP 图标框内使用 1 DIP 笔画。静态轮廓以 93% 不透明度合成，让笔画深浅接近齿轮的动画图形。按钮继续使用系统模板提供悬停与点击状态。齿轮图标的前景来自 [WinUI AnimatedIcon 的基类](https://learn.microsoft.com/en-us/windows/winui/api/microsoft.ui.xaml.controls.animatedicon?view=winui-2.8)。
 
 快速设置的点击在对应的前台 XAML 线程上请求收起面板，并交接前台激活。由该入口打开的两个窗口都排到现有置顶窗口之前。完整窗口失焦后恢复普通层级。若窗口未获得焦点，启动时的临时置顶约一秒后取消。窗口层级操作使用 [SetWindowPos](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setwindowpos)。
 
