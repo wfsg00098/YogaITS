@@ -181,10 +181,32 @@ wf::Rect Bounds(xaml::FrameworkElement const& element, controls::Grid const& gri
         {0, 0, static_cast<float>(element.ActualWidth()), static_cast<float>(element.ActualHeight())});
 }
 
-bool Overlaps(wf::Rect a, wf::Rect b)
+wf::Rect FindFooterSlot(controls::Grid const& root, controls::Button const& settings,
+    controls::Button const& button, wf::Rect bounds)
 {
-    return a.X < b.X + b.Width && b.X < a.X + a.Width &&
-        a.Y < b.Y + b.Height && b.Y < a.Y + a.Height;
+    double left = bounds.X - bounds.Width - Gap;
+    std::vector<wf::Rect> blockers;
+    Visit(root, [&](xaml::FrameworkElement const& element)
+    {
+        bool oem = element.Name() == L"OEMButton";
+        auto control = element.try_as<controls::Primitives::ButtonBase>();
+        if (element == settings || element == button || (!oem && (!control || !control.IsHitTestVisible())) ||
+            element.ActualWidth() <= 0 || element.ActualHeight() <= 0) return false;
+        auto other = Bounds(element, root);
+        if (other.X < bounds.X && other.Y < bounds.Y + bounds.Height && bounds.Y < other.Y + other.Height)
+        {
+            if (oem) left = std::min(left, other.X - bounds.Width - Gap);
+            blockers.push_back(other);
+        }
+        return false;
+    });
+    // Walk left from the gear so native OEM launchers and other footer buttons
+    // keep their spacing. Reuse the nearest gap that fits our full button.
+    std::ranges::sort(blockers, std::ranges::greater{}, &wf::Rect::X);
+    for (auto const& other : blockers)
+        if (left < other.X + other.Width + Gap && other.X < left + bounds.Width + Gap)
+            left = other.X - bounds.Width - Gap;
+    return {static_cast<float>(left), bounds.Y, bounds.Width, bounds.Height};
 }
 
 shapes::Path CreateGlyph()
@@ -270,19 +292,8 @@ struct Footer
     bool Refresh(controls::Grid const& root, controls::Button const& settings, HWND bridge)
     {
         auto bounds = Bounds(settings, root);
-        wf::Rect slot{static_cast<float>(bounds.X - bounds.Width - Gap), bounds.Y, bounds.Width, bounds.Height};
+        auto slot = FindFooterSlot(root, settings, button, bounds);
         if (slot.X < 0 || slot.Width <= 0 || slot.Height <= 0)
-        {
-            Remove();
-            return false;
-        }
-        bool occupied = Visit(root, [&](xaml::FrameworkElement const& element)
-        {
-            auto control = element.try_as<controls::Primitives::ButtonBase>();
-            return control && control != settings && control != button && control.IsHitTestVisible() &&
-                control.ActualWidth() > 0 && control.ActualHeight() > 0 && Overlaps(slot, Bounds(control, root));
-        });
-        if (occupied)
         {
             Remove();
             return false;

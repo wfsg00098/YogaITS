@@ -243,7 +243,7 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 
 [ApplicationIcon](YogaITS.Tray/Services/ApplicationIcon.cs) 按 `SystemUsesLightTheme` 选择托盘前景，独立于应用颜色模式；高对比度时按系统文字亮度选择。`NativeTrayIcon` 响应主题通知，通过 `NIM_MODIFY/NIF_ICON` 替换图标；Explorer 重启时重新读取主题，替换或退出即释放旧 HICON，不设轮询。设置含义见[微软设置参考](https://learn.microsoft.com/windows/apps/develop/settings/settings-common)。策略检查覆盖普通/高对比度选择及两种图标在各 DPI 下的加载、释放；实际主题切换仍需实机确认。
 
-「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。选项复用 `HardwareChoiceGroup`，WinUI 3 显示两张互斥卡片，液态玻璃显示导轨和胶囊。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它通过 [Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex) 观察底栏，在 `FooterButton` 左侧留 5 DIP 的间隔，复用按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。
+「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。选项复用 `HardwareChoiceGroup`，WinUI 3 显示两张互斥卡片，液态玻璃显示导轨和胶囊。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它观察底栏，从 `FooterButton` 向左寻找最近的可用位置，与厂商入口等相邻按钮保持至少 5 DIP 间隔。YogaITS 复用齿轮的按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。[Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex)
 
 快速设置确认挂载后撤下托盘。ShellHost 的消息窗口记录当前 YogaITS 控制窗口的 HWND，后台核对该标记和 ShellHost PID。底栏移除图标时，仍可用的布局会重新插入控件。ShellHost 更换后立即尝试连接。同一 PID 连接成功后留 3 秒等待底栏，仍缺失时每次会话输入最多触发一次重连，重连成功后冷却 8 秒，连接失败后隔 15 秒重试。挂载恢复前保留托盘入口。 [GetLastInputInfo](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-getlastinputinfo)
 
