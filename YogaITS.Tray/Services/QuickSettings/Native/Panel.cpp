@@ -31,6 +31,7 @@ constexpr auto Ready = L"Local\\YogaITS.QuickSettings.Ready";
 constexpr auto Left = L"Local\\YogaITS.QuickSettings.Left";
 constexpr auto Right = L"Local\\YogaITS.QuickSettings.Right";
 constexpr auto Tag = L"YogaITS.QuickSettings.Button";
+constexpr auto TooltipText = L"Yoga控制中心";
 constexpr unsigned RefreshMessage = WM_APP + 1;
 constexpr double Gap = 5;
 constexpr double GlyphSize = 16;
@@ -81,6 +82,55 @@ void OpenWindow(PCWSTR action) noexcept
     if (pid) AllowSetForegroundWindow(pid);
     DismissActiveFlyout();
     Publish(action);
+}
+
+void AttachTooltip(controls::Button const& button)
+{
+    controls::ToolTip tooltip;
+    tooltip.Content(winrt::box_value(TooltipText));
+    controls::ToolTipService::SetToolTip(button, tooltip);
+}
+
+void DismissTooltip(controls::Button const& button)
+{
+    if (auto tooltip = controls::ToolTipService::GetToolTip(button).try_as<controls::ToolTip>())
+    {
+        tooltip.IsOpen(false);
+        controls::ToolTipService::SetToolTip(button, nullptr);
+    }
+}
+
+void BindButtonActions(controls::Button const& button)
+{
+    AttachTooltip(button);
+    auto clickPosition = std::make_shared<POINT>();
+    auto rearm = [clickPosition](wf::IInspectable const& sender, auto const&)
+    {
+        auto target = sender.as<controls::Button>();
+        if (controls::ToolTipService::GetToolTip(target)) return;
+        auto root = target.XamlRoot();
+        POINT current{};
+        if (root && root.IsHostVisible() && GetCursorPos(&current) &&
+            (current.x != clickPosition->x || current.y != clickPosition->y))
+            AttachTooltip(target);
+    };
+    button.PointerEntered(rearm);
+    button.PointerExited(rearm);
+
+    auto activate = [clickPosition](wf::IInspectable const& sender, PCWSTR action)
+    {
+        // End the current tooltip session before the flyout loses focus. A
+        // stationary pointer must not rearm it during the shell close animation.
+        GetCursorPos(clickPosition.get());
+        DismissTooltip(sender.as<controls::Button>());
+        OpenWindow(action);
+    };
+    button.Click([activate](wf::IInspectable const& sender, auto const&) { activate(sender, Left); });
+    button.RightTapped([activate](wf::IInspectable const& sender, xaml::Input::RightTappedRoutedEventArgs const& args)
+    {
+        args.Handled(true);
+        activate(sender, Right);
+    });
 }
 
 bool IsControlCenter(controls::Grid const& grid)
@@ -177,6 +227,7 @@ struct Footer
     void Remove()
     {
         if (!slotHost) return;
+        DismissTooltip(button);
         if (auto root = grid.get())
         {
             uint32_t index;
@@ -238,17 +289,11 @@ struct Footer
             icon.Opacity(GlyphOpacity);
             fallbackInk = media::SolidColorBrush();
             button.IsEnabled(false);
-            xaml::Automation::AutomationProperties::SetName(button, L"Yoga控制中心");
+            xaml::Automation::AutomationProperties::SetName(button, TooltipText);
             xaml::Automation::AutomationProperties::SetAutomationId(button, Tag);
-            controls::ToolTipService::SetToolTip(button, winrt::box_value(L"Yoga控制中心"));
             button.HorizontalAlignment(xaml::HorizontalAlignment::Stretch);
             button.VerticalAlignment(xaml::VerticalAlignment::Stretch);
-            button.Click([](auto&&, auto&&) { OpenWindow(Left); });
-            button.RightTapped([](auto&&, xaml::Input::RightTappedRoutedEventArgs const& args)
-            {
-                args.Handled(true);
-                OpenWindow(Right);
-            });
+            BindButtonActions(button);
             slotHost.Children().Append(button);
             slotHost.Children().Append(icon);
             controls::Grid::SetColumnSpan(slotHost, std::max(1u, root.ColumnDefinitions().Size()));
