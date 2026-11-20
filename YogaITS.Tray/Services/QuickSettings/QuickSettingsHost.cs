@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -7,16 +8,23 @@ namespace YogaITS.Tray.Services.QuickSettings;
 
 internal enum IconPlacement { Tray, QuickSettings }
 
-// The shell can report availability and invoke only the two window commands.
-// Named events use the current session and Windows' default token ACL.
+// The shell signals mount changes and the two window commands within the current session.
 internal sealed class QuickSettingsHost : IDisposable
 {
     internal const string Component = "YogaITS.QuickSettings.dll";
+    internal const string OwnerWindowTitle = "YogaITS.QuickSettings.Owner";
     private const string Prefix = @"Local\YogaITS.QuickSettings.";
+    private const string ControllerProperty = "YogaITS.QuickSettings.Controller";
+    private const string MountedProperty = "YogaITS.QuickSettings.Mounted";
+    private const int ProbeInterval = 2_000;
+    private const int AttachGrace = 3_000;
+    private const int RecoveryCooldown = 8_000;
+    private const int FailedAttachRetry = 15_000;
     private static readonly Guid Tap = new("a3b07347-a74a-4486-a397-2d71594b965a");
+    private readonly nint _controller;
     private readonly EventWaitHandle _owner = Create("Owner", EventResetMode.ManualReset);
     private readonly EventWaitHandle _enabled = Create("Enabled", EventResetMode.ManualReset);
-    private readonly EventWaitHandle _ready = Create("Ready", EventResetMode.ManualReset);
+    private readonly EventWaitHandle _mountChanged = Create("Ready", EventResetMode.AutoReset);
     private readonly EventWaitHandle _left = Create("Left", EventResetMode.AutoReset);
     private readonly EventWaitHandle _right = Create("Right", EventResetMode.AutoReset);
     private readonly CancellationTokenSource _stop = new();
@@ -29,8 +37,10 @@ internal sealed class QuickSettingsHost : IDisposable
         File.Exists(Path.Combine(Environment.SystemDirectory, "ShellHost.exe")) &&
         File.Exists(Path.Combine(AppContext.BaseDirectory, Component));
 
-    public QuickSettingsHost(Action<bool> availability, Action<bool> click)
+    public QuickSettingsHost(nint controller, Action<bool> availability, Action<bool> click)
     {
+        if (!SetProp(controller, ControllerProperty, controller)) throw new Win32Exception();
+        _controller = controller;
         _availability = availability;
         _click = click;
         _owner.Set();
@@ -45,11 +55,7 @@ internal sealed class QuickSettingsHost : IDisposable
             _right.Reset();
             _enabled.Set();
         }
-        else
-        {
-            _enabled.Reset();
-            _ready.Reset();
-        }
+        else _enabled.Reset();
         Interlocked.Increment(ref _revision);
     }
 
@@ -57,12 +63,13 @@ internal sealed class QuickSettingsHost : IDisposable
 
     private void Run()
     {
-        bool published = false, attached = false;
+        bool published = false, attached = false, mounted = false;
         int publishedRevision = 0;
         int shellPid = 0;
+        uint? lastRecoveryInput = null;
         long nextProbe = 0, nextAttach = 0;
         string? runtime = null;
-        WaitHandle[] wait = [_stop.Token.WaitHandle, _left, _right];
+        WaitHandle[] wait = [_stop.Token.WaitHandle, _left, _right, _mountChanged];
         try
         {
             while (!_stop.IsCancellationRequested)
@@ -71,31 +78,50 @@ internal sealed class QuickSettingsHost : IDisposable
                 if (signal == 0) break;
                 int revision = Volatile.Read(ref _revision);
                 bool enabled = _enabled.WaitOne(0);
-                if (enabled && Environment.TickCount64 >= nextProbe)
+                long now = Environment.TickCount64;
+                bool probe = enabled && now >= nextProbe;
+                if (probe)
                 {
                     int current = FindShell();
                     if (current != shellPid)
                     {
-                        _ready.Reset();
                         shellPid = current;
                         attached = false;
                         nextAttach = 0;
+                        lastRecoveryInput = null;
                     }
-                    nextProbe = Environment.TickCount64 + 1500;
-                    if (shellPid != 0 && !attached && Environment.TickCount64 >= nextAttach)
+                    nextProbe = now + ProbeInterval;
+                }
+                if (!enabled || probe || signal is 1 or 2 or 3)
+                    mounted = enabled && shellPid != 0 && HasPanel(shellPid);
+
+                if (probe && shellPid != 0 && !mounted && now >= nextAttach)
+                {
+                    bool recovering = attached;
+                    // A successful XAML call may never deliver a footer. Use each
+                    // session input timestamp at most once for an in-place reconnect.
+                    var input = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
+                    if (!recovering || (GetLastInputInfo(ref input) && input.Time != lastRecoveryInput))
                     {
+                        if (recovering)
+                        {
+                            lastRecoveryInput = input.Time;
+                            Debug.WriteLine($"Quick Settings panel missing after input; reconnecting to ShellHost {shellPid}.");
+                        }
+                        attached = false;
                         try
                         {
                             runtime ??= StageComponent();
                             attached = Attach(shellPid, runtime);
                         }
                         catch (Exception ex) { Debug.WriteLine("Quick Settings connection: " + ex.Message); }
-                        nextAttach = Environment.TickCount64 + 15000;
+                        nextAttach = Environment.TickCount64 + (attached
+                            ? (recovering ? RecoveryCooldown : AttachGrace) : FailedAttachRetry);
                     }
                 }
 
                 if (revision != Volatile.Read(ref _revision)) continue;
-                bool ready = enabled && shellPid != 0 && _ready.WaitOne(0);
+                bool ready = enabled && mounted;
                 if (published != ready || publishedRevision != revision)
                 {
                     publishedRevision = revision;
@@ -105,15 +131,19 @@ internal sealed class QuickSettingsHost : IDisposable
             }
         }
         catch (Exception ex) { Debug.WriteLine("Quick Settings bridge: " + ex.Message); }
-        finally
+        finally { if (published) _availability(false); }
+    }
+
+    private bool HasPanel(int shellPid)
+    {
+        nint window = 0;
+        while ((window = FindWindowEx(new nint(-3), window, null, null)) != 0)
         {
-            if (published) _availability(false);
-            _owner.Dispose();
-            _enabled.Dispose();
-            _ready.Dispose();
-            _left.Dispose();
-            _right.Dispose();
+            if (GetProp(window, MountedProperty) != _controller) continue;
+            GetWindowThreadProcessId(window, out uint pid);
+            if (pid == shellPid) return true;
         }
+        return false;
     }
 
     private static int FindShell()
@@ -185,11 +215,23 @@ internal sealed class QuickSettingsHost : IDisposable
     public void Dispose()
     {
         if (_stop.IsCancellationRequested) return;
+        RemoveProp(_controller, ControllerProperty);
         _enabled.Reset();
         _owner.Reset();
         _stop.Cancel();
-        _ = _worker.ContinueWith(_ => _stop.Dispose(), TaskScheduler.Default);
+        _ = _worker.ContinueWith(_ =>
+        {
+            _owner.Dispose();
+            _enabled.Dispose();
+            _mountChanged.Dispose();
+            _left.Dispose();
+            _right.Dispose();
+            _stop.Dispose();
+        }, TaskScheduler.Default);
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LastInputInfo { public uint Size; public uint Time; }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall, CharSet = CharSet.Unicode)]
     private delegate int InitializeDiagnostics(string endpoint, uint pid, string diagnostics, string tap, Guid clsid, string? data);
@@ -198,4 +240,14 @@ internal sealed class QuickSettingsHost : IDisposable
     [DllImport("kernel32.dll", EntryPoint = "QueryFullProcessImageNameW", CharSet = CharSet.Unicode)]
     private static extern bool QueryFullProcessImageName(nint process, uint flags, StringBuilder path, ref int size);
     [DllImport("kernel32.dll")] private static extern bool CloseHandle(nint handle);
+    [DllImport("user32.dll", EntryPoint = "SetPropW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool SetProp(nint window, string property, nint value);
+    [DllImport("user32.dll", EntryPoint = "GetPropW", CharSet = CharSet.Unicode)]
+    private static extern nint GetProp(nint window, string property);
+    [DllImport("user32.dll", EntryPoint = "RemovePropW", CharSet = CharSet.Unicode)]
+    private static extern nint RemoveProp(nint window, string property);
+    [DllImport("user32.dll", EntryPoint = "FindWindowExW", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindowEx(nint parent, nint after, string? className, string? title);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(nint window, out uint pid);
+    [DllImport("user32.dll")] private static extern bool GetLastInputInfo(ref LastInputInfo input);
 }

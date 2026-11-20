@@ -245,7 +245,9 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 
 「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。选项复用 `HardwareChoiceGroup`，WinUI 3 显示两张互斥卡片，液态玻璃显示导轨和胶囊。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它通过 [Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex) 观察底栏，在 `FooterButton` 左侧留 5 DIP 的间隔，复用按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。
 
-快速设置确认挂载后撤下托盘。左键与右键分别复用完整窗口和迷你窗口入口。应用使用会话内事件交换就绪状态及两个打开窗口的命令。禁用或退出后，宿主移除自己的控件。ShellHost 重启时重新连接。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
+快速设置确认挂载后撤下托盘。ShellHost 的消息窗口记录当前 YogaITS 控制窗口的 HWND，后台核对该标记和 ShellHost PID。底栏移除图标时，仍可用的布局会重新插入控件。ShellHost 更换后立即尝试连接。同一 PID 连接成功后留 3 秒等待底栏，仍缺失时每次会话输入最多触发一次重连，重连成功后冷却 8 秒，连接失败后隔 15 秒重试。挂载恢复前保留托盘入口。 [GetLastInputInfo](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-getlastinputinfo)
+
+左键与右键分别复用完整窗口和迷你窗口入口。禁用快速设置会清除图标和挂载标记，退出时还会取消视觉树订阅。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
 
 快速设置用独立的矢量图层绘制闭合圆环和 Y，绕开外壳按钮模板的内容裁剪。图形跟随相邻齿轮的图标尺寸、中心和前景画刷，在 16 DIP 图标框内使用 1 DIP 笔画。静态轮廓以 93% 不透明度合成，让笔画深浅接近齿轮的动画图形。按钮继续使用系统模板提供悬停与点击状态。齿轮图标的前景来自 [WinUI AnimatedIcon 的基类](https://learn.microsoft.com/en-us/windows/winui/api/microsoft.ui.xaml.controls.animatedicon?view=winui-2.8)。
 

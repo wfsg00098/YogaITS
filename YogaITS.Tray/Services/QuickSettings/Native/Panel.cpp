@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <vector>
 
@@ -30,6 +31,9 @@ constexpr auto Enabled = L"Local\\YogaITS.QuickSettings.Enabled";
 constexpr auto Ready = L"Local\\YogaITS.QuickSettings.Ready";
 constexpr auto Left = L"Local\\YogaITS.QuickSettings.Left";
 constexpr auto Right = L"Local\\YogaITS.QuickSettings.Right";
+constexpr auto OwnerWindowTitle = L"YogaITS.QuickSettings.Owner";
+constexpr auto ControllerProperty = L"YogaITS.QuickSettings.Controller";
+constexpr auto MountedProperty = L"YogaITS.QuickSettings.Mounted";
 constexpr auto Tag = L"YogaITS.QuickSettings.Button";
 constexpr auto TooltipText = L"Yoga控制中心";
 constexpr unsigned RefreshMessage = WM_APP + 1;
@@ -39,7 +43,14 @@ constexpr double GlyphSize = 16;
 // Keep the shared theme brush and soften the composited stroke slightly.
 constexpr double GlyphOpacity = 0.93;
 HMODULE module;
-std::atomic<bool> subscribed;
+
+struct Watch
+{
+    HWND controller{};
+    std::atomic<bool> stopped{};
+};
+std::atomic<std::shared_ptr<Watch>> latestWatch;
+std::mutex watchMutex;
 
 bool ReadSignal(PCWSTR name) noexcept
 {
@@ -50,13 +61,17 @@ bool ReadSignal(PCWSTR name) noexcept
     return signaled;
 }
 
-void Publish(PCWSTR name, bool value = true) noexcept
+void Publish(PCWSTR name) noexcept
 {
     HANDLE event = OpenEventW(EVENT_MODIFY_STATE, FALSE, name);
     if (!event) return;
-    if (value) SetEvent(event);
-    else ResetEvent(event);
+    SetEvent(event);
     CloseHandle(event);
+}
+
+bool ControllerActive(HWND controller) noexcept
+{
+    return controller && GetPropW(controller, ControllerProperty) == controller && ReadSignal(Owner);
 }
 
 void DismissActiveFlyout() noexcept
@@ -73,12 +88,12 @@ void DismissActiveFlyout() noexcept
         PostMessageW(target, WM_KEYUP, VK_ESCAPE, key | 0xC0000000);
 }
 
-void OpenWindow(PCWSTR action) noexcept
+void OpenWindow(HWND bridge, PCWSTR action) noexcept
 {
-    if (!ReadSignal(Owner) || !ReadSignal(Enabled) || !ReadSignal(Ready)) return;
+    auto controller = static_cast<HWND>(GetPropW(bridge, MountedProperty));
+    if (!ControllerActive(controller) || !ReadSignal(Enabled)) return;
     DWORD pid = 0;
-    if (HWND owner = FindWindowW(nullptr, L"YogaITS.QuickSettings.Owner"))
-        GetWindowThreadProcessId(owner, &pid);
+    GetWindowThreadProcessId(controller, &pid);
     if (pid) AllowSetForegroundWindow(pid);
     DismissActiveFlyout();
     Publish(action);
@@ -100,7 +115,7 @@ void DismissTooltip(controls::Button const& button)
     }
 }
 
-void BindButtonActions(controls::Button const& button)
+void BindButtonActions(controls::Button const& button, HWND bridge)
 {
     AttachTooltip(button);
     auto clickPosition = std::make_shared<POINT>();
@@ -117,13 +132,13 @@ void BindButtonActions(controls::Button const& button)
     button.PointerEntered(rearm);
     button.PointerExited(rearm);
 
-    auto activate = [clickPosition](wf::IInspectable const& sender, PCWSTR action)
+    auto activate = [clickPosition, bridge](wf::IInspectable const& sender, PCWSTR action)
     {
         // End the current tooltip session before the flyout loses focus. A
         // stationary pointer must not rearm it during the shell close animation.
         GetCursorPos(clickPosition.get());
         DismissTooltip(sender.as<controls::Button>());
-        OpenWindow(action);
+        OpenWindow(bridge, action);
     };
     button.Click([activate](wf::IInspectable const& sender, auto const&) { activate(sender, Left); });
     button.RightTapped([activate](wf::IInspectable const& sender, xaml::Input::RightTappedRoutedEventArgs const& args)
@@ -224,15 +239,20 @@ struct Footer
     media::TranslateTransform iconOffset{nullptr};
     media::SolidColorBrush fallbackInk{nullptr};
 
-    void Remove()
+    void Remove() noexcept
     {
         if (!slotHost) return;
-        DismissTooltip(button);
-        if (auto root = grid.get())
+        try { if (button) DismissTooltip(button); }
+        catch (...) {}
+        try
         {
-            uint32_t index;
-            if (root.Children().IndexOf(slotHost, index)) root.Children().RemoveAt(index);
+            if (auto root = grid.get())
+            {
+                uint32_t index;
+                if (root.Children().IndexOf(slotHost, index)) root.Children().RemoveAt(index);
+            }
         }
+        catch (...) {}
         slotHost = nullptr;
         button = nullptr;
         icon = nullptr;
@@ -241,7 +261,13 @@ struct Footer
         fallbackInk = nullptr;
     }
 
-    bool Refresh(controls::Grid const& root, controls::Button const& settings)
+    bool IsMounted(controls::Grid const& root) const
+    {
+        uint32_t index;
+        return slotHost && button.IsEnabled() && root.Children().IndexOf(slotHost, index);
+    }
+
+    bool Refresh(controls::Grid const& root, controls::Button const& settings, HWND bridge)
     {
         auto bounds = Bounds(settings, root);
         wf::Rect slot{static_cast<float>(bounds.X - bounds.Width - Gap), bounds.Y, bounds.Width, bounds.Height};
@@ -293,12 +319,17 @@ struct Footer
             xaml::Automation::AutomationProperties::SetAutomationId(button, Tag);
             button.HorizontalAlignment(xaml::HorizontalAlignment::Stretch);
             button.VerticalAlignment(xaml::VerticalAlignment::Stretch);
-            BindButtonActions(button);
+            BindButtonActions(button, bridge);
             slotHost.Children().Append(button);
             slotHost.Children().Append(icon);
+        }
+        auto children = root.Children();
+        uint32_t index;
+        if (!children.IndexOf(slotHost, index))
+        {
             controls::Grid::SetColumnSpan(slotHost, std::max(1u, root.ColumnDefinitions().Size()));
             controls::Grid::SetRowSpan(slotHost, std::max(1u, root.RowDefinitions().Size()));
-            root.Children().Append(slotHost);
+            children.Append(slotHost);
         }
         if (button.Style() != settings.Style()) button.Style(settings.Style());
         if (button.Template() != settings.Template()) button.Template(settings.Template());
@@ -345,6 +376,7 @@ struct Footer
 struct Context
 {
     HWND window{};
+    std::shared_ptr<Watch> watch;
     std::vector<Footer> footers;
     static thread_local Context* current;
 
@@ -356,9 +388,14 @@ struct Context
             try { context->Refresh(); }
             catch (...)
             {
-                Publish(Ready, false);
+                context->SetMounted(false);
                 OutputDebugStringW(L"YogaITS: Quick Settings footer refresh failed.\n");
             }
+            return 0;
+        }
+        if (context && message == WM_CLOSE)
+        {
+            context->Close();
             return 0;
         }
         if (context && message == WM_NCDESTROY)
@@ -370,8 +407,9 @@ struct Context
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
 
-    static void Observe(controls::Grid const& grid)
+    static void Observe(controls::Grid const& grid, std::shared_ptr<Watch> const& watch)
     {
+        if (current && current->watch->controller != watch->controller) current->Close();
         if (!current)
         {
             WNDCLASSEXW cls{sizeof(cls)};
@@ -393,6 +431,7 @@ struct Context
             current->window = hwnd;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(current));
         }
+        current->watch = watch;
         for (auto const& footer : current->footers) if (footer.grid.get() == grid) return;
         current->footers.push_back({ winrt::make_weak(grid) });
         PostMessageW(current->window, RefreshMessage, 0, 0);
@@ -400,33 +439,65 @@ struct Context
 
     void Refresh()
     {
-        bool alive = ReadSignal(Owner);
-        if (!alive || !ReadSignal(Enabled))
+        if (!ControllerActive(watch->controller))
+        {
+            Close();
+            return;
+        }
+        if (!ReadSignal(Enabled))
         {
             for (auto& footer : footers) footer.Remove();
-            if (!alive) DestroyWindow(window);
+            SetMounted(false);
             return;
         }
         std::erase_if(footers, [](auto const& footer) { return !footer.grid.get(); });
-        bool measured = false, mounted = false;
+        bool mounted = false;
         for (auto& footer : footers)
         {
             auto grid = footer.grid.get();
-            if (!grid || !grid.XamlRoot() || !grid.XamlRoot().IsHostVisible() || grid.ActualWidth() <= 0 || !IsControlCenter(grid))
+            if (!grid) continue;
+            auto root = grid.XamlRoot();
+            if (!root || !grid.IsLoaded() || !IsControlCenter(grid))
+            {
+                footer.Remove();
                 continue;
+            }
+            // A closed flyout can retain a mounted layout. Only keep its mark
+            // while the observed footer still contains our slot.
+            if (!root.IsHostVisible())
+            {
+                mounted |= footer.IsMounted(grid);
+                continue;
+            }
+            if (grid.ActualWidth() <= 0) continue;
             controls::Button settings{nullptr};
             Visit(grid, [&](xaml::FrameworkElement const& element)
             {
                 if (element.Name() == L"FooterButton") settings = element.try_as<controls::Button>();
                 return static_cast<bool>(settings);
             });
-            measured = true;
-            if (settings) mounted |= footer.Refresh(grid, settings);
+            if (settings) mounted |= footer.Refresh(grid, settings, window);
             else footer.Remove();
         }
-        // Closing the flyout keeps confirmed availability. A visible but
-        // incompatible footer returns the app to the tray.
-        if (measured) Publish(Ready, mounted);
+        SetMounted(mounted);
+    }
+
+    void SetMounted(bool mounted) const noexcept
+    {
+        HWND controller = mounted ? watch->controller : nullptr;
+        if (GetPropW(window, MountedProperty) == controller) return;
+        if (controller && !SetPropW(window, MountedProperty, controller)) return;
+        if (!controller) RemovePropW(window, MountedProperty);
+        Publish(Ready);
+    }
+
+    void Close() noexcept
+    {
+        watch->stopped = true;
+        KillTimer(window, 1);
+        SetMounted(false);
+        for (auto& footer : footers) footer.Remove();
+        DestroyWindow(window);
     }
 };
 thread_local Context* Context::current;
@@ -435,41 +506,62 @@ struct Tap : winrt::implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2
 {
     winrt::com_ptr<IUnknown> site;
     winrt::com_ptr<IXamlDiagnostics> diagnostics;
-    std::atomic<bool> stopped;
+    std::shared_ptr<Watch> watch;
 
     HRESULT __stdcall SetSite(IUnknown* value) noexcept override
     {
-        if (!value) { stopped = true; return S_OK; }
+        if (!value)
+        {
+            if (watch) watch->stopped = true;
+            return S_OK;
+        }
         try
         {
-            if (subscribed.exchange(true)) return S_OK;
+            if (watch) return S_OK;
+            auto controller = FindWindowW(nullptr, OwnerWindowTitle);
+            if (!ControllerActive(controller)) return S_FALSE;
             site.copy_from(value);
             diagnostics = site.as<IXamlDiagnostics>();
+            watch = std::make_shared<Watch>();
+            watch->controller = controller;
             auto context = std::make_unique<winrt::com_ptr<Tap>>(get_strong());
+            if (auto previous = latestWatch.exchange(watch)) previous->stopped = true;
             HANDLE thread = CreateThread(nullptr, 0, [](void* data) -> DWORD
             {
                 std::unique_ptr<winrt::com_ptr<Tap>> self(static_cast<winrt::com_ptr<Tap>*>(data));
                 HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                auto state = (*self)->watch;
                 try
                 {
-                    auto service = (*self)->site.as<IVisualTreeService>();
-                    winrt::check_hresult(service->AdviseVisualTreeChange(self->get()));
-                    while (!(*self)->stopped && ReadSignal(Owner)) Sleep(250);
-                    (*self)->stopped = true;
-                    service->UnadviseVisualTreeChange(self->get());
+                    // Finish the old subscription before advising on the new
+                    // one. The XAML thread never waits for this worker lock.
+                    std::lock_guard lock(watchMutex);
+                    if (!state->stopped && ControllerActive(state->controller))
+                    {
+                        auto service = (*self)->site.as<IVisualTreeService>();
+                        winrt::check_hresult(service->AdviseVisualTreeChange(self->get()));
+                        while (!state->stopped && ControllerActive(state->controller)) Sleep(250);
+                        state->stopped = true;
+                        service->UnadviseVisualTreeChange(self->get());
+                    }
                 }
                 catch (...) { OutputDebugStringW(L"YogaITS: Quick Settings diagnostics subscription failed.\n"); }
-                subscribed = false;
+                state->stopped = true;
+                latestWatch.compare_exchange_strong(state, nullptr);
                 if (SUCCEEDED(initialized)) CoUninitialize();
                 return 0;
             }, context.get(), CREATE_SUSPENDED, nullptr);
-            if (!thread) winrt::throw_last_error();
+            if (!thread)
+            {
+                watch->stopped = true;
+                winrt::throw_last_error();
+            }
             context.release();
             ResumeThread(thread);
             CloseHandle(thread);
             return S_OK;
         }
-        catch (...) { subscribed = false; return winrt::to_hresult(); }
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall GetSite(REFIID iid, void** output) noexcept override
@@ -479,13 +571,13 @@ struct Tap : winrt::implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2
 
     HRESULT __stdcall OnVisualTreeChange(ParentChildRelation, VisualElement element, VisualMutationType mutation) noexcept override
     {
-        if (stopped || mutation != Add || !element.Name || wcscmp(element.Name, L"FooterGrid") != 0) return S_OK;
+        if (!watch || watch->stopped || mutation != Add || !element.Name || wcscmp(element.Name, L"FooterGrid") != 0) return S_OK;
         try
         {
             wf::IInspectable object{nullptr};
             winrt::check_hresult(diagnostics->GetIInspectableFromHandle(element.Handle,
                 reinterpret_cast<::IInspectable**>(winrt::put_abi(object))));
-            if (auto grid = object.try_as<controls::Grid>()) Context::Observe(grid);
+            if (auto grid = object.try_as<controls::Grid>()) Context::Observe(grid, watch);
         }
         catch (...) { OutputDebugStringW(L"YogaITS: Quick Settings grid observation failed.\n"); }
         return S_OK;

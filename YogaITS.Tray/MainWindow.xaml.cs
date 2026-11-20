@@ -125,7 +125,7 @@ public sealed partial class MainWindow : Window
     private void InitializeHiddenTrayHost()
     {
         _mainHwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        Title = "YogaITS.QuickSettings.Owner";
+        Title = QuickSettingsHost.OwnerWindowTitle;
         ApplyIconPlacement(UserSettingsStore.Get("IconPlacement", IconPlacement.Tray));
 
         // Keep the HWND/message pump alive, but never present this host
@@ -162,6 +162,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 _quickSettings = new QuickSettingsHost(
+                    _mainHwnd,
                     ready => DispatcherQueue.TryEnqueue(() =>
                     {
                         if (_exiting || _iconPlacement != IconPlacement.QuickSettings) return;
