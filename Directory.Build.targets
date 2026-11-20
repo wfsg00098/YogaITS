@@ -1,4 +1,9 @@
 <Project>
+  <!-- Keep both WinUI builds on the SDK projection reviewed for distribution. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net10.0-windows10.0.26100.0'">
+    <WindowsSdkPackageVersion>10.0.26100.57</WindowsSdkPackageVersion>
+  </PropertyGroup>
+
   <!-- Exclude optional SDK workloads, rather than deleting random runtime DLLs. -->
   <ItemGroup Condition="'$(UseWinUI)' == 'true' And '$(EnableLiquidGlass)' == 'true'">
     <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="[2.2.3]" ExcludeAssets="all" PrivateAssets="all" />

@@ -66,7 +66,7 @@ Start-Process (Join-Path $directory 'YogaITS.Tray.exe') -WorkingDirectory $direc
 | 普通版 | `Microsoft.WindowsAppSDK.WinUI 2.3.9`、`Runtime 2.5.1`、`InteractiveExperiences 2.1.9`，见 [Native.props](YogaITS.Tray/Build/Native.props)。 |
 | 玻璃版 | `Microsoft.WindowsAppSDK 2.2.0`、`Win2D 1.3.2`、`LiquidGlassWinUI 1.0.3`，见 [LiquidGlass.props](YogaITS.Tray/Build/LiquidGlass.props)。 |
 
-两版都使用 `System.Management`、`System.ServiceProcess.ServiceController 10.0.0`。材质的 managed/shader 实现来自仓库内 `ThirdParty/LiquidGlassWinUI`；native effect 从固定 NuGet 包取得。传递依赖及分发许可见 [components.json](ThirdParty/Licenses/components.json)。
+两版都使用 `System.Management`、`System.ServiceProcess.ServiceController 10.0.0`，并通过 `WindowsSdkPackageVersion` 固定已审核的 Windows SDK .NET 投影包 `10.0.26100.57`。升级投影包时同步审核分发许可和清单记录。材质的 managed/shader 实现来自仓库内 `ThirdParty/LiquidGlassWinUI`；native effect 从固定 NuGet 包取得。传递依赖及分发许可见 [components.json](ThirdParty/Licenses/components.json)。
 
 [Directory.Build.props](Directory.Build.props) 与 [Directory.Build.targets](Directory.Build.targets) 按构建类型和项目隔离 `obj/`、`bin/`；检查宿主再加 `-ui-checks` 后缀。不得跨构建复用还原结果或混合 DLL。普通版不编译玻璃代码，不携带捕获身份、本地 SDK、Win2D 或材质 DLL。
 
