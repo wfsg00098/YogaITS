@@ -20,7 +20,6 @@ public sealed partial class MainWindow : Window
     private NativeTrayIcon? _trayIcon;
     private QuickSettingsHost? _quickSettings;
     private IconPlacement _iconPlacement;
-    private bool _quickSettingsReady;
     private TrayMenuWindow? _trayMenuWindow;
     private TrayMenuWindow? _controlCenterWindow;
     private readonly LenovoGpuWorkingModeService _gpu = new();
@@ -163,16 +162,14 @@ public sealed partial class MainWindow : Window
             {
                 _quickSettings = new QuickSettingsHost(
                     _mainHwnd,
-                    ready => DispatcherQueue.TryEnqueue(() =>
+                    (revision, showTray) => DispatcherQueue.TryEnqueue(() =>
                     {
-                        if (_exiting || _iconPlacement != IconPlacement.QuickSettings) return;
-                        _quickSettingsReady = ready;
-                        UpdateTrayIcon(!ready);
-                        RefreshIconOptions();
+                        if (_exiting || _iconPlacement != IconPlacement.QuickSettings || _quickSettings?.Revision != revision) return;
+                        UpdateTrayIcon(showTray);
                     }),
                     right => DispatcherQueue.TryEnqueue(() =>
                     {
-                        if (_exiting || !_quickSettingsReady || _iconPlacement != IconPlacement.QuickSettings) return;
+                        if (_exiting || _iconPlacement != IconPlacement.QuickSettings) return;
                         if (right) ShowTrayMenu(fromQuickSettings: true);
                         else ToggleControlCenter(fromQuickSettings: true);
                     }));
@@ -180,8 +177,7 @@ public sealed partial class MainWindow : Window
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Quick Settings initialization failed: " + ex.Message); }
         }
         _quickSettings?.SetEnabled(quick);
-        _quickSettingsReady = false;
-        UpdateTrayIcon(true);
+        UpdateTrayIcon(!quick || _quickSettings is null);
     }
 
     private void UpdateTrayIcon(bool visible)
@@ -200,7 +196,7 @@ public sealed partial class MainWindow : Window
     }
 
     private void RefreshIconOptions() => _controlCenterWindow?.SetIconOptions(
-        _iconPlacement, _quickSettingsReady, QuickSettingsHost.Supported, SelectIconPlacement);
+        _iconPlacement, QuickSettingsHost.Supported, SelectIconPlacement);
 
     private void TrayIcon_Click()
     {

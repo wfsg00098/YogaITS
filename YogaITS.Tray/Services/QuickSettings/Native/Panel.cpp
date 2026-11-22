@@ -33,10 +33,15 @@ constexpr auto Left = L"Local\\YogaITS.QuickSettings.Left";
 constexpr auto Right = L"Local\\YogaITS.QuickSettings.Right";
 constexpr auto OwnerWindowTitle = L"YogaITS.QuickSettings.Owner";
 constexpr auto ControllerProperty = L"YogaITS.QuickSettings.Controller";
+constexpr auto ContextProperty = L"YogaITS.QuickSettings.Context";
 constexpr auto MountedProperty = L"YogaITS.QuickSettings.Mounted";
 constexpr auto Tag = L"YogaITS.QuickSettings.Button";
 constexpr auto TooltipText = L"Yoga控制中心";
+// Message IDs and reply values are shared with QuickSettingsHost/Recovery.
 constexpr unsigned RefreshMessage = WM_APP + 1;
+constexpr unsigned QueryStateMessage = WM_APP + 2;
+constexpr unsigned RecycleMessage = WM_APP + 3;
+enum class BridgeState { Missing = 1, Waiting = 2, Ready = 3 };
 constexpr double Gap = 5;
 constexpr double GlyphSize = 16;
 // The static outline has more fully covered pixels than the animated gear.
@@ -251,9 +256,27 @@ xaml::FrameworkElement GearGlyph(controls::Button const& settings)
     return result;
 }
 
+void RequestRefresh(HWND window) noexcept;
+
+struct LayoutEvents
+{
+    xaml::FrameworkElement::Loaded_revoker loaded;
+    xaml::FrameworkElement::Unloaded_revoker unloaded;
+    xaml::FrameworkElement::LayoutUpdated_revoker layout;
+
+    LayoutEvents(xaml::FrameworkElement const& element, HWND window)
+    {
+        auto refresh = [window](auto const&, auto const&) { RequestRefresh(window); };
+        loaded = element.Loaded(winrt::auto_revoke, refresh);
+        unloaded = element.Unloaded(winrt::auto_revoke, refresh);
+        layout = element.LayoutUpdated(winrt::auto_revoke, refresh);
+    }
+};
+
 struct Footer
 {
     winrt::weak_ref<controls::Grid> grid;
+    LayoutEvents events;
     controls::Grid slotHost{nullptr};
     controls::Button button{nullptr};
     controls::Viewbox icon{nullptr};
@@ -386,22 +409,51 @@ struct Footer
 
 struct Context
 {
+    struct Page
+    {
+        winrt::weak_ref<xaml::FrameworkElement> element;
+        LayoutEvents events;
+    };
+
     HWND window{};
     std::shared_ptr<Watch> watch;
+    std::vector<Page> pages;
     std::vector<Footer> footers;
+    BridgeState state = BridgeState::Missing;
+    std::wstring_view reason;
+    bool refreshQueued{};
+    bool enabled{};
     static thread_local Context* current;
 
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) noexcept
     {
         auto context = reinterpret_cast<Context*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-        if (context && (message == WM_TIMER || message == RefreshMessage))
+        if (context && (message == WM_TIMER || message == RefreshMessage ||
+            message == QueryStateMessage || message == RecycleMessage))
         {
-            try { context->Refresh(); }
-            catch (...)
+            if (!ControllerActive(context->watch->controller))
             {
-                context->SetMounted(false);
-                OutputDebugStringW(L"YogaITS: Quick Settings footer refresh failed.\n");
+                // Do not tear down XAML in the synchronous state query.
+                if (message == QueryStateMessage) RequestRefresh(hwnd);
+                else context->Close();
+                return 0;
             }
+            if (message == QueryStateMessage || message == RecycleMessage ||
+                (message == RefreshMessage && wparam != 0))
+            {
+                if (wparam != reinterpret_cast<WPARAM>(context->watch->controller)) return 0;
+                if (message != RecycleMessage)
+                {
+                    RequestRefresh(hwnd);
+                    return message == QueryStateMessage ? static_cast<LRESULT>(context->state) : 0;
+                }
+                context->RefreshSafely();
+                if (context->state != BridgeState::Ready && ReadSignal(Enabled)) context->Close();
+                return 0;
+            }
+            if (message == WM_TIMER && context->enabled == ReadSignal(Enabled)) return 0;
+            if (message == RefreshMessage) context->refreshQueued = false;
+            context->RefreshSafely();
             return 0;
         }
         if (context && message == WM_CLOSE)
@@ -411,6 +463,8 @@ struct Context
         }
         if (context && message == WM_NCDESTROY)
         {
+            RemovePropW(hwnd, ContextProperty);
+            RemovePropW(hwnd, MountedProperty);
             current = nullptr;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             delete context;
@@ -418,7 +472,7 @@ struct Context
         return DefWindowProcW(hwnd, message, wparam, lparam);
     }
 
-    static void Observe(controls::Grid const& grid, std::shared_ptr<Watch> const& watch)
+    static void Observe(xaml::FrameworkElement const& element, bool isFooter, std::shared_ptr<Watch> const& watch)
     {
         if (current && current->watch->controller != watch->controller) current->Close();
         if (!current)
@@ -433,69 +487,125 @@ struct Context
             auto context = std::make_unique<Context>();
             HWND hwnd = CreateWindowExW(0, name, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, module, nullptr);
             if (!hwnd) return;
-            if (!SetTimer(hwnd, 1, 250, nullptr))
+            if (!SetPropW(hwnd, ContextProperty, watch->controller) || !SetTimer(hwnd, 1, 250, nullptr))
             {
+                RemovePropW(hwnd, ContextProperty);
                 DestroyWindow(hwnd);
                 return;
             }
+            context->window = hwnd;
+            context->watch = watch;
             current = context.release();
-            current->window = hwnd;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(current));
+            Publish(Ready);
         }
         current->watch = watch;
-        for (auto const& footer : current->footers) if (footer.grid.get() == grid) return;
-        current->footers.push_back({ winrt::make_weak(grid) });
-        PostMessageW(current->window, RefreshMessage, 0, 0);
+        if (isFooter)
+        {
+            if (auto grid = element.try_as<controls::Grid>()) current->AddFooter(grid);
+        }
+        else if (std::ranges::none_of(current->pages, [&](auto const& page) { return page.element.get() == element; }))
+            current->pages.push_back({winrt::make_weak(element), LayoutEvents(element, current->window)});
+        RequestRefresh(current->window);
+    }
+
+    void AddFooter(controls::Grid const& grid)
+    {
+        if (std::ranges::none_of(footers, [&](auto const& footer) { return footer.grid.get() == grid; }))
+            footers.push_back({winrt::make_weak(grid), LayoutEvents(grid, window)});
+    }
+
+    void RefreshSafely() noexcept
+    {
+        try { Refresh(); }
+        catch (...) { SetState(BridgeState::Missing, L"footer refresh failed"); }
     }
 
     void Refresh()
     {
-        if (!ControllerActive(watch->controller))
-        {
-            Close();
-            return;
-        }
-        if (!ReadSignal(Enabled))
+        enabled = ReadSignal(Enabled);
+        if (!enabled)
         {
             for (auto& footer : footers) footer.Remove();
-            SetMounted(false);
+            SetState(BridgeState::Missing, L"disabled");
             return;
         }
+
+        std::erase_if(pages, [](auto const& page) { return !page.element.get(); });
         std::erase_if(footers, [](auto const& footer) { return !footer.grid.get(); });
+        auto nextState = BridgeState::Missing;
+        PCWSTR nextReason = L"no connected ControlCenter page or footer";
+        for (auto const& candidate : pages)
+        {
+            auto page = candidate.element.get();
+            auto root = page ? page.XamlRoot() : nullptr;
+            if (!root) continue;
+            nextState = BridgeState::Waiting;
+            nextReason = L"ControlCenter page is waiting for its footer";
+            if (!root.IsHostVisible()) continue;
+            Visit(page, [&](xaml::FrameworkElement const& element)
+            {
+                if (element.Name() == L"FooterGrid")
+                    if (auto grid = element.try_as<controls::Grid>()) AddFooter(grid);
+                return false;
+            });
+        }
+
         bool mounted = false;
         for (auto& footer : footers)
         {
             auto grid = footer.grid.get();
             if (!grid) continue;
             auto root = grid.XamlRoot();
-            if (!root || !grid.IsLoaded() || !IsControlCenter(grid))
+            if (!root || !IsControlCenter(grid))
             {
                 footer.Remove();
                 continue;
             }
-            // A closed flyout can retain a mounted layout. Only keep its mark
-            // while the observed footer still contains our slot.
+            nextState = BridgeState::Waiting;
+            nextReason = L"footer is waiting for layout";
+            if (!grid.IsLoaded())
+            {
+                footer.Remove();
+                continue;
+            }
             if (!root.IsHostVisible())
             {
                 mounted |= footer.IsMounted(grid);
                 continue;
             }
-            if (grid.ActualWidth() <= 0) continue;
+            if (grid.ActualWidth() <= 0 || grid.ActualHeight() <= 0) continue;
             controls::Button settings{nullptr};
             Visit(grid, [&](xaml::FrameworkElement const& element)
             {
                 if (element.Name() == L"FooterButton") settings = element.try_as<controls::Button>();
                 return static_cast<bool>(settings);
             });
-            if (settings) mounted |= footer.Refresh(grid, settings, window);
-            else footer.Remove();
+            nextReason = L"footer is waiting for the settings anchor";
+            if (!settings)
+            {
+                footer.Remove();
+                continue;
+            }
+
+            nextReason = L"footer is waiting for a usable button slot";
+            mounted |= footer.Refresh(grid, settings, window);
         }
-        SetMounted(mounted);
+        if (mounted) SetState(BridgeState::Ready, L"button mounted");
+        else SetState(nextState, nextReason);
     }
 
-    void SetMounted(bool mounted) const noexcept
+    void SetState(BridgeState value, PCWSTR detail) noexcept
     {
-        HWND controller = mounted ? watch->controller : nullptr;
+        if (state != value || reason != detail)
+        {
+            state = value;
+            reason = detail;
+            wchar_t message[200];
+            swprintf_s(message, L"YogaITS: Quick Settings UI %d, %s.\n", static_cast<int>(state), detail);
+            OutputDebugStringW(message);
+        }
+        HWND controller = value == BridgeState::Ready ? watch->controller : nullptr;
         if (GetPropW(window, MountedProperty) == controller) return;
         if (controller && !SetPropW(window, MountedProperty, controller)) return;
         if (!controller) RemovePropW(window, MountedProperty);
@@ -506,12 +616,20 @@ struct Context
     {
         watch->stopped = true;
         KillTimer(window, 1);
-        SetMounted(false);
+        SetState(BridgeState::Missing, L"bridge closed");
         for (auto& footer : footers) footer.Remove();
         DestroyWindow(window);
+        Publish(Ready);
     }
 };
 thread_local Context* Context::current;
+
+void RequestRefresh(HWND window) noexcept
+{
+    auto context = reinterpret_cast<Context*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    if (context && !context->refreshQueued)
+        context->refreshQueued = PostMessageW(window, RefreshMessage, 0, 0) != FALSE;
+}
 
 struct Tap : winrt::implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2>
 {
@@ -582,15 +700,18 @@ struct Tap : winrt::implements<Tap, IObjectWithSite, IVisualTreeServiceCallback2
 
     HRESULT __stdcall OnVisualTreeChange(ParentChildRelation, VisualElement element, VisualMutationType mutation) noexcept override
     {
-        if (!watch || watch->stopped || mutation != Add || !element.Name || wcscmp(element.Name, L"FooterGrid") != 0) return S_OK;
+        if (!watch || watch->stopped || mutation != Add) return S_OK;
+        bool isFooter = element.Name && wcscmp(element.Name, L"FooterGrid") == 0;
+        bool isPage = element.Type && std::wstring_view(element.Type).ends_with(L"ControlCenterPage");
+        if (!isFooter && !isPage) return S_OK;
         try
         {
             wf::IInspectable object{nullptr};
             winrt::check_hresult(diagnostics->GetIInspectableFromHandle(element.Handle,
                 reinterpret_cast<::IInspectable**>(winrt::put_abi(object))));
-            if (auto grid = object.try_as<controls::Grid>()) Context::Observe(grid, watch);
+            if (auto target = object.try_as<xaml::FrameworkElement>()) Context::Observe(target, isFooter, watch);
         }
-        catch (...) { OutputDebugStringW(L"YogaITS: Quick Settings grid observation failed.\n"); }
+        catch (...) { OutputDebugStringW(L"YogaITS: Quick Settings page or footer observation failed.\n"); }
         return S_OK;
     }
     HRESULT __stdcall OnElementStateChanged(InstanceHandle, VisualElementState, LPCWSTR) noexcept override { return S_OK; }

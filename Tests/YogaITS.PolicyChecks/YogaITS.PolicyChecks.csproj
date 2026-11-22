@@ -37,6 +37,7 @@
     <Compile Include="../../YogaITS.Tray/Services/LenovoGpuWorkingModeService.cs" Link="LenovoGpuWorkingModeService.cs" />
     <Compile Include="../../YogaITS.Tray/Services/UserSettingsStore.cs" Link="UserSettingsStore.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AppLaunchPolicy.cs" Link="AppLaunchPolicy.cs" />
+    <Compile Include="../../YogaITS.Tray/Services/QuickSettings/QuickSettingsRecovery.cs" Link="QuickSettingsRecovery.cs" />
     <Compile Include="../../YogaITS.Tray/Services/StartupTaskPolicy.cs" Link="StartupTaskPolicy.cs" />
     <Compile Include="../../YogaITS.Tray/Services/AppGpuPreference.cs" Link="AppGpuPreference.cs" />
     <Compile Include="../../YogaITS.Tray/Services/ApplicationIcon.cs" Link="ApplicationIcon.cs" />

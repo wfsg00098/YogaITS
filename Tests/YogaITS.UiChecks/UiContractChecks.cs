@@ -524,7 +524,7 @@ internal static class UiContractChecks
         Ensure(AutomationProperties.GetItemStatus(cards[0]) == "已选中" &&
             AutomationProperties.GetItemStatus(cards[1]) == "未选中",
             "Only the tray card is selected by default.");
-        window.SetIconOptions(IconPlacement.QuickSettings, true, true,
+        window.SetIconOptions(IconPlacement.QuickSettings, true,
             _ => throw new InvalidOperationException("Rendering must not change the icon placement preference."));
         Ensure(AutomationProperties.GetItemStatus(cards[0]) == "未选中" &&
             AutomationProperties.GetItemStatus(cards[1]) == "已选中",

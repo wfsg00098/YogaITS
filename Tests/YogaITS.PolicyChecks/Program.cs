@@ -72,6 +72,8 @@ void Check(bool condition, string name)
     checks++;
 }
 
+QuickSettingsRecoveryChecks.Run(Check);
+
 var acDcSetting = new Guid("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
 foreach (int version in new[] { 0, 1, 8191, 8192, 8193, int.MaxValue })
     Check(ItsModePolicy.UsesLegacyService(version) == (version < 8192), "ITS service selection follows LLT's dispatcher version boundary, not model year");

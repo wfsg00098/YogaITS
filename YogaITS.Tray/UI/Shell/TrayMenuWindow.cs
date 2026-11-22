@@ -672,10 +672,10 @@ public sealed class TrayMenuWindow : Window
     internal void RefreshUiOptions()=>UiOptions?.Refresh();
 #endif
 
-    internal void SetIconOptions(IconPlacement placement, bool ready, bool available, Action<IconPlacement> select)
+    internal void SetIconOptions(IconPlacement placement, bool available, Action<IconPlacement> select)
     {
         _selectIconPlacement = select;
-        _iconOptions?.Refresh(placement, ready, available);
+        _iconOptions?.Refresh(placement, available);
     }
 
     public void ApplyKeepAwakeState(GpuKeepAwakeSnapshot state)

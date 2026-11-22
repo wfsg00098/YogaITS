@@ -245,7 +245,9 @@ GET 输入 `0x02`，调用成功即表示支持，不另加机型或能力位条
 
 「图标选项」位于完整窗口 UI选项之后、杂项之前，`IconPlacement` 保存入口选择，默认托盘。选项复用 `HardwareChoiceGroup`，WinUI 3 显示两张互斥卡片，液态玻璃显示导轨和胶囊。[快速设置组件](YogaITS.Tray/Services/QuickSettings/) 只连接同一会话的系统目录 `ShellHost.exe`。它观察底栏，从 `FooterButton` 向左寻找最近的可用位置，与厂商入口等相邻按钮保持至少 5 DIP 间隔。YogaITS 复用齿轮的按钮模板和前景对比度，空间不足时回到托盘。Windows 更新可能改变视觉树。[Windows XAML 诊断 API](https://learn.microsoft.com/windows/win32/api/xamlom/nf-xamlom-initializexamldiagnosticsex)
 
-快速设置确认挂载后撤下托盘。ShellHost 的消息窗口记录当前 YogaITS 控制窗口的 HWND，后台核对该标记和 ShellHost PID。底栏移除图标时，仍可用的布局会重新插入控件。ShellHost 更换后立即尝试连接。同一 PID 连接成功后留 3 秒等待底栏，仍缺失时每次会话输入最多触发一次重连，重连成功后冷却 8 秒，连接失败后隔 15 秒重试。挂载恢复前保留托盘入口。 [GetLastInputInfo](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-getlastinputinfo)
+快速设置桥的消息窗口分别用 `Context` 和 `Mounted` 标记桥存在和控件挂载。后台核对标记指向当前 YogaITS 控制窗口，且消息窗口属于已验证的 ShellHost。Win+A 面板显示事件唤醒后台，并以约 2 秒的宿主检查补偿遗漏事件。发现面板打开时先请现有桥从页面重新扫描底栏，约 180 毫秒后复核挂载。页面及底栏的加载、卸载、布局事件也会安排扫描。 [SetWinEventHook](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setwineventhook)
+
+面板可见且挂载缺失时，后台最多等待 100 毫秒读取桥最近的状态，UI 线程只返回状态并排队扫描。底栏缺失留约 1.2 秒，等待布局或锚点留约 5 秒。仍失败时，旧桥在 UI 线程复查后回收。桥缺失时最多进行两次间隔约 450 毫秒的快速附加，再按约 8 秒退避。面板隐藏时暂停针对图标缺失的重试。托盘仅在恢复失败后回退，实际恢复挂载后撤下。相关消息和状态值由后台与原生组件同步维护。 [SendMessageTimeoutW](https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw)
 
 左键与右键分别复用完整窗口和迷你窗口入口。禁用快速设置会清除图标和挂载标记，退出时还会取消视觉树订阅。宿主从按 SHA-256 命名的数据目录副本加载 DLL，应用目录可正常更新。双版发布均携带组件，构建检查覆核完整包及散列。
 

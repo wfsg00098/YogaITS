@@ -11,7 +11,6 @@ internal sealed class IconOptionsPanel : IDisposable
     private readonly HardwareChoiceGroup _choices;
     private readonly Action<IconPlacement> _select;
     private IconPlacement _placement;
-    private bool _ready;
     private bool _available = true;
     private string? _error;
 
@@ -29,10 +28,9 @@ internal sealed class IconOptionsPanel : IDisposable
         Render();
     }
 
-    public void Refresh(IconPlacement placement, bool ready, bool available)
+    public void Refresh(IconPlacement placement, bool available)
     {
         _placement = placement;
-        _ready = ready;
         _available = available;
         Render();
     }
@@ -46,17 +44,7 @@ internal sealed class IconOptionsPanel : IDisposable
         UpdateStatus();
     }
 
-    private void UpdateStatus()
-    {
-        string status = _error ?? "";
-        if (_error is null && _placement == IconPlacement.QuickSettings && !_ready)
-        {
-            status = _available
-                ? "快速设置尚未就绪。按 Win+A 打开快速设置，连接前可使用托盘。"
-                : "当前无法使用快速设置，图标显示在托盘。";
-        }
-        _card.SetStatus(status);
-    }
+    private void UpdateStatus() => _card.SetStatus(_error ?? "");
 
     private Task SelectAsync(IconPlacement placement)
     {
